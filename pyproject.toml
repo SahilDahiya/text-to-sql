@@ -1,0 +1,32 @@
+[project]
+name = "play-poker"
+version = "0.1.0"
+description = "SQL training and LiveSQLBench experimentation workspace"
+requires-python = ">=3.11"
+dependencies = [
+    "jsonschema>=4.23.0",
+]
+
+[project.scripts]
+play-poker = "play_poker.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.package-dir]
+play_poker = "src/play_poker"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["play_poker*"]
+
+[tool.uv]
+package = true
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3.0",
+    "ruff>=0.11.0",
+]
+
