@@ -1,5 +1,7 @@
 # SQL Pipeline Parts
 
+read_when: you are discussing or changing the SQL pipeline roadmap
+
 This document lists the major parts of the SQL training and LiveSQLBench pipeline.
 We will discuss and implement these one by one.
 
@@ -177,4 +179,3 @@ Every experiment ends with a decision:
 
 The decision should state why the trained model or adapter is better, worse, or inconclusive
 relative to the base model.
-

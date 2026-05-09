@@ -1,5 +1,7 @@
 # LiveSQLBench Competition
 
+read_when: you are changing LiveSQLBench adapters, eval runners, or benchmark claims
+
 ## Position
 
 LiveSQLBench is the competition target, but not the first implementation target.
@@ -54,4 +56,3 @@ Local smoke tests are allowed, but they are development signals only.
 - Should the first local eval dialect be SQLite for speed or PostgreSQL for benchmark fidelity?
 - Should the first training data come from Spider/BIRD-style public data, synthetic teacher rows, or both?
 - Should `qwen3.5:0.8b` be trained first as a direct SQL generator or immediately as a tool-use policy?
-

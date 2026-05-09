@@ -6,7 +6,7 @@ import argparse
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Play Poker SQL workspace")
+    parser = argparse.ArgumentParser(description="SQLBench Lab workspace")
     parser.add_argument(
         "--version",
         action="store_true",
@@ -24,4 +24,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

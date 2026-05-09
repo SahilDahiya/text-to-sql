@@ -1,5 +1,7 @@
 # Docs
 
+read_when: you are starting work in this repo or need the current repo map
+
 Start here when working in this repo.
 
 ## Reference Repo
@@ -20,3 +22,9 @@ and LiveSQLBench competition work.
 - `SQL_PIPELINE_PARTS.md` lists the pipeline components we will discuss and implement one by one.
 - `SQL_TRAINING_PIPELINE.md` defines the `qwen3.5:0.8b` SQL training path.
 - `LIVESQLBENCH_COMPETITION.md` defines the competition posture and constraints.
+
+## Current Code Contracts
+
+- `schemas/sql_train_example_v1.schema.json`
+- `schemas/sql_repair_example_v1.schema.json`
+- `schemas/sql_eval_case_v1.schema.json`

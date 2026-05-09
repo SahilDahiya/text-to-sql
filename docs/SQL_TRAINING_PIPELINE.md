@@ -1,5 +1,7 @@
 # SQL Training Pipeline
 
+read_when: you are changing SQL training data, evaluation, or fine-tuning code
+
 ## Purpose
 
 Build a reproducible training lane for a small SQL student:
@@ -65,13 +67,25 @@ Train the model on structured tool-use traces:
 
 This is the more realistic path for LiveSQLBench agent mode.
 
-## First Artifacts To Add Next
+## Current Foundation
+
+The first checked-in foundation includes:
 
 - `schemas/sql_train_example_v1.schema.json`
+- `schemas/sql_repair_example_v1.schema.json`
+- `schemas/sql_eval_case_v1.schema.json`
+- `datasets/sql/smoke/sql_smoke_v1.jsonl`
+- generated SQLite fixture support for `company_small`
+- strict JSONL loaders
+- direct-SQL and repair prompt renderers
+- result-equivalence SQLite evaluation
+
+## Next Artifacts To Add
+
 - `schemas/sql_sft_experiment_v1.schema.json`
-- `datasets/sql/README.md`
 - `experiments/sql/qwen35_0_8b__exp001_sql_sft.json`
-- `src/play_poker/sql/` strict loaders and renderers
+- CLI commands for SQL dataset validation and smoke evaluation
+- baseline capture for untrained `qwen3.5:0.8b`
 
 ## Non-Negotiables
 
@@ -79,4 +93,3 @@ This is the more realistic path for LiveSQLBench agent mode.
 - Do not mix eval rows into train rows.
 - Do not report local approximations as official benchmark scores.
 - Do not hide fallback behavior in training or eval code.
-

@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "sql_eval_case_v1.schema.json",
+  "title": "SQL Eval Case v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "case_id",
+    "source_benchmark",
+    "source_split",
+    "task_id",
+    "fixture_id",
+    "db_id",
+    "dialect",
+    "question",
+    "schema_text",
+    "gold_sql",
+    "task_type",
+    "order_sensitive",
+    "numeric_tolerance",
+    "tags"
+  ],
+  "properties": {
+    "schema_version": {"const": "sql_eval_case:v1"},
+    "case_id": {"type": "string", "minLength": 1},
+    "source_benchmark": {
+      "enum": ["spider", "bird", "livesqlbench", "synthetic", "smoke"]
+    },
+    "source_split": {
+      "enum": ["train", "dev", "eval", "synthetic", "smoke"]
+    },
+    "task_id": {"type": "string", "minLength": 1},
+    "fixture_id": {"type": "string", "minLength": 1},
+    "db_id": {"type": "string", "minLength": 1},
+    "dialect": {"const": "sqlite"},
+    "question": {"type": "string", "minLength": 1},
+    "schema_text": {"type": "string", "minLength": 1},
+    "knowledge_text": {"type": ["string", "null"]},
+    "gold_sql": {"type": "string", "minLength": 1},
+    "task_type": {"enum": ["select", "management", "unknown"]},
+    "order_sensitive": {"type": "boolean"},
+    "numeric_tolerance": {"type": "number", "minimum": 0},
+    "tags": {
+      "type": "array",
+      "items": {"type": "string"}
+    }
+  }
+}
+

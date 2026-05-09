@@ -1,4 +1,6 @@
-# Play Poker SQL Workspace
+# SQLBench Lab
+
+read_when: you are orienting to the repo
 
 This repo is being set up as a small, explicit workspace for training and evaluating a
 `qwen3.5:0.8b` SQL student, with LiveSQLBench competition work as the long-term target.
@@ -43,4 +45,3 @@ Competition direction:
 - start with LiveSQLBench Base-Lite or Base-Lite-SQLite
 - use official LiveSQLBench tooling for competition claims
 - treat agent mode as the serious path for a 0.8B student
-
