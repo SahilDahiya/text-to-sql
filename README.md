@@ -3,7 +3,7 @@
 read_when: you are orienting to the repo
 
 This repo is being set up as a small, explicit workspace for training and evaluating a
-`qwen3.5:0.8b` SQL student, with LiveSQLBench competition work as the long-term target.
+`Qwen/Qwen3.5-0.8B-Base` SQL student, with LiveSQLBench competition work as the long-term target.
 
 The reference repo for structure and discipline is:
 
@@ -32,7 +32,7 @@ The first scope is intentionally small:
 
 Student:
 
-- `qwen3.5:0.8b`
+- `Qwen/Qwen3.5-0.8B-Base`
 
 Training direction:
 

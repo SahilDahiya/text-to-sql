@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -13,11 +15,33 @@ from sqlbench_lab.sql import (
     evaluate_sqlite_case,
     load_sql_eval_cases,
     load_sql_repair_examples,
+    load_sql_sft_manifest,
     load_sql_train_examples,
+    run_sql_sft,
+    tokenize_sql_sft_messages,
 )
 
 
 WORKSPACE_ROOT = Path(__file__).resolve().parents[1]
+
+
+class _FakeSQLTokenizer:
+    eos_token = "<eos>"
+
+    def apply_chat_template(
+        self,
+        messages: list[dict[str, str]],
+        *,
+        tokenize: bool,
+        add_generation_prompt: bool,
+    ) -> list[int]:
+        rendered = "".join(f"<{message['role']}>{message['content']}" for message in messages)
+        if add_generation_prompt:
+            rendered += "<assistant>"
+        return [index + 1 for index, _ in enumerate(rendered)]
+
+    def __call__(self, text: str, *, add_special_tokens: bool) -> dict[str, list[int]]:
+        return {"input_ids": [1000 + index for index, _ in enumerate(text)]}
 
 
 class SQLPipelineTests(unittest.TestCase):
@@ -28,6 +52,93 @@ class SQLPipelineTests(unittest.TestCase):
         self.assertEqual(cases[0].dialect, "sqlite")
         self.assertFalse(cases[0].order_sensitive)
         self.assertEqual(cases[0].numeric_tolerance, 0.000001)
+
+    def test_load_sql_train_examples_reads_seed_dataset(self) -> None:
+        rows = load_sql_train_examples("datasets/sql/train/qwen35_0_8b_direct_sql_seed_v1.jsonl")
+
+        self.assertEqual(len(rows), 5)
+        self.assertEqual(rows[0].dialect, "sqlite")
+        self.assertEqual(rows[0].target_sql.split()[0], "SELECT")
+
+    def test_load_sql_sft_manifest_validates_seed_experiment(self) -> None:
+        manifest = load_sql_sft_manifest("experiments/sql/qwen35_0_8b__exp001_sql_sft.json")
+
+        self.assertEqual(manifest.experiment_id, "qwen35_0_8b__exp001_sql_sft")
+        self.assertEqual(manifest.student.base_model, "Qwen/Qwen3.5-0.8B-Base")
+        self.assertEqual(manifest.training_method.stage, "direct_sql_sft")
+        self.assertEqual(
+            manifest.train_inputs.train_datasets,
+            ("datasets/sql/train/qwen35_0_8b_direct_sql_seed_v1.jsonl",),
+        )
+
+    def test_run_sql_sft_dry_run_writes_training_summary(self) -> None:
+        summary_path = WORKSPACE_ROOT / "artifacts/sql/qwen35_0_8b__exp001_sql_sft/train_summary.json"
+        if summary_path.exists():
+            summary_path.unlink()
+
+        summary = run_sql_sft("experiments/sql/qwen35_0_8b__exp001_sql_sft.json", dry_run=True)
+
+        self.assertTrue(summary.dry_run)
+        self.assertEqual(summary.train_row_count, 5)
+        self.assertTrue(summary_path.exists())
+        payload = json.loads(summary_path.read_text(encoding="utf-8"))
+        self.assertEqual(payload["experiment_id"], "qwen35_0_8b__exp001_sql_sft")
+        self.assertTrue(payload["dry_run"])
+
+    def test_tokenize_sql_sft_messages_masks_prompt_tokens(self) -> None:
+        messages = [
+            {"role": "system", "content": "sys"},
+            {"role": "user", "content": "question"},
+            {"role": "assistant", "content": "SELECT 1;"},
+        ]
+
+        encoded = tokenize_sql_sft_messages(tokenizer=_FakeSQLTokenizer(), messages=messages)
+
+        self.assertEqual(len(encoded["input_ids"]), len(encoded["labels"]))
+        self.assertIn(-100, encoded["labels"])
+        self.assertEqual(encoded["labels"][-1], encoded["input_ids"][-1])
+
+    def test_cli_validates_seed_manifest(self) -> None:
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "sqlbench_lab.cli",
+                "sql",
+                "validate-manifest",
+                "--manifest",
+                "experiments/sql/qwen35_0_8b__exp001_sql_sft.json",
+            ],
+            cwd=WORKSPACE_ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+        self.assertIn("qwen35_0_8b__exp001_sql_sft", result.stdout)
+        self.assertIn("5 train row(s)", result.stdout)
+        self.assertIn("2 smoke case(s)", result.stdout)
+
+    def test_cli_run_sft_dry_run(self) -> None:
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "sqlbench_lab.cli",
+                "sql",
+                "run-sft",
+                "--manifest",
+                "experiments/sql/qwen35_0_8b__exp001_sql_sft.json",
+                "--dry-run",
+            ],
+            cwd=WORKSPACE_ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+        self.assertIn("dry_run=True", result.stdout)
+        self.assertIn("train_rows=5", result.stdout)
 
     def test_sqlite_fixture_builder_creates_company_small_database(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

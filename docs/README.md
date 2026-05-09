@@ -28,3 +28,4 @@ and LiveSQLBench competition work.
 - `schemas/sql_train_example_v1.schema.json`
 - `schemas/sql_repair_example_v1.schema.json`
 - `schemas/sql_eval_case_v1.schema.json`
+- `schemas/sql_sft_experiment_v1.schema.json`

@@ -29,3 +29,9 @@ dev = [
     "pytest>=8.3.0",
     "ruff>=0.11.0",
 ]
+training = [
+    "accelerate>=1.10.0",
+    "peft>=0.17.0",
+    "torch>=2.7.0",
+    "transformers>=4.57.1",
+]

@@ -6,7 +6,10 @@ read_when: you are changing SQL training data, evaluation, or fine-tuning code
 
 Build a reproducible training lane for a small SQL student:
 
-- `qwen3.5:0.8b`
+- `Qwen/Qwen3.5-0.8B-Base`
+
+The served inference lane may still use an Ollama-style name such as `qwen3.5:0.8b`, but
+training manifests must point at a trainable Hugging Face model ID or local model path.
 
 The first goal is measurable improvement over the base model on execution-based SQL evals.
 The later goal is to use the trained student inside a LiveSQLBench-capable agent loop.
@@ -74,18 +77,22 @@ The first checked-in foundation includes:
 - `schemas/sql_train_example_v1.schema.json`
 - `schemas/sql_repair_example_v1.schema.json`
 - `schemas/sql_eval_case_v1.schema.json`
+- `schemas/sql_sft_experiment_v1.schema.json`
 - `datasets/sql/smoke/sql_smoke_v1.jsonl`
+- `datasets/sql/train/qwen35_0_8b_direct_sql_seed_v1.jsonl`
+- `experiments/sql/qwen35_0_8b__exp001_sql_sft.json`
 - generated SQLite fixture support for `company_small`
 - strict JSONL loaders
+- SQL SFT manifest loading
+- minimal SQL LoRA SFT runner with explicit `--dry-run`
 - direct-SQL and repair prompt renderers
 - result-equivalence SQLite evaluation
 
 ## Next Artifacts To Add
 
-- `schemas/sql_sft_experiment_v1.schema.json`
-- `experiments/sql/qwen35_0_8b__exp001_sql_sft.json`
-- CLI commands for SQL dataset validation and smoke evaluation
 - baseline capture for untrained `qwen3.5:0.8b`
+- post-train eval command against the smoke set
+- local model cache or network access for `Qwen/Qwen3.5-0.8B-Base`
 
 ## Non-Negotiables
 
