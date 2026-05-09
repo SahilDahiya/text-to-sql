@@ -126,28 +126,36 @@ def run_sql_sft(manifest_path: str | Path, *, dry_run: bool = False) -> SQLSFTTr
 
 
 def tokenize_sql_sft_messages(tokenizer: Any, messages: list[dict[str, str]]) -> dict[str, list[int]]:
-    """Tokenize one rendered SQL SFT chat sample and mask prompt tokens."""
+    """Tokenize one rendered SQL SFT sample and mask prompt tokens."""
 
     if len(messages) != 3 or messages[-1]["role"] != "assistant":
         raise ValueError("SQL SFT messages must be system/user/assistant")
-    prompt_messages = messages[:-1]
+    prompt_text = render_sql_sft_prompt(messages)
     target_text = messages[-1]["content"]
-    if not hasattr(tokenizer, "apply_chat_template"):
-        raise ValueError("tokenizer must support apply_chat_template for SQL SFT")
-
-    prompt_ids = _extract_token_ids(
-        tokenizer.apply_chat_template(
-            prompt_messages,
-            tokenize=True,
-            add_generation_prompt=True,
-        )
-    )
-    target_ids = _extract_token_ids(
-        _encode_target_text(tokenizer, target_text + _eos_text(tokenizer))
-    )
+    prompt_ids = _tokenize_text(tokenizer, prompt_text)
+    target_ids = _tokenize_text(tokenizer, target_text + _eos_text(tokenizer))
     input_ids = prompt_ids + target_ids
     labels = [IGNORE_INDEX] * len(prompt_ids) + target_ids
     return {"input_ids": input_ids, "labels": labels}
+
+
+def render_sql_sft_prompt(messages: list[dict[str, str]]) -> str:
+    """Render the repo-owned base-model SFT prompt format."""
+
+    if len(messages) != 3:
+        raise ValueError("SQL SFT messages must contain system, user, and assistant messages")
+    system_message, user_message, assistant_message = messages
+    if system_message["role"] != "system":
+        raise ValueError("first SQL SFT message must have role=system")
+    if user_message["role"] != "user":
+        raise ValueError("second SQL SFT message must have role=user")
+    if assistant_message["role"] != "assistant":
+        raise ValueError("third SQL SFT message must have role=assistant")
+    return (
+        f"<|system|>\n{system_message['content'].strip()}\n"
+        f"<|user|>\n{user_message['content'].strip()}\n"
+        "<|assistant|>\n"
+    )
 
 
 def _validate_supported_manifest(manifest: SQLSFTExperimentManifest) -> None:
@@ -241,6 +249,11 @@ def _extract_token_ids(value: Any) -> list[int]:
     if hasattr(value, "input_ids"):
         return _extract_token_ids(value.input_ids)
     raise ValueError("unable to extract token ids from tokenizer output")
+
+
+def _tokenize_text(tokenizer_like: Any, text: str) -> list[int]:
+    tokenizer = _inner_tokenizer(tokenizer_like)
+    return _extract_token_ids(_encode_target_text(tokenizer, text))
 
 
 def _eos_text(tokenizer: Any) -> str:

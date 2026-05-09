@@ -31,7 +31,10 @@ dev = [
 ]
 training = [
     "accelerate>=1.10.0",
+    "datasets>=4.4.0",
     "peft>=0.17.0",
+    "pillow>=12.0.0",
     "torch>=2.7.0",
+    "torchvision>=0.22.0",
     "transformers>=4.57.1",
 ]
