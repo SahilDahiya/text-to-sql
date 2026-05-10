@@ -6,6 +6,9 @@ import os
 import subprocess
 from dataclasses import asdict
 from pathlib import Path
+import re
+import shutil
+import sys
 from typing import Any
 
 from sqlbench_lab.paths import WORKSPACE_ROOT
@@ -22,6 +25,36 @@ def mlflow_enabled(explicit: bool | None = None) -> bool:
     if explicit is not None:
         return explicit
     return os.environ.get(MLFLOW_ENABLED_ENV, "").lower() in {"1", "true", "yes", "on"}
+
+
+def mlflow_tracking_uri(tracking_uri: str | None = None) -> str:
+    """Resolve the effective MLflow tracking URI for this workspace."""
+
+    return _resolve_tracking_uri(tracking_uri)
+
+
+def launch_mlflow_ui(
+    *,
+    backend_store_uri: str | None = None,
+    host: str = "127.0.0.1",
+    port: int = 5000,
+) -> int:
+    """Launch a blocking local MLflow UI process."""
+
+    mlflow_executable = shutil.which("mlflow")
+    command = [mlflow_executable] if mlflow_executable else [sys.executable, "-m", "mlflow"]
+    command.extend(
+        [
+            "ui",
+            "--backend-store-uri",
+            _resolve_tracking_uri(backend_store_uri),
+            "--host",
+            host,
+            "--port",
+            str(port),
+        ]
+    )
+    return subprocess.run(command, cwd=WORKSPACE_ROOT, check=False).returncode
 
 
 def log_sql_sft_run(
@@ -53,10 +86,15 @@ def log_sql_sft_run(
         or os.environ.get(MLFLOW_EXPERIMENT_ENV)
         or DEFAULT_MLFLOW_EXPERIMENT
     )
-    with mlflow.start_run(run_name=manifest.experiment_id):
+    train_dataset_names = [_dataset_name(path) for path in train_dataset_counts]
+    with mlflow.start_run(run_name=f"{_experiment_label(manifest.experiment_id)}/train"):
         mlflow.set_tags(
             {
                 "sqlbench.experiment_id": manifest.experiment_id,
+                "sqlbench.run_kind": "train",
+                "sqlbench.dataset_name": ",".join(train_dataset_names),
+                "sqlbench.dataset_family": ",".join(sorted({_dataset_family(name) for name in train_dataset_names})),
+                "sqlbench.model_variant": "adapter",
                 "sqlbench.stage": manifest.training_method.stage,
                 "sqlbench.method": manifest.training_method.method,
                 "sqlbench.loss_target": manifest.training_method.loss_target,
@@ -73,6 +111,7 @@ def log_sql_sft_run(
                 "train.rows_total": summary.train_row_count,
                 "eval.smoke_cases": smoke_eval_case_count,
                 "output.adapter_dir": summary.adapter_dir,
+                "mlflow.run_name": f"{_experiment_label(manifest.experiment_id)}/train",
                 **_prefix_params("train", training_config),
                 **_prefix_params("lora", lora_config),
                 **_prefix_params("train_dataset_rows", train_dataset_counts),
@@ -114,11 +153,16 @@ def log_sql_eval_run(
         or os.environ.get(MLFLOW_EXPERIMENT_ENV)
         or DEFAULT_MLFLOW_EXPERIMENT
     )
-    with mlflow.start_run(run_name=f"{manifest.experiment_id}__eval__{summary.model_variant}"):
+    dataset_name = _dataset_name(summary.eval_dataset)
+    with mlflow.start_run(
+        run_name=f"{_experiment_label(manifest.experiment_id)}/eval/{dataset_name}/{summary.model_variant}"
+    ):
         mlflow.set_tags(
             {
                 "sqlbench.experiment_id": manifest.experiment_id,
                 "sqlbench.run_kind": "eval",
+                "sqlbench.dataset_name": dataset_name,
+                "sqlbench.dataset_family": _dataset_family(dataset_name),
                 "sqlbench.model_variant": summary.model_variant,
                 "sqlbench.stage": manifest.training_method.stage,
                 "sqlbench.base_model": manifest.student.base_model,
@@ -132,9 +176,13 @@ def log_sql_eval_run(
                 "student.base_model": manifest.student.base_model,
                 "student.adapter_name": manifest.student.adapter_name,
                 "eval.dataset": summary.eval_dataset,
+                "eval.dataset_name": dataset_name,
                 "eval.case_count": summary.case_count,
                 "eval.model_variant": summary.model_variant,
                 "eval.adapter_dir": summary.adapter_dir or "",
+                "mlflow.run_name": (
+                    f"{_experiment_label(manifest.experiment_id)}/eval/{dataset_name}/{summary.model_variant}"
+                ),
             }
         )
         mlflow.log_metrics(
@@ -165,6 +213,31 @@ def _resolve_tracking_uri(tracking_uri: str | None) -> str:
 
 def _prefix_params(prefix: str, values: dict[str, Any]) -> dict[str, Any]:
     return {f"{prefix}.{_safe_key(key)}": _param_value(value) for key, value in values.items()}
+
+
+def _experiment_label(experiment_id: str) -> str:
+    match = re.search(r"exp\d+", experiment_id)
+    if match:
+        return match.group(0)
+    return _safe_key(experiment_id)
+
+
+def _dataset_name(dataset_path: str | Path) -> str:
+    stem = Path(dataset_path).stem
+    if stem.startswith("sql_smoke"):
+        return "smoke"
+    return _safe_key(stem)
+
+
+def _dataset_family(dataset_name: str) -> str:
+    lowered = dataset_name.lower()
+    if "bird" in lowered:
+        return "bird"
+    if "spider" in lowered:
+        return "spider"
+    if "smoke" in lowered:
+        return "smoke"
+    return lowered.split("_", maxsplit=1)[0]
 
 
 def _param_value(value: Any) -> Any:

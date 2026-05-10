@@ -18,6 +18,14 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="SQLBench Lab workspace")
     parser.add_argument("--version", action="store_true", help="Print the package version")
     subparsers = parser.add_subparsers(dest="command")
+
+    observe_parser = subparsers.add_parser("observe", help="Experiment observability commands")
+    observe_subparsers = observe_parser.add_subparsers(dest="observe_command")
+    observe_ui = observe_subparsers.add_parser("ui", help="Launch the local MLflow dashboard")
+    observe_ui.add_argument("--host", default="127.0.0.1", help="MLflow UI bind host")
+    observe_ui.add_argument("--port", type=int, default=5000, help="MLflow UI bind port")
+    observe_ui.add_argument("--backend-store-uri", help="MLflow backend store URI")
+
     sql_parser = subparsers.add_parser("sql", help="SQL pipeline commands")
     sql_subparsers = sql_parser.add_subparsers(dest="sql_command")
 
@@ -66,8 +74,28 @@ def main(argv: list[str] | None = None) -> int:
             return _run_sql_command(args)
         except (ImportError, ValueError) as exc:
             parser.error(str(exc))
+    if args.command == "observe":
+        try:
+            return _run_observe_command(args)
+        except (ImportError, ValueError) as exc:
+            parser.error(str(exc))
     parser.print_help()
     return 0
+
+
+def _run_observe_command(args: argparse.Namespace) -> int:
+    if args.observe_command == "ui":
+        from sqlbench_lab.observability import launch_mlflow_ui, mlflow_tracking_uri
+
+        backend_store_uri = mlflow_tracking_uri(args.backend_store_uri)
+        print(f"starting MLflow UI at http://{args.host}:{args.port}")
+        print(f"backend store: {backend_store_uri}")
+        return launch_mlflow_ui(
+            backend_store_uri=backend_store_uri,
+            host=args.host,
+            port=args.port,
+        )
+    raise ValueError("missing observe command")
 
 
 def _run_sql_command(args: argparse.Namespace) -> int:

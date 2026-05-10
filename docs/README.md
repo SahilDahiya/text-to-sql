@@ -21,6 +21,7 @@ and LiveSQLBench competition work.
 
 - `SQL_PIPELINE_PARTS.md` lists the pipeline components we will discuss and implement one by one.
 - `SQL_TRAINING_PIPELINE.md` defines the `Qwen/Qwen3.5-0.8B-Base` SQL training path and MLflow observability lane.
+- `OBSERVABILITY.md` defines the local MLflow dashboard, run naming, tags, and comparison rules.
 - `LIVESQLBENCH_COMPETITION.md` defines the competition posture and constraints.
 - `../notebooks/sql_sft_training_loop.ipynb` runs the current SQL SFT loop interactively.
 

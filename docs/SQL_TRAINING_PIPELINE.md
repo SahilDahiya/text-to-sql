@@ -126,8 +126,10 @@ the CLI flag `--mlflow-tracking-uri`.
 Start the local UI with:
 
 ```bash
-uv run --group observability mlflow ui --backend-store-uri sqlite:///./mlflow.db
+uv run --group observability python -m sqlbench_lab.cli observe ui
 ```
+
+See `OBSERVABILITY.md` for run naming, dashboard filters, and comparison rules.
 
 The SQL SFT logger records:
 
@@ -135,7 +137,7 @@ The SQL SFT logger records:
 - train dataset row counts and smoke eval case count
 - LoRA and trainer hyperparameters
 - train summary metrics, trainer metrics, manifest, train summary, and adapter config
-- eval pass rate, per-case pass/fail metrics, manifest, and eval result JSON
+- eval dataset name, dataset family, pass rate, per-case pass/fail metrics, manifest, and eval result JSON
 
 Run base and adapter smoke evals with:
 
@@ -199,7 +201,6 @@ uv run --group training --group observability python -m sqlbench_lab.cli sql eva
 ## Next Artifacts To Add
 
 - imported Spider/BIRD train and eval manifests
-- adapter-vs-base eval dashboard conventions in MLflow
 - execution-repair SFT dataset and runner stage
 
 ## Non-Negotiables
