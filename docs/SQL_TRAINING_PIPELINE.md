@@ -245,6 +245,19 @@ Repeat the same base/adapter pair for `datasets/sql/eval/bird_validation_25_v1.j
 MLflow logs pass rate plus failure buckets so we can tell whether a one-shot gain comes
 from fewer schema errors, fewer syntax errors, or fewer wrong-result queries.
 
+## Exp004 Expanded One-Shot Gate
+
+Exp004 keeps the exp003 eval files fixed and only expands the training slice:
+
+- train: `datasets/sql/train/spider_train_250_v1.jsonl`
+- train: `datasets/sql/train/bird_train_250_v1.jsonl`
+- eval: `datasets/sql/eval/spider_validation_25_v1.jsonl`
+- eval: `datasets/sql/eval/bird_validation_25_v1.jsonl`
+- manifest: `experiments/sql/qwen35_0_8b__exp004_one_shot_spider_bird_sft.json`
+
+This lets us compare exp003 and exp004 without moving the local scoring target. The scoring
+path remains direct one-shot SQL only through `sql eval`.
+
 Analyze a completed eval result before choosing repair work:
 
 ```bash
