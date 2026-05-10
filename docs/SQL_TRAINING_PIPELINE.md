@@ -234,10 +234,38 @@ The output uses `sql_repair_example:v1` rows:
 Rows collected from an eval/dev slice must not be used to report a score on that same slice.
 Once they become training data, hold out a different eval file for the next measurement.
 
+Run eval-time execution-guided repair without retraining:
+
+```bash
+uv run --group training python -m sqlbench_lab.cli sql eval-repair \
+  --manifest experiments/sql/qwen35_0_8b__exp002_spider_bird_sft.json \
+  --dataset datasets/sql/eval/bird_validation_sample_v1.jsonl \
+  --model adapter \
+  --max-repair-attempts 1
+```
+
+This writes a separate repair eval result JSON under `results/sql/<experiment_id>/`.
+It preserves both the first-pass SQL and each repair attempt, and reports:
+
+- first-pass pass rate
+- final pass rate after repair
+- repair attempt count
+- repair success count
+
+By default, repair attempts only run for execution-visible failures:
+
+- empty prediction
+- SQL syntax error
+- missing table/column schema error
+- other SQL execution error
+
+Use `--repair-failure-type` to override the eligible failure buckets. Do not enable repair
+for row-count or row-value mismatches until the observation has enough grounding to make the
+retry meaningful.
+
 ## Next Artifacts To Add
 
 - imported Spider/BIRD train and eval manifests
-- execution-guided repair retry runner
 - execution-repair SFT dataset and runner stage
 
 ## Non-Negotiables

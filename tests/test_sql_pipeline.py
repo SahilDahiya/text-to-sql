@@ -11,6 +11,7 @@ from pathlib import Path
 from sqlbench_lab.sql import (
     analyze_sql_eval_result,
     build_repair_messages,
+    build_repair_eval_messages,
     build_sqlite_fixture,
     build_train_messages,
     collect_sql_repair_data,
@@ -21,6 +22,7 @@ from sqlbench_lab.sql import (
     load_sql_sft_manifest,
     load_sql_train_examples,
     run_sql_eval,
+    run_sql_eval_with_repair,
     run_sql_sft,
     tokenize_sql_sft_messages,
 )
@@ -185,6 +187,75 @@ class SQLPipelineTests(unittest.TestCase):
         payload = json.loads(result_path.read_text(encoding="utf-8"))
         self.assertEqual(payload["model_variant"], "adapter")
         self.assertEqual(payload["passed_count"], 2)
+
+    def test_run_sql_eval_with_repair_preserves_first_pass_and_final_scores(self) -> None:
+        cases = load_sql_eval_cases("datasets/sql/smoke/sql_smoke_v1.jsonl")
+
+        def first_predictor(case):
+            if case.case_id == cases[0].case_id:
+                return "SELECT missing FROM employees;"
+            return case.gold_sql
+
+        def repair_predictor(case, previous_sql, observation):
+            self.assertEqual(previous_sql, "SELECT missing FROM employees;")
+            self.assertIn("no such column: missing", observation)
+            return case.gold_sql
+
+        summary = run_sql_eval_with_repair(
+            "experiments/sql/qwen35_0_8b__exp001_sql_sft.json",
+            model_variant="adapter",
+            predictor=first_predictor,
+            repair_predictor=repair_predictor,
+        )
+
+        self.assertEqual(summary.case_count, 2)
+        self.assertEqual(summary.first_passed_count, 1)
+        self.assertEqual(summary.final_passed_count, 2)
+        self.assertEqual(summary.repair_attempt_count, 1)
+        self.assertEqual(summary.repair_success_count, 1)
+        failed_then_repaired = [
+            record for record in summary.records if not record.first_result.passed
+        ][0]
+        self.assertEqual(failed_then_repaired.first_result.predicted_sql, "SELECT missing FROM employees;")
+        self.assertEqual(failed_then_repaired.repair_attempts[0].input_failure_type, "prediction_schema_error")
+        self.assertTrue(Path(summary.result_path).exists())
+
+    def test_run_sql_eval_with_repair_respects_configured_failure_types(self) -> None:
+        cases = load_sql_eval_cases("datasets/sql/smoke/sql_smoke_v1.jsonl")
+
+        def first_predictor(case):
+            if case.case_id == cases[0].case_id:
+                return "SELECT name FROM employees;"
+            return case.gold_sql
+
+        def repair_predictor(case, previous_sql, observation):
+            raise AssertionError("row-count mismatches were not configured for repair")
+
+        summary = run_sql_eval_with_repair(
+            "experiments/sql/qwen35_0_8b__exp001_sql_sft.json",
+            model_variant="adapter",
+            predictor=first_predictor,
+            repair_predictor=repair_predictor,
+            repair_failure_types={"prediction_schema_error"},
+        )
+
+        self.assertEqual(summary.first_passed_count, 1)
+        self.assertEqual(summary.final_passed_count, 1)
+        self.assertEqual(summary.repair_attempt_count, 0)
+
+    def test_build_repair_eval_messages_include_observation_without_target(self) -> None:
+        case = load_sql_eval_cases("datasets/sql/smoke/sql_smoke_v1.jsonl")[0]
+
+        messages = build_repair_eval_messages(
+            case,
+            previous_sql="SELECT missing FROM employees;",
+            execution_observation="Execution error: no such column: missing",
+        )
+
+        self.assertEqual([message["role"] for message in messages], ["system", "user"])
+        self.assertIn("Previous SQL:", messages[1]["content"])
+        self.assertIn("Execution Observation:", messages[1]["content"])
+        self.assertNotIn(case.gold_sql, messages[1]["content"])
 
     def test_analyze_sql_eval_result_classifies_failures(self) -> None:
         result_payload = {

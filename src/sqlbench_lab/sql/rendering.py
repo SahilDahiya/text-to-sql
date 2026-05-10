@@ -40,6 +40,26 @@ def build_eval_messages(case: SQLEvalCase) -> list[dict[str, str]]:
     ]
 
 
+def build_repair_eval_messages(
+    case: SQLEvalCase,
+    *,
+    previous_sql: str,
+    execution_observation: str,
+) -> list[dict[str, str]]:
+    user_content = "\n\n".join(
+        [
+            _base_user_content(case),
+            f"Previous SQL:\n{previous_sql}",
+            f"Execution Observation:\n{execution_observation}",
+            "Return corrected SQL only.",
+        ]
+    )
+    return [
+        {"role": "system", "content": SQL_SYSTEM_PROMPT},
+        {"role": "user", "content": user_content},
+    ]
+
+
 def _base_user_content(example: SQLEvalCase | SQLTrainExample | SQLRepairExample) -> str:
     sections = [
         f"Dialect:\n{example.dialect}",

@@ -88,6 +88,27 @@ def classify_sql_eval_failure(record: dict[str, Any]) -> str:
     )
 
 
+def sql_eval_failure_observation(record: dict[str, Any], *, failure_type: str | None = None) -> str:
+    """Build the repair-loop observation for a failed eval record."""
+
+    resolved_failure_type = failure_type or classify_sql_eval_failure(record)
+    prediction_error = _optional_text(record.get("prediction_error"))
+    gold_error = _optional_text(record.get("gold_error"))
+    if prediction_error is not None:
+        return f"Execution error ({resolved_failure_type}): {prediction_error}"
+    if gold_error is not None:
+        return f"Gold SQL execution error ({resolved_failure_type}): {gold_error}"
+
+    predicted_rows = _rows(record.get("predicted_rows"))
+    gold_rows = _rows(record.get("gold_rows"))
+    return (
+        f"Result mismatch ({resolved_failure_type}): predicted {len(predicted_rows)} row(s), "
+        f"gold returned {len(gold_rows)} row(s). "
+        f"Predicted preview: {json.dumps(predicted_rows[:3], ensure_ascii=True)}. "
+        f"Gold preview: {json.dumps(gold_rows[:3], ensure_ascii=True)}."
+    )
+
+
 def _analyze_failure(record: dict[str, Any]) -> SQLEvalFailureAnalysis:
     predicted_rows = _rows(record.get("predicted_rows"))
     gold_rows = _rows(record.get("gold_rows"))

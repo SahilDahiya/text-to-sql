@@ -13,6 +13,7 @@ from .sql import (
     load_sql_sft_manifest,
     load_sql_train_examples,
     run_sql_eval,
+    run_sql_eval_with_repair,
     run_sql_sft,
 )
 
@@ -68,6 +69,19 @@ def main(argv: list[str] | None = None) -> int:
     eval_sql.add_argument("--mlflow", action="store_true", help="Log the eval run to MLflow")
     eval_sql.add_argument("--mlflow-tracking-uri", help="Override the MLflow tracking URI")
     eval_sql.add_argument("--mlflow-experiment", help="Override the MLflow experiment name")
+
+    eval_repair = sql_subparsers.add_parser("eval-repair", help="Run SQL eval with execution-guided repair retries")
+    eval_repair.add_argument("--manifest", required=True, help="Path to SQL SFT manifest JSON")
+    eval_repair.add_argument("--model", choices=["base", "adapter"], required=True, help="Model variant to evaluate")
+    eval_repair.add_argument("--dataset", help="Override eval dataset JSONL path")
+    eval_repair.add_argument("--max-new-tokens", type=int, default=128, help="Maximum generated SQL tokens")
+    eval_repair.add_argument("--max-repair-attempts", type=int, default=1, help="Repair attempts per failed case")
+    eval_repair.add_argument(
+        "--repair-failure-type",
+        action="append",
+        dest="repair_failure_types",
+        help="Failure type eligible for repair; repeat to allow multiple types",
+    )
 
     analyze_eval = sql_subparsers.add_parser("analyze-eval", help="Analyze a SQL eval result JSON")
     analyze_eval.add_argument("--result", required=True, help="Path to SQL eval result JSON")
@@ -193,6 +207,24 @@ def _run_sql_command(args: argparse.Namespace) -> int:
             f"{summary.experiment_id} model={summary.model_variant} "
             f"passed={summary.passed_count}/{summary.case_count} "
             f"pass_rate={summary.pass_rate:.4f}"
+        )
+        return 0
+    if args.sql_command == "eval-repair":
+        summary = run_sql_eval_with_repair(
+            args.manifest,
+            model_variant=args.model,
+            eval_dataset=args.dataset,
+            max_new_tokens=args.max_new_tokens,
+            max_repair_attempts=args.max_repair_attempts,
+            repair_failure_types=set(args.repair_failure_types) if args.repair_failure_types else None,
+        )
+        print(
+            "completed SQL repair eval "
+            f"{summary.experiment_id} model={summary.model_variant} "
+            f"first_passed={summary.first_passed_count}/{summary.case_count} "
+            f"final_passed={summary.final_passed_count}/{summary.case_count} "
+            f"repair_attempts={summary.repair_attempt_count} "
+            f"repair_successes={summary.repair_success_count}"
         )
         return 0
     if args.sql_command == "analyze-eval":

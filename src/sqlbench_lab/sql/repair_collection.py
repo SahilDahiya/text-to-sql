@@ -9,7 +9,7 @@ from typing import Any
 
 from sqlbench_lab.paths import WORKSPACE_ROOT
 
-from .eval_analysis import classify_sql_eval_failure
+from .eval_analysis import classify_sql_eval_failure, sql_eval_failure_observation
 from .loaders import load_sql_eval_cases, load_sql_repair_examples
 from .models import SQLEvalCase
 
@@ -121,7 +121,7 @@ def _repair_row(
         "schema_text": case.schema_text,
         "knowledge_text": case.knowledge_text,
         "previous_sql": previous_sql,
-        "execution_error": _repair_observation(record=record, failure_type=failure_type),
+        "execution_error": sql_eval_failure_observation(record, failure_type=failure_type),
         "target_sql": case.gold_sql,
         "task_type": case.task_type,
         "provenance": {
@@ -139,24 +139,6 @@ def _repair_row(
     }
 
 
-def _repair_observation(*, record: dict[str, Any], failure_type: str) -> str:
-    prediction_error = _optional_string(record.get("prediction_error"))
-    gold_error = _optional_string(record.get("gold_error"))
-    if prediction_error is not None:
-        return f"Execution error ({failure_type}): {prediction_error}"
-    if gold_error is not None:
-        return f"Gold SQL execution error ({failure_type}): {gold_error}"
-
-    predicted_rows = _rows(record.get("predicted_rows"))
-    gold_rows = _rows(record.get("gold_rows"))
-    return (
-        f"Result mismatch ({failure_type}): predicted {len(predicted_rows)} row(s), "
-        f"gold returned {len(gold_rows)} row(s). "
-        f"Predicted preview: {json.dumps(predicted_rows[:3], ensure_ascii=True)}. "
-        f"Gold preview: {json.dumps(gold_rows[:3], ensure_ascii=True)}."
-    )
-
-
 def _allowed_failure_types(*, failure_types: set[str] | None, strong_only: bool) -> set[str] | None:
     if failure_types is not None:
         return failure_types
@@ -171,18 +153,6 @@ def _repair_row_id(*, case: SQLEvalCase, model_variant: str, failure_type: str) 
 
 def _safe_id(value: str) -> str:
     return "".join(character if character.isalnum() or character in {"_", "-"} else "_" for character in value)
-
-
-def _rows(value: Any) -> list[Any]:
-    if isinstance(value, list):
-        return value
-    return []
-
-
-def _optional_string(value: Any) -> str | None:
-    if value is None:
-        return None
-    return str(value)
 
 
 def _resolve_workspace_path(path: str | Path) -> Path:

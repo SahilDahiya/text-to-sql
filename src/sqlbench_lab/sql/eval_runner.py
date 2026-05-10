@@ -8,12 +8,20 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Callable
 
-from .eval_types import SQLCaseEvalRecord, SQLEvalRunSummary
+from .eval_analysis import classify_sql_eval_failure, sql_eval_failure_observation
+from .eval_types import (
+    SQLCaseEvalRecord,
+    SQLEvalRunSummary,
+    SQLRepairAttemptRecord,
+    SQLRepairEvalCaseRecord,
+    SQLRepairEvalRunSummary,
+)
 from .evaluator import evaluate_sqlite_case
 from .loaders import load_sql_eval_cases
 from .manifest import SQLSFTExperimentManifest, load_sql_sft_manifest
 from .models import SQLEvalCase
-from .rendering import build_eval_messages
+from .rendering import build_eval_messages, build_repair_eval_messages
+from .repair_collection import STRONG_REPAIR_FAILURE_TYPES
 from .training import (
     _ensure_pad_token,
     _import_training_stack,
@@ -24,6 +32,7 @@ from .training import (
 )
 
 SQL_MODEL_VARIANTS = {"base", "adapter"}
+SQLRepairPredictor = Callable[[SQLEvalCase, str, str], str]
 
 
 def run_sql_eval(
@@ -85,6 +94,88 @@ def run_sql_eval(
     return summary
 
 
+def run_sql_eval_with_repair(
+    manifest_path: str | Path,
+    *,
+    model_variant: str,
+    eval_dataset: str | Path | None = None,
+    max_new_tokens: int = 128,
+    max_repair_attempts: int = 1,
+    repair_failure_types: set[str] | None = None,
+    predictor: Callable[[SQLEvalCase], str] | None = None,
+    repair_predictor: SQLRepairPredictor | None = None,
+) -> SQLRepairEvalRunSummary:
+    """Run SQL eval with execution-guided repair attempts after failed first pass."""
+
+    if model_variant not in SQL_MODEL_VARIANTS:
+        raise ValueError(f"model_variant must be one of {sorted(SQL_MODEL_VARIANTS)}")
+    if max_repair_attempts < 0:
+        raise ValueError("max_repair_attempts must be >= 0")
+
+    manifest = load_sql_sft_manifest(manifest_path)
+    eval_dataset_path = str(eval_dataset) if eval_dataset is not None else manifest.eval_plan.smoke_dataset
+    cases = load_sql_eval_cases(eval_dataset_path)
+    if not cases:
+        raise ValueError("SQL eval requires at least one eval case")
+
+    result_path = _repair_eval_result_path(manifest, model_variant, eval_dataset_path=eval_dataset_path)
+    result_path.parent.mkdir(parents=True, exist_ok=True)
+    adapter_dir = manifest.resolve_workspace_path(manifest.output_paths.adapter_dir)
+    predict_sql, predict_repair_sql = _resolve_repair_predictors(
+        manifest=manifest,
+        model_variant=model_variant,
+        adapter_dir=adapter_dir,
+        max_new_tokens=max_new_tokens,
+        predictor=predictor,
+        repair_predictor=repair_predictor,
+    )
+    allowed_failure_types = (
+        set(STRONG_REPAIR_FAILURE_TYPES)
+        if repair_failure_types is None
+        else set(repair_failure_types)
+    )
+
+    records = [
+        _evaluate_case_with_repair(
+            case,
+            model_variant=model_variant,
+            predict_sql=predict_sql,
+            repair_predict_sql=predict_repair_sql,
+            allowed_failure_types=allowed_failure_types,
+            max_repair_attempts=max_repair_attempts,
+        )
+        for case in cases
+    ]
+    first_passed_count = sum(1 for record in records if record.first_result.passed)
+    final_passed_count = sum(1 for record in records if record.final_result.passed)
+    repair_attempt_count = sum(len(record.repair_attempts) for record in records)
+    repair_success_count = sum(
+        1
+        for record in records
+        if not record.first_result.passed and record.final_result.passed
+    )
+    summary = SQLRepairEvalRunSummary(
+        experiment_id=manifest.experiment_id,
+        base_model=manifest.student.base_model,
+        model_variant=model_variant,
+        adapter_dir=str(adapter_dir) if model_variant == "adapter" else None,
+        eval_dataset=eval_dataset_path,
+        result_path=str(result_path),
+        case_count=len(records),
+        first_passed_count=first_passed_count,
+        first_pass_rate=first_passed_count / len(records),
+        final_passed_count=final_passed_count,
+        final_pass_rate=final_passed_count / len(records),
+        repair_attempt_count=repair_attempt_count,
+        repair_success_count=repair_success_count,
+        repair_failure_types=tuple(sorted(allowed_failure_types)),
+        max_repair_attempts=max_repair_attempts,
+        records=records,
+    )
+    _write_repair_eval_summary(result_path, summary)
+    return summary
+
+
 def extract_generated_sql(text: str) -> str:
     """Normalize model text into the SQL string passed to execution eval."""
 
@@ -106,6 +197,26 @@ def _build_hf_predictor(
     adapter_dir: Path,
     max_new_tokens: int,
 ) -> Callable[[SQLEvalCase], str]:
+    predict_messages = _build_hf_message_predictor(
+        manifest=manifest,
+        model_variant=model_variant,
+        adapter_dir=adapter_dir,
+        max_new_tokens=max_new_tokens,
+    )
+
+    def predict(case: SQLEvalCase) -> str:
+        return predict_messages(build_eval_messages(case))
+
+    return predict
+
+
+def _build_hf_message_predictor(
+    *,
+    manifest: SQLSFTExperimentManifest,
+    model_variant: str,
+    adapter_dir: Path,
+    max_new_tokens: int,
+) -> Callable[[list[dict[str, str]]], str]:
     torch, transformers, peft = _import_training_stack()
     tokenizer_like = _load_tokenizer_like(transformers, manifest.student.base_model)
     _ensure_pad_token(tokenizer_like)
@@ -119,8 +230,7 @@ def _build_hf_predictor(
     if hasattr(model, "cuda") and torch.cuda.is_available():
         model = model.cuda()
 
-    def predict(case: SQLEvalCase) -> str:
-        messages = build_eval_messages(case)
+    def predict(messages: list[dict[str, str]]) -> str:
         prompt = render_sql_sft_prompt([*messages, {"role": "assistant", "content": ""}])
         encoded = tokenizer(prompt, return_tensors="pt", add_special_tokens=False)
         encoded = {
@@ -141,6 +251,40 @@ def _build_hf_predictor(
         return extract_generated_sql(generated_text)
 
     return predict
+
+
+def _resolve_repair_predictors(
+    *,
+    manifest: SQLSFTExperimentManifest,
+    model_variant: str,
+    adapter_dir: Path,
+    max_new_tokens: int,
+    predictor: Callable[[SQLEvalCase], str] | None,
+    repair_predictor: SQLRepairPredictor | None,
+) -> tuple[Callable[[SQLEvalCase], str], SQLRepairPredictor]:
+    if predictor is not None and repair_predictor is not None:
+        return predictor, repair_predictor
+
+    predict_messages = _build_hf_message_predictor(
+        manifest=manifest,
+        model_variant=model_variant,
+        adapter_dir=adapter_dir,
+        max_new_tokens=max_new_tokens,
+    )
+
+    resolved_predictor = predictor or (
+        lambda case: predict_messages(build_eval_messages(case))
+    )
+    resolved_repair_predictor = repair_predictor or (
+        lambda case, previous_sql, observation: predict_messages(
+            build_repair_eval_messages(
+                case,
+                previous_sql=previous_sql,
+                execution_observation=observation,
+            )
+        )
+    )
+    return resolved_predictor, resolved_repair_predictor
 
 
 def _evaluate_case(
@@ -164,6 +308,84 @@ def _evaluate_case(
     )
 
 
+def _evaluate_case_with_repair(
+    case: SQLEvalCase,
+    *,
+    model_variant: str,
+    predict_sql: Callable[[SQLEvalCase], str],
+    repair_predict_sql: SQLRepairPredictor,
+    allowed_failure_types: set[str],
+    max_repair_attempts: int,
+) -> SQLRepairEvalCaseRecord:
+    first_sql = predict_sql(case)
+    first_result = _evaluate_predicted_sql(case, model_variant=model_variant, predicted_sql=first_sql)
+    current_result = first_result
+    repair_attempts: list[SQLRepairAttemptRecord] = []
+    for attempt_index in range(1, max_repair_attempts + 1):
+        if current_result.passed:
+            break
+        current_failure_type = _failure_type_for_record(current_result)
+        if current_failure_type not in allowed_failure_types:
+            break
+        observation = sql_eval_failure_observation(
+            _record_payload(current_result),
+            failure_type=current_failure_type,
+        )
+        repaired_sql = repair_predict_sql(case, current_result.predicted_sql, observation)
+        repaired_result = _evaluate_predicted_sql(
+            case,
+            model_variant=model_variant,
+            predicted_sql=repaired_sql,
+        )
+        repair_attempts.append(
+            SQLRepairAttemptRecord(
+                attempt_index=attempt_index,
+                input_sql=current_result.predicted_sql,
+                input_failure_type=current_failure_type,
+                observation=observation,
+                repaired_sql=repaired_sql,
+                result=repaired_result,
+            )
+        )
+        current_result = repaired_result
+    return SQLRepairEvalCaseRecord(
+        case_id=case.case_id,
+        task_id=case.task_id,
+        model_variant=model_variant,
+        first_result=first_result,
+        final_result=current_result,
+        repair_attempts=repair_attempts,
+    )
+
+
+def _evaluate_predicted_sql(
+    case: SQLEvalCase,
+    *,
+    model_variant: str,
+    predicted_sql: str,
+) -> SQLCaseEvalRecord:
+    result = evaluate_sqlite_case(case, predicted_sql=predicted_sql)
+    return SQLCaseEvalRecord(
+        case_id=case.case_id,
+        task_id=case.task_id,
+        model_variant=model_variant,
+        predicted_sql=predicted_sql,
+        passed=result.passed,
+        prediction_error=result.prediction_error,
+        gold_error=result.gold_error,
+        predicted_rows=result.predicted_rows,
+        gold_rows=result.gold_rows,
+    )
+
+
+def _failure_type_for_record(record: SQLCaseEvalRecord) -> str:
+    return classify_sql_eval_failure(_record_payload(record))
+
+
+def _record_payload(record: SQLCaseEvalRecord) -> dict[str, object]:
+    return asdict(record)
+
+
 def _eval_result_path(
     manifest: SQLSFTExperimentManifest,
     model_variant: str,
@@ -180,6 +402,16 @@ def _eval_result_path(
     raise ValueError(f"unsupported model_variant: {model_variant}")
 
 
+def _repair_eval_result_path(
+    manifest: SQLSFTExperimentManifest,
+    model_variant: str,
+    *,
+    eval_dataset_path: str | Path,
+) -> Path:
+    dataset_stem = Path(eval_dataset_path).stem
+    return _workspace_results_root() / manifest.experiment_id / f"repair__{model_variant}__{dataset_stem}.json"
+
+
 def _workspace_results_root() -> Path:
     from sqlbench_lab.paths import WORKSPACE_ROOT
 
@@ -187,6 +419,10 @@ def _workspace_results_root() -> Path:
 
 
 def _write_eval_summary(path: Path, summary: SQLEvalRunSummary) -> None:
+    path.write_text(json.dumps(asdict(summary), indent=2, ensure_ascii=True) + "\n", encoding="utf-8")
+
+
+def _write_repair_eval_summary(path: Path, summary: SQLRepairEvalRunSummary) -> None:
     path.write_text(json.dumps(asdict(summary), indent=2, ensure_ascii=True) + "\n", encoding="utf-8")
 
 
