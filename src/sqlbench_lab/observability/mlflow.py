@@ -1,4 +1,4 @@
-"""MLflow logging for SQL training experiments."""
+"""MLflow logging for SQL experiments."""
 
 from __future__ import annotations
 
@@ -89,6 +89,70 @@ def log_sql_sft_run(
             mlflow.log_artifact(str(adapter_config), artifact_path="adapter")
 
 
+def log_sql_eval_run(
+    *,
+    manifest: Any,
+    manifest_path: Path,
+    summary: Any,
+    result_path: Path,
+    tracking_uri: str | None = None,
+    experiment_name: str | None = None,
+) -> None:
+    """Log one SQL eval run to MLflow."""
+
+    try:
+        import mlflow
+    except ImportError as exc:
+        raise ImportError(
+            "MLflow logging requires the observability dependency group. "
+            "Run with `uv run --group training --group observability ...`."
+        ) from exc
+
+    mlflow.set_tracking_uri(_resolve_tracking_uri(tracking_uri))
+    mlflow.set_experiment(
+        experiment_name
+        or os.environ.get(MLFLOW_EXPERIMENT_ENV)
+        or DEFAULT_MLFLOW_EXPERIMENT
+    )
+    with mlflow.start_run(run_name=f"{manifest.experiment_id}__eval__{summary.model_variant}"):
+        mlflow.set_tags(
+            {
+                "sqlbench.experiment_id": manifest.experiment_id,
+                "sqlbench.run_kind": "eval",
+                "sqlbench.model_variant": summary.model_variant,
+                "sqlbench.stage": manifest.training_method.stage,
+                "sqlbench.base_model": manifest.student.base_model,
+                "sqlbench.adapter_name": manifest.student.adapter_name,
+                "sqlbench.git_commit": _git_commit(),
+            }
+        )
+        mlflow.log_params(
+            {
+                "student.model_family": manifest.student.model_family,
+                "student.base_model": manifest.student.base_model,
+                "student.adapter_name": manifest.student.adapter_name,
+                "eval.dataset": summary.eval_dataset,
+                "eval.case_count": summary.case_count,
+                "eval.model_variant": summary.model_variant,
+                "eval.adapter_dir": summary.adapter_dir or "",
+            }
+        )
+        mlflow.log_metrics(
+            {
+                "eval.pass_rate": float(summary.pass_rate),
+                "eval.passed_count": float(summary.passed_count),
+                "eval.case_count": float(summary.case_count),
+            }
+        )
+        for record in summary.records:
+            mlflow.log_metric(
+                f"eval.case.{_safe_key(record.case_id)}.passed",
+                1.0 if record.passed else 0.0,
+            )
+        mlflow.log_artifact(str(manifest_path))
+        mlflow.log_artifact(str(result_path), artifact_path="eval")
+
+
 def _resolve_tracking_uri(tracking_uri: str | None) -> str:
     if tracking_uri:
         return tracking_uri
@@ -122,7 +186,7 @@ def _numeric_metrics(values: dict[str, Any], *, prefix: str) -> dict[str, float]
     for key, value in values.items():
         if isinstance(value, bool):
             continue
-        if isinstance(value, int | float):
+        if isinstance(value, (int, float)):
             metrics[f"{prefix}.{key}"] = float(value)
     return metrics
 

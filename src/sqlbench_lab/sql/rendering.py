@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from .models import SQLRepairExample, SQLTrainExample
+from .models import SQLEvalCase, SQLRepairExample, SQLTrainExample
 
 SQL_SYSTEM_PROMPT = (
     "You are a precise text-to-SQL model. Return only the final SQL statement. "
@@ -33,7 +33,14 @@ def build_repair_messages(example: SQLRepairExample) -> list[dict[str, str]]:
     ]
 
 
-def _base_user_content(example: SQLTrainExample | SQLRepairExample) -> str:
+def build_eval_messages(case: SQLEvalCase) -> list[dict[str, str]]:
+    return [
+        {"role": "system", "content": SQL_SYSTEM_PROMPT},
+        {"role": "user", "content": _base_user_content(case)},
+    ]
+
+
+def _base_user_content(example: SQLEvalCase | SQLTrainExample | SQLRepairExample) -> str:
     sections = [
         f"Dialect:\n{example.dialect}",
         f"Database ID:\n{example.db_id}",
@@ -43,4 +50,3 @@ def _base_user_content(example: SQLTrainExample | SQLRepairExample) -> str:
         sections.append(f"Knowledge:\n{example.knowledge_text}")
     sections.append(f"Question:\n{example.question}")
     return "\n\n".join(sections)
-

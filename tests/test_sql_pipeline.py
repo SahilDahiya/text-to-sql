@@ -13,10 +13,12 @@ from sqlbench_lab.sql import (
     build_sqlite_fixture,
     build_train_messages,
     evaluate_sqlite_case,
+    extract_generated_sql,
     load_sql_eval_cases,
     load_sql_repair_examples,
     load_sql_sft_manifest,
     load_sql_train_examples,
+    run_sql_eval,
     run_sql_sft,
     tokenize_sql_sft_messages,
 )
@@ -143,6 +145,30 @@ class SQLPipelineTests(unittest.TestCase):
 
         self.assertIn("dry_run=True", result.stdout)
         self.assertIn("train_rows=5", result.stdout)
+
+    def test_run_sql_eval_scores_with_result_equivalence(self) -> None:
+        result_path = WORKSPACE_ROOT / "results/sql/qwen35_0_8b__exp001_sql_sft/post_train_smoke.json"
+        if result_path.exists():
+            result_path.unlink()
+
+        summary = run_sql_eval(
+            "experiments/sql/qwen35_0_8b__exp001_sql_sft.json",
+            model_variant="adapter",
+            predictor=lambda case: case.gold_sql,
+        )
+
+        self.assertEqual(summary.case_count, 2)
+        self.assertEqual(summary.passed_count, 2)
+        self.assertEqual(summary.pass_rate, 1.0)
+        self.assertTrue(result_path.exists())
+        payload = json.loads(result_path.read_text(encoding="utf-8"))
+        self.assertEqual(payload["model_variant"], "adapter")
+        self.assertEqual(payload["passed_count"], 2)
+
+    def test_extract_generated_sql_strips_code_fence_and_trailing_text(self) -> None:
+        generated = "```sql\nSELECT name FROM employees;\n```\nextra"
+
+        self.assertEqual(extract_generated_sql(generated), "SELECT name FROM employees;")
 
     def test_sqlite_fixture_builder_creates_company_small_database(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

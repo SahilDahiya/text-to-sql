@@ -88,6 +88,7 @@ The first checked-in foundation includes:
 - optional MLflow experiment logging for SQL SFT runs
 - direct-SQL and repair prompt renderers
 - result-equivalence SQLite evaluation
+- base-vs-adapter smoke evaluation CLI with JSON result output
 
 ## Experiment Observability
 
@@ -133,12 +134,29 @@ The SQL SFT logger records:
 - train dataset row counts and smoke eval case count
 - LoRA and trainer hyperparameters
 - train summary metrics, trainer metrics, manifest, train summary, and adapter config
+- eval pass rate, per-case pass/fail metrics, manifest, and eval result JSON
+
+Run base and adapter smoke evals with:
+
+```bash
+uv run --group training --group observability python -m sqlbench_lab.cli sql eval \
+  --manifest experiments/sql/qwen35_0_8b__exp001_sql_sft.json \
+  --model base \
+  --mlflow
+```
+
+```bash
+uv run --group training --group observability python -m sqlbench_lab.cli sql eval \
+  --manifest experiments/sql/qwen35_0_8b__exp001_sql_sft.json \
+  --model adapter \
+  --mlflow
+```
 
 ## Next Artifacts To Add
 
-- baseline capture for untrained `qwen3.5:0.8b`
-- post-train eval command against the smoke set
-- adapter-vs-base eval comparison in MLflow
+- larger local dev eval set beyond the smoke cases
+- adapter-vs-base eval dashboard conventions in MLflow
+- execution-repair SFT dataset and runner stage
 
 ## Non-Negotiables
 

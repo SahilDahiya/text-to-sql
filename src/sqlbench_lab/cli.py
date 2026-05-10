@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import argparse
 
-from .sql import load_sql_eval_cases, load_sql_sft_manifest, load_sql_train_examples, run_sql_sft
+from .sql import load_sql_eval_cases, load_sql_sft_manifest, load_sql_train_examples, run_sql_eval, run_sql_sft
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -29,6 +29,14 @@ def main(argv: list[str] | None = None) -> int:
     run_sft.add_argument("--mlflow", action="store_true", help="Log the run to MLflow")
     run_sft.add_argument("--mlflow-tracking-uri", help="Override the MLflow tracking URI")
     run_sft.add_argument("--mlflow-experiment", help="Override the MLflow experiment name")
+
+    eval_sql = sql_subparsers.add_parser("eval", help="Run SQL smoke evaluation from a manifest")
+    eval_sql.add_argument("--manifest", required=True, help="Path to SQL SFT manifest JSON")
+    eval_sql.add_argument("--model", choices=["base", "adapter"], required=True, help="Model variant to evaluate")
+    eval_sql.add_argument("--max-new-tokens", type=int, default=128, help="Maximum generated SQL tokens")
+    eval_sql.add_argument("--mlflow", action="store_true", help="Log the eval run to MLflow")
+    eval_sql.add_argument("--mlflow-tracking-uri", help="Override the MLflow tracking URI")
+    eval_sql.add_argument("--mlflow-experiment", help="Override the MLflow experiment name")
 
     args = parser.parse_args(argv)
     if args.version:
@@ -77,6 +85,22 @@ def _run_sql_command(args: argparse.Namespace) -> int:
         print(
             "completed SQL SFT "
             f"{summary.experiment_id} dry_run={summary.dry_run} train_rows={summary.train_row_count}"
+        )
+        return 0
+    if args.sql_command == "eval":
+        summary = run_sql_eval(
+            args.manifest,
+            model_variant=args.model,
+            max_new_tokens=args.max_new_tokens,
+            log_mlflow=args.mlflow or None,
+            mlflow_tracking_uri=args.mlflow_tracking_uri,
+            mlflow_experiment=args.mlflow_experiment,
+        )
+        print(
+            "completed SQL eval "
+            f"{summary.experiment_id} model={summary.model_variant} "
+            f"passed={summary.passed_count}/{summary.case_count} "
+            f"pass_rate={summary.pass_rate:.4f}"
         )
         return 0
     raise ValueError("missing SQL command")
