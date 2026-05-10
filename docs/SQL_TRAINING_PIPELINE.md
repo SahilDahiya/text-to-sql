@@ -198,6 +198,53 @@ uv run --group training --group observability python -m sqlbench_lab.cli sql eva
   --mlflow
 ```
 
+## Exp003 One-Shot Gate
+
+The current one-shot improvement lane is:
+
+- train: `datasets/sql/train/spider_train_100_v1.jsonl`
+- train: `datasets/sql/train/bird_train_100_v1.jsonl`
+- eval: `datasets/sql/eval/spider_validation_25_v1.jsonl`
+- eval: `datasets/sql/eval/bird_validation_25_v1.jsonl`
+- manifest: `experiments/sql/qwen35_0_8b__exp003_one_shot_spider_bird_sft.json`
+
+This experiment is direct SQL only:
+
+`question + schema + optional knowledge -> SQL`
+
+Do not include repair examples, failed SQL, execution observations, or retry loops in this
+score. The eval commands must use `sql eval`, not `sql eval-repair`.
+
+Train with MLflow:
+
+```bash
+uv run --group training --group observability python -m sqlbench_lab.cli sql run-sft \
+  --manifest experiments/sql/qwen35_0_8b__exp003_one_shot_spider_bird_sft.json \
+  --mlflow
+```
+
+Evaluate the fixed local slices:
+
+```bash
+uv run --group training --group observability python -m sqlbench_lab.cli sql eval \
+  --manifest experiments/sql/qwen35_0_8b__exp003_one_shot_spider_bird_sft.json \
+  --dataset datasets/sql/eval/spider_validation_25_v1.jsonl \
+  --model base \
+  --mlflow
+```
+
+```bash
+uv run --group training --group observability python -m sqlbench_lab.cli sql eval \
+  --manifest experiments/sql/qwen35_0_8b__exp003_one_shot_spider_bird_sft.json \
+  --dataset datasets/sql/eval/spider_validation_25_v1.jsonl \
+  --model adapter \
+  --mlflow
+```
+
+Repeat the same base/adapter pair for `datasets/sql/eval/bird_validation_25_v1.jsonl`.
+MLflow logs pass rate plus failure buckets so we can tell whether a one-shot gain comes
+from fewer schema errors, fewer syntax errors, or fewer wrong-result queries.
+
 Analyze a completed eval result before choosing repair work:
 
 ```bash

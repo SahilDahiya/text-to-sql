@@ -103,6 +103,11 @@ For eval runs, compare:
 - `eval.pass_rate`
 - `eval.passed_count`
 - `eval.case_count`
+- `eval.failed_count`
+- `eval.failure.prediction_schema_error`
+- `eval.failure.prediction_syntax_error`
+- `eval.failure.row_count_mismatch`
+- `eval.failure.row_value_mismatch`
 
 After an eval finishes, generate a failure analysis artifact:
 

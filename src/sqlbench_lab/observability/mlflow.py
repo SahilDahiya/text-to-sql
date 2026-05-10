@@ -190,6 +190,7 @@ def log_sql_eval_run(
                 "eval.pass_rate": float(summary.pass_rate),
                 "eval.passed_count": float(summary.passed_count),
                 "eval.case_count": float(summary.case_count),
+                **_eval_failure_metrics(summary.records),
             }
         )
         for record in summary.records:
@@ -261,6 +262,27 @@ def _numeric_metrics(values: dict[str, Any], *, prefix: str) -> dict[str, float]
             continue
         if isinstance(value, (int, float)):
             metrics[f"{prefix}.{key}"] = float(value)
+    return metrics
+
+
+def _eval_failure_metrics(records: list[Any]) -> dict[str, float]:
+    from sqlbench_lab.sql.eval_analysis import classify_sql_eval_failure
+
+    failure_counts: dict[str, int] = {}
+    failed_count = 0
+    for record in records:
+        if bool(getattr(record, "passed", False)):
+            continue
+        failed_count += 1
+        failure_type = classify_sql_eval_failure(asdict(record))
+        failure_counts[failure_type] = failure_counts.get(failure_type, 0) + 1
+    metrics = {"eval.failed_count": float(failed_count)}
+    metrics.update(
+        {
+            f"eval.failure.{_safe_key(failure_type)}": float(count)
+            for failure_type, count in failure_counts.items()
+        }
+    )
     return metrics
 
 
