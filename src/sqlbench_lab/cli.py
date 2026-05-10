@@ -26,6 +26,9 @@ def main(argv: list[str] | None = None) -> int:
     run_sft = sql_subparsers.add_parser("run-sft", help="Run SQL LoRA SFT from a manifest")
     run_sft.add_argument("--manifest", required=True, help="Path to SQL SFT manifest JSON")
     run_sft.add_argument("--dry-run", action="store_true", help="Validate and render training rows only")
+    run_sft.add_argument("--mlflow", action="store_true", help="Log the run to MLflow")
+    run_sft.add_argument("--mlflow-tracking-uri", help="Override the MLflow tracking URI")
+    run_sft.add_argument("--mlflow-experiment", help="Override the MLflow experiment name")
 
     args = parser.parse_args(argv)
     if args.version:
@@ -64,7 +67,13 @@ def _run_sql_command(args: argparse.Namespace) -> int:
         )
         return 0
     if args.sql_command == "run-sft":
-        summary = run_sql_sft(args.manifest, dry_run=args.dry_run)
+        summary = run_sql_sft(
+            args.manifest,
+            dry_run=args.dry_run,
+            log_mlflow=args.mlflow or None,
+            mlflow_tracking_uri=args.mlflow_tracking_uri,
+            mlflow_experiment=args.mlflow_experiment,
+        )
         print(
             "completed SQL SFT "
             f"{summary.experiment_id} dry_run={summary.dry_run} train_rows={summary.train_row_count}"

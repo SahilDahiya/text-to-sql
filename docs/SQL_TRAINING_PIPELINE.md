@@ -85,14 +85,60 @@ The first checked-in foundation includes:
 - strict JSONL loaders
 - SQL SFT manifest loading
 - minimal SQL LoRA SFT runner with explicit `--dry-run`
+- optional MLflow experiment logging for SQL SFT runs
 - direct-SQL and repair prompt renderers
 - result-equivalence SQLite evaluation
+
+## Experiment Observability
+
+The source of truth for an experiment remains:
+
+- the checked-in experiment manifest
+- checked-in train/eval dataset files
+- the git commit
+- generated adapter artifacts under `artifacts/`
+- generated train/eval summary JSON files
+
+MLflow is used as a local run browser and comparison layer, not as the durable contract.
+
+Enable MLflow for a run with either:
+
+```bash
+SQLBENCH_MLFLOW=1 uv run --group training --group observability python -m sqlbench_lab.cli sql run-sft \
+  --manifest experiments/sql/qwen35_0_8b__exp001_sql_sft.json
+```
+
+or:
+
+```bash
+uv run --group training --group observability python -m sqlbench_lab.cli sql run-sft \
+  --manifest experiments/sql/qwen35_0_8b__exp001_sql_sft.json \
+  --mlflow
+```
+
+By default, local MLflow tracking state is written to `sqlite:///./mlflow.db`, which is
+ignored by git. MLflow artifact directories such as `./mlruns` are also ignored. Override
+the tracking location with `SQLBENCH_MLFLOW_TRACKING_URI`, `MLFLOW_TRACKING_URI`, or
+the CLI flag `--mlflow-tracking-uri`.
+
+Start the local UI with:
+
+```bash
+uv run --group observability mlflow ui --backend-store-uri sqlite:///./mlflow.db
+```
+
+The SQL SFT logger records:
+
+- experiment ID, stage, method, base model, adapter name, and git commit
+- train dataset row counts and smoke eval case count
+- LoRA and trainer hyperparameters
+- train summary metrics, trainer metrics, manifest, train summary, and adapter config
 
 ## Next Artifacts To Add
 
 - baseline capture for untrained `qwen3.5:0.8b`
 - post-train eval command against the smoke set
-- local model cache or network access for `Qwen/Qwen3.5-0.8B-Base`
+- adapter-vs-base eval comparison in MLflow
 
 ## Non-Negotiables
 

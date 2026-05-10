@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
-from .loaders import load_sql_train_examples
+from .loaders import load_sql_eval_cases, load_sql_train_examples
 from .manifest import SQLSFTExperimentManifest, load_sql_sft_manifest
 from .rendering import build_train_messages
+from .training_types import SQLSFTTrainingSummary
 
 IGNORE_INDEX = -100
 SUPPORTED_METHOD = "lora_sft"
@@ -17,27 +18,25 @@ SUPPORTED_LOSS_TARGET = "assistant_sql_only"
 SUPPORTED_STAGE = "direct_sql_sft"
 
 
-@dataclass(frozen=True)
-class SQLSFTTrainingSummary:
-    experiment_id: str
-    base_model: str
-    adapter_dir: str
-    train_row_count: int
-    dry_run: bool
-    trainable_parameters: int | None = None
-    total_parameters: int | None = None
-
-
-def run_sql_sft(manifest_path: str | Path, *, dry_run: bool = False) -> SQLSFTTrainingSummary:
+def run_sql_sft(
+    manifest_path: str | Path,
+    *,
+    dry_run: bool = False,
+    log_mlflow: bool | None = None,
+    mlflow_tracking_uri: str | None = None,
+    mlflow_experiment: str | None = None,
+) -> SQLSFTTrainingSummary:
     """Run one minimal manifest-driven SQL LoRA SFT experiment."""
 
     manifest = load_sql_sft_manifest(manifest_path)
     _validate_supported_manifest(manifest)
-    train_rows = [
-        row
-        for dataset_path in manifest.train_inputs.train_datasets
-        for row in load_sql_train_examples(dataset_path)
-    ]
+    resolved_manifest_path = _resolve_manifest_path(manifest_path)
+    train_rows = []
+    train_dataset_counts: dict[str, int] = {}
+    for dataset_path in manifest.train_inputs.train_datasets:
+        dataset_rows = load_sql_train_examples(dataset_path)
+        train_dataset_counts[dataset_path] = len(dataset_rows)
+        train_rows.extend(dataset_rows)
     if not train_rows:
         raise ValueError("SQL SFT training requires at least one train row")
 
@@ -45,10 +44,12 @@ def run_sql_sft(manifest_path: str | Path, *, dry_run: bool = False) -> SQLSFTTr
     experiment_root = manifest.resolve_workspace_path(manifest.output_paths.experiment_root)
     adapter_dir = manifest.resolve_workspace_path(manifest.output_paths.adapter_dir)
     train_summary_path = manifest.resolve_workspace_path(manifest.output_paths.train_summary_json)
+    smoke_eval_case_count = len(load_sql_eval_cases(manifest.eval_plan.smoke_dataset))
     experiment_root.mkdir(parents=True, exist_ok=True)
     train_summary_path.parent.mkdir(parents=True, exist_ok=True)
 
     if dry_run:
+        dry_run_summary_path = _dry_run_summary_path(train_summary_path)
         summary = SQLSFTTrainingSummary(
             experiment_id=manifest.experiment_id,
             base_model=manifest.student.base_model,
@@ -56,7 +57,20 @@ def run_sql_sft(manifest_path: str | Path, *, dry_run: bool = False) -> SQLSFTTr
             train_row_count=len(rendered_messages),
             dry_run=True,
         )
-        _write_summary(train_summary_path, summary)
+        _write_summary(dry_run_summary_path, summary)
+        _maybe_log_mlflow(
+            manifest=manifest,
+            manifest_path=resolved_manifest_path,
+            summary=summary,
+            summary_path=dry_run_summary_path,
+            train_dataset_counts=train_dataset_counts,
+            smoke_eval_case_count=smoke_eval_case_count,
+            training_config=_training_config(),
+            lora_config=_lora_config(),
+            explicit=log_mlflow,
+            tracking_uri=mlflow_tracking_uri,
+            experiment_name=mlflow_experiment,
+        )
         return summary
 
     torch, transformers, peft = _import_training_stack()
@@ -70,32 +84,26 @@ def run_sql_sft(manifest_path: str | Path, *, dry_run: bool = False) -> SQLSFTTr
     ]
 
     model = _load_trainable_model(transformers, manifest.student.base_model, torch_module=torch)
+    lora_config = _lora_config()
     model = peft.get_peft_model(
         model,
         peft.LoraConfig(
             task_type=peft.TaskType.CAUSAL_LM,
-            r=8,
-            lora_alpha=16,
-            lora_dropout=0.05,
-            target_modules=[
-                "q_proj",
-                "k_proj",
-                "v_proj",
-                "o_proj",
-                "gate_proj",
-                "up_proj",
-                "down_proj",
-            ],
+            r=lora_config["r"],
+            lora_alpha=lora_config["lora_alpha"],
+            lora_dropout=lora_config["lora_dropout"],
+            target_modules=lora_config["target_modules"],
         ),
     )
 
+    training_config = _training_config()
     training_args = transformers.TrainingArguments(
         output_dir=str(adapter_dir),
-        num_train_epochs=1.0,
-        per_device_train_batch_size=1,
-        gradient_accumulation_steps=1,
-        learning_rate=2e-4,
-        logging_steps=1,
+        num_train_epochs=training_config["num_train_epochs"],
+        per_device_train_batch_size=training_config["per_device_train_batch_size"],
+        gradient_accumulation_steps=training_config["gradient_accumulation_steps"],
+        learning_rate=training_config["learning_rate"],
+        logging_steps=training_config["logging_steps"],
         save_strategy="no",
         report_to=[],
         remove_unused_columns=False,
@@ -106,12 +114,13 @@ def run_sql_sft(manifest_path: str | Path, *, dry_run: bool = False) -> SQLSFTTr
         train_dataset=_SQLSFTDataset(encoded_examples),
         data_collator=_SQLSFTDataCollator(pad_token_id=_pad_token_id(tokenizer), torch_module=torch),
     )
-    trainer.train()
+    train_output = trainer.train()
     adapter_dir.mkdir(parents=True, exist_ok=True)
     model.save_pretrained(adapter_dir)
     tokenizer.save_pretrained(adapter_dir)
 
     trainable_parameters, total_parameters = _parameter_counts(model)
+    training_metrics = _training_metrics(train_output)
     summary = SQLSFTTrainingSummary(
         experiment_id=manifest.experiment_id,
         base_model=manifest.student.base_model,
@@ -120,8 +129,22 @@ def run_sql_sft(manifest_path: str | Path, *, dry_run: bool = False) -> SQLSFTTr
         dry_run=False,
         trainable_parameters=trainable_parameters,
         total_parameters=total_parameters,
+        training_metrics=training_metrics,
     )
     _write_summary(train_summary_path, summary)
+    _maybe_log_mlflow(
+        manifest=manifest,
+        manifest_path=resolved_manifest_path,
+        summary=summary,
+        summary_path=train_summary_path,
+        train_dataset_counts=train_dataset_counts,
+        smoke_eval_case_count=smoke_eval_case_count,
+        training_config=training_config,
+        lora_config=lora_config,
+        explicit=log_mlflow,
+        tracking_uri=mlflow_tracking_uri,
+        experiment_name=mlflow_experiment,
+    )
     return summary
 
 
@@ -167,6 +190,91 @@ def _validate_supported_manifest(manifest: SQLSFTExperimentManifest) -> None:
         raise ValueError(f"SQL SFT runner only supports stage={SUPPORTED_STAGE!r}")
     if manifest.train_inputs.validation_datasets:
         raise ValueError("SQL SFT runner does not support validation_datasets yet")
+
+
+def _training_config() -> dict[str, int | float]:
+    return {
+        "num_train_epochs": 1.0,
+        "per_device_train_batch_size": 1,
+        "gradient_accumulation_steps": 1,
+        "learning_rate": 2e-4,
+        "logging_steps": 1,
+    }
+
+
+def _lora_config() -> dict[str, Any]:
+    return {
+        "r": 8,
+        "lora_alpha": 16,
+        "lora_dropout": 0.05,
+        "target_modules": [
+            "q_proj",
+            "k_proj",
+            "v_proj",
+            "o_proj",
+            "gate_proj",
+            "up_proj",
+            "down_proj",
+        ],
+    }
+
+
+def _training_metrics(train_output: Any) -> dict[str, float]:
+    raw_metrics = getattr(train_output, "metrics", {})
+    if not isinstance(raw_metrics, dict):
+        return {}
+    metrics: dict[str, float] = {}
+    for key, value in raw_metrics.items():
+        if isinstance(value, bool):
+            continue
+        if isinstance(value, int | float):
+            metrics[str(key)] = float(value)
+    return metrics
+
+
+def _maybe_log_mlflow(
+    *,
+    manifest: SQLSFTExperimentManifest,
+    manifest_path: Path,
+    summary: SQLSFTTrainingSummary,
+    summary_path: Path,
+    train_dataset_counts: dict[str, int],
+    smoke_eval_case_count: int,
+    training_config: dict[str, Any],
+    lora_config: dict[str, Any],
+    explicit: bool | None,
+    tracking_uri: str | None,
+    experiment_name: str | None,
+) -> None:
+    from sqlbench_lab.observability import log_sql_sft_run, mlflow_enabled
+
+    if not mlflow_enabled(explicit):
+        return
+    log_sql_sft_run(
+        manifest=manifest,
+        manifest_path=manifest_path,
+        summary=summary,
+        summary_path=summary_path,
+        train_dataset_counts=train_dataset_counts,
+        smoke_eval_case_count=smoke_eval_case_count,
+        training_config=training_config,
+        lora_config=lora_config,
+        tracking_uri=tracking_uri,
+        experiment_name=experiment_name,
+    )
+
+
+def _resolve_manifest_path(manifest_path: str | Path) -> Path:
+    path = Path(manifest_path)
+    if path.is_absolute():
+        return path
+    return Path.cwd() / path
+
+
+def _dry_run_summary_path(train_summary_path: Path) -> Path:
+    return train_summary_path.with_name(
+        f"{train_summary_path.stem}.dry_run{train_summary_path.suffix}"
+    )
 
 
 def _import_training_stack() -> tuple[Any, Any, Any]:

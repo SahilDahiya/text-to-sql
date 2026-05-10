@@ -73,15 +73,19 @@ class SQLPipelineTests(unittest.TestCase):
 
     def test_run_sql_sft_dry_run_writes_training_summary(self) -> None:
         summary_path = WORKSPACE_ROOT / "artifacts/sql/qwen35_0_8b__exp001_sql_sft/train_summary.json"
+        dry_summary_path = WORKSPACE_ROOT / "artifacts/sql/qwen35_0_8b__exp001_sql_sft/train_summary.dry_run.json"
         if summary_path.exists():
             summary_path.unlink()
+        if dry_summary_path.exists():
+            dry_summary_path.unlink()
 
         summary = run_sql_sft("experiments/sql/qwen35_0_8b__exp001_sql_sft.json", dry_run=True)
 
         self.assertTrue(summary.dry_run)
         self.assertEqual(summary.train_row_count, 5)
-        self.assertTrue(summary_path.exists())
-        payload = json.loads(summary_path.read_text(encoding="utf-8"))
+        self.assertFalse(summary_path.exists())
+        self.assertTrue(dry_summary_path.exists())
+        payload = json.loads(dry_summary_path.read_text(encoding="utf-8"))
         self.assertEqual(payload["experiment_id"], "qwen35_0_8b__exp001_sql_sft")
         self.assertTrue(payload["dry_run"])
 

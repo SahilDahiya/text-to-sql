@@ -212,6 +212,8 @@ tempCodeRunnerFile.py
 # SQLBench Lab generated outputs
 artifacts/
 results/
+mlruns/
+mlflow.db
 
 # Marimo
 marimo/_static/
