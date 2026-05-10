@@ -210,6 +210,30 @@ errors, execution errors, row-count mismatches, and row-value mismatches. Use th
 adding repair retries; syntax/schema failures should get execution-guided repair first,
 while clean wrong-result failures usually need more examples, schema linking, or retrieval.
 
+Collect repair rows from the strongest execution-visible failures:
+
+```bash
+uv run python -m sqlbench_lab.cli sql collect-repair-data \
+  --result results/sql/qwen35_0_8b__exp002_spider_bird_sft/adapter__bird_validation_sample_v1.json \
+  --eval-dataset datasets/sql/eval/bird_validation_sample_v1.jsonl \
+  --output datasets/sql/repair/bird_dev_repair_seed_v1.jsonl \
+  --strong-only
+```
+
+Validate the collected repair file:
+
+```bash
+uv run python -m sqlbench_lab.cli sql validate-repair \
+  --dataset datasets/sql/repair/bird_dev_repair_seed_v1.jsonl
+```
+
+The output uses `sql_repair_example:v1` rows:
+
+`question + schema + failed SQL + execution observation -> gold SQL`
+
+Rows collected from an eval/dev slice must not be used to report a score on that same slice.
+Once they become training data, hold out a different eval file for the next measurement.
+
 ## Next Artifacts To Add
 
 - imported Spider/BIRD train and eval manifests

@@ -13,6 +13,7 @@ from sqlbench_lab.sql import (
     build_repair_messages,
     build_sqlite_fixture,
     build_train_messages,
+    collect_sql_repair_data,
     evaluate_sqlite_case,
     extract_generated_sql,
     load_sql_eval_cases,
@@ -126,6 +127,25 @@ class SQLPipelineTests(unittest.TestCase):
         self.assertIn("5 train row(s)", result.stdout)
         self.assertIn("2 smoke case(s)", result.stdout)
 
+    def test_cli_validates_repair_dataset(self) -> None:
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "sqlbench_lab.cli",
+                "sql",
+                "validate-repair",
+                "--dataset",
+                "datasets/sql/repair/bird_dev_repair_seed_v1.jsonl",
+            ],
+            cwd=WORKSPACE_ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+        self.assertIn("validated SQL repair dataset with 2 row(s)", result.stdout)
+
     def test_cli_run_sft_dry_run(self) -> None:
         result = subprocess.run(
             [
@@ -228,6 +248,158 @@ class SQLPipelineTests(unittest.TestCase):
         self.assertEqual(summary.failure_counts["prediction_schema_error"], 1)
         self.assertEqual(summary.failure_counts["prediction_syntax_error"], 1)
         self.assertEqual(summary.failure_counts["row_count_mismatch"], 1)
+
+    def test_collect_sql_repair_data_writes_valid_repair_rows(self) -> None:
+        eval_rows = [
+            {
+                "schema_version": "sql_eval_case:v1",
+                "case_id": "case_schema",
+                "source_benchmark": "smoke",
+                "source_split": "dev",
+                "task_id": "case_schema",
+                "fixture_id": "company_small",
+                "db_id": "company_small",
+                "db_path": None,
+                "dialect": "sqlite",
+                "question": "List employee names.",
+                "schema_text": "CREATE TABLE employees (name TEXT);",
+                "knowledge_text": None,
+                "gold_sql": "SELECT name FROM employees;",
+                "task_type": "select",
+                "order_sensitive": False,
+                "numeric_tolerance": 0.000001,
+                "tags": ["smoke"],
+            },
+            {
+                "schema_version": "sql_eval_case:v1",
+                "case_id": "case_wrong_count",
+                "source_benchmark": "smoke",
+                "source_split": "dev",
+                "task_id": "case_wrong_count",
+                "fixture_id": "company_small",
+                "db_id": "company_small",
+                "db_path": None,
+                "dialect": "sqlite",
+                "question": "List one employee name.",
+                "schema_text": "CREATE TABLE employees (name TEXT);",
+                "knowledge_text": None,
+                "gold_sql": "SELECT name FROM employees LIMIT 1;",
+                "task_type": "select",
+                "order_sensitive": False,
+                "numeric_tolerance": 0.000001,
+                "tags": ["smoke"],
+            },
+        ]
+        result_payload = {
+            "experiment_id": "exp_test",
+            "base_model": "Qwen/Qwen3.5-0.8B-Base",
+            "model_variant": "adapter",
+            "eval_dataset": "eval.jsonl",
+            "case_count": 2,
+            "passed_count": 0,
+            "pass_rate": 0.0,
+            "records": [
+                {
+                    "case_id": "case_schema",
+                    "task_id": "case_schema",
+                    "predicted_sql": "SELECT missing FROM employees;",
+                    "passed": False,
+                    "prediction_error": "no such column: missing",
+                    "gold_error": None,
+                    "predicted_rows": [],
+                    "gold_rows": [["Ava"]],
+                },
+                {
+                    "case_id": "case_wrong_count",
+                    "task_id": "case_wrong_count",
+                    "predicted_sql": "SELECT name FROM employees;",
+                    "passed": False,
+                    "prediction_error": None,
+                    "gold_error": None,
+                    "predicted_rows": [["Ava"], ["Ben"]],
+                    "gold_rows": [["Ava"]],
+                },
+            ],
+        }
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            eval_path = Path(tmp_dir) / "eval.jsonl"
+            result_path = Path(tmp_dir) / "result.json"
+            output_path = Path(tmp_dir) / "repair.jsonl"
+            eval_path.write_text(
+                "".join(json.dumps(row) + "\n" for row in eval_rows),
+                encoding="utf-8",
+            )
+            result_path.write_text(json.dumps(result_payload), encoding="utf-8")
+
+            summary = collect_sql_repair_data(
+                result_path=result_path,
+                eval_dataset=eval_path,
+                output_path=output_path,
+            )
+            repair_rows = load_sql_repair_examples(output_path)
+
+        self.assertEqual(summary.collected_count, 2)
+        self.assertEqual(summary.failure_counts["prediction_schema_error"], 1)
+        self.assertEqual(summary.failure_counts["row_count_mismatch"], 1)
+        self.assertEqual(repair_rows[0].previous_sql, "SELECT missing FROM employees;")
+        self.assertIn("Execution error", repair_rows[0].execution_error)
+        self.assertIn("Result mismatch", repair_rows[1].execution_error)
+
+    def test_collect_sql_repair_data_strong_only_filters_wrong_result_rows(self) -> None:
+        eval_row = {
+            "schema_version": "sql_eval_case:v1",
+            "case_id": "case_wrong_count",
+            "source_benchmark": "smoke",
+            "source_split": "dev",
+            "task_id": "case_wrong_count",
+            "fixture_id": "company_small",
+            "db_id": "company_small",
+            "db_path": None,
+            "dialect": "sqlite",
+            "question": "List one employee name.",
+            "schema_text": "CREATE TABLE employees (name TEXT);",
+            "knowledge_text": None,
+            "gold_sql": "SELECT name FROM employees LIMIT 1;",
+            "task_type": "select",
+            "order_sensitive": False,
+            "numeric_tolerance": 0.000001,
+            "tags": ["smoke"],
+        }
+        result_payload = {
+            "experiment_id": "exp_test",
+            "base_model": "Qwen/Qwen3.5-0.8B-Base",
+            "model_variant": "adapter",
+            "eval_dataset": "eval.jsonl",
+            "case_count": 1,
+            "passed_count": 0,
+            "pass_rate": 0.0,
+            "records": [
+                {
+                    "case_id": "case_wrong_count",
+                    "task_id": "case_wrong_count",
+                    "predicted_sql": "SELECT name FROM employees;",
+                    "passed": False,
+                    "prediction_error": None,
+                    "gold_error": None,
+                    "predicted_rows": [["Ava"], ["Ben"]],
+                    "gold_rows": [["Ava"]],
+                },
+            ],
+        }
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            eval_path = Path(tmp_dir) / "eval.jsonl"
+            result_path = Path(tmp_dir) / "result.json"
+            output_path = Path(tmp_dir) / "repair.jsonl"
+            eval_path.write_text(json.dumps(eval_row) + "\n", encoding="utf-8")
+            result_path.write_text(json.dumps(result_payload), encoding="utf-8")
+
+            with self.assertRaisesRegex(ValueError, "no repair rows collected"):
+                collect_sql_repair_data(
+                    result_path=result_path,
+                    eval_dataset=eval_path,
+                    output_path=output_path,
+                    strong_only=True,
+                )
 
     def test_extract_generated_sql_strips_code_fence_and_trailing_text(self) -> None:
         generated = "```sql\nSELECT name FROM employees;\n```\nextra"

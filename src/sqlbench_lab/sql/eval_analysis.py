@@ -74,6 +74,20 @@ def analyze_sql_eval_result(
     return summary
 
 
+def classify_sql_eval_failure(record: dict[str, Any]) -> str:
+    """Classify a failed eval record into a coarse repair/eval bucket."""
+
+    predicted_rows = _rows(record.get("predicted_rows"))
+    gold_rows = _rows(record.get("gold_rows"))
+    return _failure_type(
+        predicted_sql=str(record.get("predicted_sql", "")),
+        prediction_error=_optional_text(record.get("prediction_error")),
+        gold_error=_optional_text(record.get("gold_error")),
+        predicted_row_count=len(predicted_rows),
+        gold_row_count=len(gold_rows),
+    )
+
+
 def _analyze_failure(record: dict[str, Any]) -> SQLEvalFailureAnalysis:
     predicted_rows = _rows(record.get("predicted_rows"))
     gold_rows = _rows(record.get("gold_rows"))
@@ -83,13 +97,7 @@ def _analyze_failure(record: dict[str, Any]) -> SQLEvalFailureAnalysis:
     return SQLEvalFailureAnalysis(
         case_id=str(record.get("case_id", "")),
         task_id=str(record.get("task_id", "")),
-        failure_type=_failure_type(
-            predicted_sql=predicted_sql,
-            prediction_error=prediction_error,
-            gold_error=gold_error,
-            predicted_row_count=len(predicted_rows),
-            gold_row_count=len(gold_rows),
-        ),
+        failure_type=classify_sql_eval_failure(record),
         predicted_sql=predicted_sql,
         prediction_error=prediction_error,
         gold_error=gold_error,

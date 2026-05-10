@@ -6,8 +6,10 @@ import argparse
 
 from .sql import (
     analyze_sql_eval_result,
+    collect_sql_repair_data,
     import_sql_benchmark,
     load_sql_eval_cases,
+    load_sql_repair_examples,
     load_sql_sft_manifest,
     load_sql_train_examples,
     run_sql_eval,
@@ -35,6 +37,9 @@ def main(argv: list[str] | None = None) -> int:
 
     validate_eval = sql_subparsers.add_parser("validate-eval", help="Validate SQL eval JSONL")
     validate_eval.add_argument("--dataset", required=True, help="Path to SQL eval JSONL")
+
+    validate_repair = sql_subparsers.add_parser("validate-repair", help="Validate SQL repair JSONL")
+    validate_repair.add_argument("--dataset", required=True, help="Path to SQL repair JSONL")
 
     validate_manifest = sql_subparsers.add_parser("validate-manifest", help="Validate SQL SFT manifest")
     validate_manifest.add_argument("--manifest", required=True, help="Path to SQL SFT manifest JSON")
@@ -67,6 +72,22 @@ def main(argv: list[str] | None = None) -> int:
     analyze_eval = sql_subparsers.add_parser("analyze-eval", help="Analyze a SQL eval result JSON")
     analyze_eval.add_argument("--result", required=True, help="Path to SQL eval result JSON")
     analyze_eval.add_argument("--output", help="Output analysis JSON path")
+
+    collect_repair = sql_subparsers.add_parser("collect-repair-data", help="Collect repair JSONL from eval failures")
+    collect_repair.add_argument("--result", required=True, help="Path to SQL eval result JSON")
+    collect_repair.add_argument("--eval-dataset", required=True, help="Matching SQL eval dataset JSONL")
+    collect_repair.add_argument("--output", required=True, help="Output SQL repair JSONL path")
+    collect_repair.add_argument(
+        "--failure-type",
+        action="append",
+        dest="failure_types",
+        help="Failure type to collect; repeat to collect multiple types",
+    )
+    collect_repair.add_argument(
+        "--strong-only",
+        action="store_true",
+        help="Collect only syntax/schema/runtime/empty prediction repair candidates",
+    )
 
     args = parser.parse_args(argv)
     if args.version:
@@ -111,6 +132,10 @@ def _run_sql_command(args: argparse.Namespace) -> int:
     if args.sql_command == "validate-eval":
         cases = load_sql_eval_cases(args.dataset)
         print(f"validated SQL eval dataset with {len(cases)} case(s): {args.dataset}")
+        return 0
+    if args.sql_command == "validate-repair":
+        rows = load_sql_repair_examples(args.dataset)
+        print(f"validated SQL repair dataset with {len(rows)} row(s): {args.dataset}")
         return 0
     if args.sql_command == "validate-manifest":
         manifest = load_sql_sft_manifest(args.manifest)
@@ -180,6 +205,26 @@ def _run_sql_command(args: argparse.Namespace) -> int:
             "analyzed SQL eval "
             f"{summary.model_variant} failed={summary.failed_count}/{summary.case_count} "
             f"output={summary.analysis_path}"
+        )
+        if failure_counts:
+            print(f"failure_counts: {failure_counts}")
+        return 0
+    if args.sql_command == "collect-repair-data":
+        summary = collect_sql_repair_data(
+            result_path=args.result,
+            eval_dataset=args.eval_dataset,
+            output_path=args.output,
+            failure_types=set(args.failure_types) if args.failure_types else None,
+            strong_only=args.strong_only,
+        )
+        failure_counts = ", ".join(
+            f"{failure_type}={count}"
+            for failure_type, count in summary.failure_counts.items()
+        )
+        print(
+            "collected SQL repair data "
+            f"rows={summary.collected_count} skipped={summary.skipped_count} "
+            f"output={summary.output_path}"
         )
         if failure_counts:
             print(f"failure_counts: {failure_counts}")
