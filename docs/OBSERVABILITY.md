@@ -104,6 +104,16 @@ For eval runs, compare:
 - `eval.passed_count`
 - `eval.case_count`
 
+After an eval finishes, generate a failure analysis artifact:
+
+```bash
+uv run python -m sqlbench_lab.cli sql analyze-eval \
+  --result results/sql/qwen35_0_8b__exp002_spider_bird_sft/adapter__bird_validation_sample_v1.json
+```
+
+This writes a sibling `.analysis.json` file. Use its `failure_counts` to decide whether the
+next intervention is execution-guided repair, schema-linking work, or more supervised data.
+
 The immediate base-vs-adapter view should filter to one dataset at a time. Comparing Spider
 and BIRD in the same chart is useful for trend spotting, but it should not be read as a
 single score.

@@ -1,6 +1,7 @@
 """SQL training and evaluation primitives."""
 
 from .benchmark_import import SQLBenchmarkImportSummary, import_sql_benchmark
+from .eval_analysis import SQLEvalAnalysisSummary, SQLEvalFailureAnalysis, analyze_sql_eval_result
 from .eval_runner import SQLEvalRunSummary, extract_generated_sql, run_sql_eval
 from .eval_types import SQLCaseEvalRecord
 from .evaluator import SQLEvaluationResult, evaluate_sqlite_case
@@ -15,6 +16,8 @@ __all__ = [
     "SQLBenchmarkImportSummary",
     "SQLCaseEvalRecord",
     "SQLEvalCase",
+    "SQLEvalAnalysisSummary",
+    "SQLEvalFailureAnalysis",
     "SQLEvalRunSummary",
     "SQLEvaluationResult",
     "SQLRepairExample",
@@ -25,6 +28,7 @@ __all__ = [
     "build_repair_messages",
     "build_sqlite_fixture",
     "build_train_messages",
+    "analyze_sql_eval_result",
     "evaluate_sqlite_case",
     "extract_generated_sql",
     "import_sql_benchmark",

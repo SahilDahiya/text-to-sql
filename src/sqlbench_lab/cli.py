@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 
 from .sql import (
+    analyze_sql_eval_result,
     import_sql_benchmark,
     load_sql_eval_cases,
     load_sql_sft_manifest,
@@ -62,6 +63,10 @@ def main(argv: list[str] | None = None) -> int:
     eval_sql.add_argument("--mlflow", action="store_true", help="Log the eval run to MLflow")
     eval_sql.add_argument("--mlflow-tracking-uri", help="Override the MLflow tracking URI")
     eval_sql.add_argument("--mlflow-experiment", help="Override the MLflow experiment name")
+
+    analyze_eval = sql_subparsers.add_parser("analyze-eval", help="Analyze a SQL eval result JSON")
+    analyze_eval.add_argument("--result", required=True, help="Path to SQL eval result JSON")
+    analyze_eval.add_argument("--output", help="Output analysis JSON path")
 
     args = parser.parse_args(argv)
     if args.version:
@@ -164,6 +169,20 @@ def _run_sql_command(args: argparse.Namespace) -> int:
             f"passed={summary.passed_count}/{summary.case_count} "
             f"pass_rate={summary.pass_rate:.4f}"
         )
+        return 0
+    if args.sql_command == "analyze-eval":
+        summary = analyze_sql_eval_result(args.result, output_path=args.output)
+        failure_counts = ", ".join(
+            f"{failure_type}={count}"
+            for failure_type, count in summary.failure_counts.items()
+        )
+        print(
+            "analyzed SQL eval "
+            f"{summary.model_variant} failed={summary.failed_count}/{summary.case_count} "
+            f"output={summary.analysis_path}"
+        )
+        if failure_counts:
+            print(f"failure_counts: {failure_counts}")
         return 0
     raise ValueError("missing SQL command")
 

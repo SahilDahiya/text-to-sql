@@ -9,6 +9,7 @@ import unittest
 from pathlib import Path
 
 from sqlbench_lab.sql import (
+    analyze_sql_eval_result,
     build_repair_messages,
     build_sqlite_fixture,
     build_train_messages,
@@ -164,6 +165,69 @@ class SQLPipelineTests(unittest.TestCase):
         payload = json.loads(result_path.read_text(encoding="utf-8"))
         self.assertEqual(payload["model_variant"], "adapter")
         self.assertEqual(payload["passed_count"], 2)
+
+    def test_analyze_sql_eval_result_classifies_failures(self) -> None:
+        result_payload = {
+            "experiment_id": "exp_test",
+            "model_variant": "adapter",
+            "eval_dataset": "datasets/sql/eval/test.jsonl",
+            "case_count": 4,
+            "passed_count": 1,
+            "pass_rate": 0.25,
+            "records": [
+                {
+                    "case_id": "passed",
+                    "task_id": "passed",
+                    "predicted_sql": "SELECT 1;",
+                    "passed": True,
+                    "prediction_error": None,
+                    "gold_error": None,
+                    "predicted_rows": [[1]],
+                    "gold_rows": [[1]],
+                },
+                {
+                    "case_id": "schema_error",
+                    "task_id": "schema_error",
+                    "predicted_sql": "SELECT missing FROM employees;",
+                    "passed": False,
+                    "prediction_error": "no such column: missing",
+                    "gold_error": None,
+                    "predicted_rows": [],
+                    "gold_rows": [["Ava"]],
+                },
+                {
+                    "case_id": "syntax_error",
+                    "task_id": "syntax_error",
+                    "predicted_sql": "SELECT FROM employees;",
+                    "passed": False,
+                    "prediction_error": "near \"FROM\": syntax error",
+                    "gold_error": None,
+                    "predicted_rows": [],
+                    "gold_rows": [["Ava"]],
+                },
+                {
+                    "case_id": "wrong_count",
+                    "task_id": "wrong_count",
+                    "predicted_sql": "SELECT name FROM employees;",
+                    "passed": False,
+                    "prediction_error": None,
+                    "gold_error": None,
+                    "predicted_rows": [["Ava"], ["Ben"]],
+                    "gold_rows": [["Ava"]],
+                },
+            ],
+        }
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            result_path = Path(tmp_dir) / "eval.json"
+            result_path.write_text(json.dumps(result_payload), encoding="utf-8")
+
+            summary = analyze_sql_eval_result(result_path)
+            self.assertTrue(Path(summary.analysis_path).exists())
+
+        self.assertEqual(summary.failed_count, 3)
+        self.assertEqual(summary.failure_counts["prediction_schema_error"], 1)
+        self.assertEqual(summary.failure_counts["prediction_syntax_error"], 1)
+        self.assertEqual(summary.failure_counts["row_count_mismatch"], 1)
 
     def test_extract_generated_sql_strips_code_fence_and_trailing_text(self) -> None:
         generated = "```sql\nSELECT name FROM employees;\n```\nextra"

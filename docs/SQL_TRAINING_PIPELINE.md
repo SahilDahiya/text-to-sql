@@ -198,9 +198,22 @@ uv run --group training --group observability python -m sqlbench_lab.cli sql eva
   --mlflow
 ```
 
+Analyze a completed eval result before choosing repair work:
+
+```bash
+uv run python -m sqlbench_lab.cli sql analyze-eval \
+  --result results/sql/qwen35_0_8b__exp002_spider_bird_sft/adapter__bird_validation_sample_v1.json
+```
+
+The analysis writes a sibling `.analysis.json` file with counts for schema errors, syntax
+errors, execution errors, row-count mismatches, and row-value mismatches. Use this before
+adding repair retries; syntax/schema failures should get execution-guided repair first,
+while clean wrong-result failures usually need more examples, schema linking, or retrieval.
+
 ## Next Artifacts To Add
 
 - imported Spider/BIRD train and eval manifests
+- execution-guided repair retry runner
 - execution-repair SFT dataset and runner stage
 
 ## Non-Negotiables
