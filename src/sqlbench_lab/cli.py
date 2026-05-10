@@ -4,7 +4,14 @@ from __future__ import annotations
 
 import argparse
 
-from .sql import load_sql_eval_cases, load_sql_sft_manifest, load_sql_train_examples, run_sql_eval, run_sql_sft
+from .sql import (
+    import_sql_benchmark,
+    load_sql_eval_cases,
+    load_sql_sft_manifest,
+    load_sql_train_examples,
+    run_sql_eval,
+    run_sql_sft,
+)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -23,6 +30,15 @@ def main(argv: list[str] | None = None) -> int:
     validate_manifest = sql_subparsers.add_parser("validate-manifest", help="Validate SQL SFT manifest")
     validate_manifest.add_argument("--manifest", required=True, help="Path to SQL SFT manifest JSON")
 
+    import_benchmark = sql_subparsers.add_parser("import-benchmark", help="Import Spider or BIRD from Hugging Face")
+    import_benchmark.add_argument("--benchmark", choices=["bird", "spider"], required=True)
+    import_benchmark.add_argument("--split", choices=["train", "validation"], required=True)
+    import_benchmark.add_argument("--artifact", choices=["train", "eval"], required=True)
+    import_benchmark.add_argument("--output", required=True, help="Output JSONL path")
+    import_benchmark.add_argument("--limit", type=int, help="Optional row cap")
+    import_benchmark.add_argument("--cache-root", help="Benchmark snapshot cache root")
+    import_benchmark.add_argument("--force-download", action="store_true")
+
     run_sft = sql_subparsers.add_parser("run-sft", help="Run SQL LoRA SFT from a manifest")
     run_sft.add_argument("--manifest", required=True, help="Path to SQL SFT manifest JSON")
     run_sft.add_argument("--dry-run", action="store_true", help="Validate and render training rows only")
@@ -33,6 +49,7 @@ def main(argv: list[str] | None = None) -> int:
     eval_sql = sql_subparsers.add_parser("eval", help="Run SQL smoke evaluation from a manifest")
     eval_sql.add_argument("--manifest", required=True, help="Path to SQL SFT manifest JSON")
     eval_sql.add_argument("--model", choices=["base", "adapter"], required=True, help="Model variant to evaluate")
+    eval_sql.add_argument("--dataset", help="Override eval dataset JSONL path")
     eval_sql.add_argument("--max-new-tokens", type=int, default=128, help="Maximum generated SQL tokens")
     eval_sql.add_argument("--mlflow", action="store_true", help="Log the eval run to MLflow")
     eval_sql.add_argument("--mlflow-tracking-uri", help="Override the MLflow tracking URI")
@@ -74,6 +91,22 @@ def _run_sql_command(args: argparse.Namespace) -> int:
             f"{manifest.experiment_id} ({train_count} train row(s), {eval_count} smoke case(s))"
         )
         return 0
+    if args.sql_command == "import-benchmark":
+        summary = import_sql_benchmark(
+            benchmark=args.benchmark,
+            split=args.split,
+            artifact=args.artifact,
+            output_path=args.output,
+            limit=args.limit,
+            cache_root=args.cache_root,
+            force_download=args.force_download,
+        )
+        print(
+            "imported SQL benchmark "
+            f"{summary.benchmark}/{summary.split} artifact={summary.artifact} "
+            f"rows={summary.row_count} output={summary.output_path}"
+        )
+        return 0
     if args.sql_command == "run-sft":
         summary = run_sql_sft(
             args.manifest,
@@ -91,6 +124,7 @@ def _run_sql_command(args: argparse.Namespace) -> int:
         summary = run_sql_eval(
             args.manifest,
             model_variant=args.model,
+            eval_dataset=args.dataset,
             max_new_tokens=args.max_new_tokens,
             log_mlflow=args.mlflow or None,
             mlflow_tracking_uri=args.mlflow_tracking_uri,

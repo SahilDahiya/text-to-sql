@@ -33,13 +33,23 @@ def evaluate_sqlite_case(
     if case.dialect != "sqlite":
         raise ValueError("evaluate_sqlite_case only supports sqlite cases")
 
-    if db_path is not None:
-        return _evaluate_against_db(case, predicted_sql=predicted_sql, db_path=Path(db_path))
+    resolved_db_path = Path(db_path) if db_path is not None else _case_db_path(case)
+    if resolved_db_path is not None:
+        return _evaluate_against_db(case, predicted_sql=predicted_sql, db_path=resolved_db_path)
 
     with tempfile.TemporaryDirectory() as tmp_dir:
         generated_db_path = Path(tmp_dir) / f"{case.fixture_id}.sqlite"
         build_sqlite_fixture(case.fixture_id, generated_db_path)
         return _evaluate_against_db(case, predicted_sql=predicted_sql, db_path=generated_db_path)
+
+
+def _case_db_path(case: SQLEvalCase) -> Path | None:
+    if case.db_path is None:
+        return None
+    path = Path(case.db_path)
+    if path.is_absolute():
+        return path
+    return Path.cwd() / path
 
 
 def _evaluate_against_db(
@@ -129,4 +139,3 @@ def _value_equal(left: Any, right: Any, *, numeric_tolerance: float) -> bool:
     if isinstance(left, (int, float)) and isinstance(right, (int, float)):
         return math.isclose(float(left), float(right), rel_tol=numeric_tolerance, abs_tol=numeric_tolerance)
     return left == right
-

@@ -108,6 +108,7 @@ class SQLEvalCase:
     task_id: str
     fixture_id: str
     db_id: str
+    db_path: str | None
     dialect: str
     question: str
     schema_text: str
@@ -128,6 +129,7 @@ class SQLEvalCase:
             task_id=str(payload["task_id"]),
             fixture_id=str(payload["fixture_id"]),
             db_id=str(payload["db_id"]),
+            db_path=_optional_string(payload.get("db_path")),
             dialect=str(payload["dialect"]),
             question=str(payload["question"]),
             schema_text=str(payload["schema_text"]),
@@ -144,4 +146,3 @@ def _optional_string(value: Any) -> str | None:
     if value is None:
         return None
     return str(value)
-

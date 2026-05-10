@@ -214,6 +214,7 @@ artifacts/
 results/
 mlruns/
 mlflow.db
+external/
 
 # Marimo
 marimo/_static/

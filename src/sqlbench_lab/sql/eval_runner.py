@@ -30,6 +30,7 @@ def run_sql_eval(
     manifest_path: str | Path,
     *,
     model_variant: str,
+    eval_dataset: str | Path | None = None,
     max_new_tokens: int = 128,
     predictor: Callable[[SQLEvalCase], str] | None = None,
     log_mlflow: bool | None = None,
@@ -42,11 +43,12 @@ def run_sql_eval(
         raise ValueError(f"model_variant must be one of {sorted(SQL_MODEL_VARIANTS)}")
 
     manifest = load_sql_sft_manifest(manifest_path)
-    cases = load_sql_eval_cases(manifest.eval_plan.smoke_dataset)
+    eval_dataset_path = str(eval_dataset) if eval_dataset is not None else manifest.eval_plan.smoke_dataset
+    cases = load_sql_eval_cases(eval_dataset_path)
     if not cases:
         raise ValueError("SQL eval requires at least one eval case")
 
-    result_path = _eval_result_path(manifest, model_variant)
+    result_path = _eval_result_path(manifest, model_variant, eval_dataset=eval_dataset)
     result_path.parent.mkdir(parents=True, exist_ok=True)
     adapter_dir = manifest.resolve_workspace_path(manifest.output_paths.adapter_dir)
     predict_sql = predictor or _build_hf_predictor(
@@ -63,7 +65,7 @@ def run_sql_eval(
         base_model=manifest.student.base_model,
         model_variant=model_variant,
         adapter_dir=str(adapter_dir) if model_variant == "adapter" else None,
-        eval_dataset=manifest.eval_plan.smoke_dataset,
+        eval_dataset=eval_dataset_path,
         result_path=str(result_path),
         case_count=len(records),
         passed_count=passed_count,
@@ -162,12 +164,26 @@ def _evaluate_case(
     )
 
 
-def _eval_result_path(manifest: SQLSFTExperimentManifest, model_variant: str) -> Path:
+def _eval_result_path(
+    manifest: SQLSFTExperimentManifest,
+    model_variant: str,
+    *,
+    eval_dataset: str | Path | None,
+) -> Path:
+    if eval_dataset is not None:
+        dataset_stem = Path(eval_dataset).stem
+        return _workspace_results_root() / manifest.experiment_id / f"{model_variant}__{dataset_stem}.json"
     if model_variant == "base":
         return manifest.resolve_workspace_path(manifest.eval_plan.baseline_results)
     if model_variant == "adapter":
         return manifest.resolve_workspace_path(manifest.eval_plan.post_train_results)
     raise ValueError(f"unsupported model_variant: {model_variant}")
+
+
+def _workspace_results_root() -> Path:
+    from sqlbench_lab.paths import WORKSPACE_ROOT
+
+    return WORKSPACE_ROOT / "results" / "sql"
 
 
 def _write_eval_summary(path: Path, summary: SQLEvalRunSummary) -> None:

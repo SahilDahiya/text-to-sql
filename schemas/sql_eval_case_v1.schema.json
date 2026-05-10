@@ -33,6 +33,7 @@
     "task_id": {"type": "string", "minLength": 1},
     "fixture_id": {"type": "string", "minLength": 1},
     "db_id": {"type": "string", "minLength": 1},
+    "db_path": {"type": ["string", "null"]},
     "dialect": {"const": "sqlite"},
     "question": {"type": "string", "minLength": 1},
     "schema_text": {"type": "string", "minLength": 1},
@@ -47,4 +48,3 @@
     }
   }
 }
-

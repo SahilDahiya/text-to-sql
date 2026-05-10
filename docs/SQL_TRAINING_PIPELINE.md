@@ -89,6 +89,7 @@ The first checked-in foundation includes:
 - direct-SQL and repair prompt renderers
 - result-equivalence SQLite evaluation
 - base-vs-adapter smoke evaluation CLI with JSON result output
+- Hugging Face benchmark import for PremSQL-style Spider and BIRD snapshots
 
 ## Experiment Observability
 
@@ -152,9 +153,52 @@ uv run --group training --group observability python -m sqlbench_lab.cli sql eva
   --mlflow
 ```
 
+## Real Benchmark Datasets
+
+The real dataset lane follows the PremSQL reference repo:
+
+- Spider: `premai-io/spider`
+- BIRD/BirdBench: `premai-io/birdbench`
+
+Both are imported from Hugging Face snapshots because the snapshots include SQLite databases,
+not just question/SQL parquet rows. Downloaded benchmark snapshots live under `external/`,
+which is ignored by git.
+
+Import a small Spider train slice:
+
+```bash
+uv run --group training python -m sqlbench_lab.cli sql import-benchmark \
+  --benchmark spider \
+  --split train \
+  --artifact train \
+  --limit 100 \
+  --output datasets/sql/train/spider_train_sample_v1.jsonl
+```
+
+Import a BIRD validation eval slice:
+
+```bash
+uv run --group training python -m sqlbench_lab.cli sql import-benchmark \
+  --benchmark bird \
+  --split validation \
+  --artifact eval \
+  --limit 25 \
+  --output datasets/sql/eval/bird_validation_sample_v1.jsonl
+```
+
+Run eval against an imported real dataset:
+
+```bash
+uv run --group training --group observability python -m sqlbench_lab.cli sql eval \
+  --manifest experiments/sql/qwen35_0_8b__exp001_sql_sft.json \
+  --dataset datasets/sql/eval/bird_validation_sample_v1.jsonl \
+  --model adapter \
+  --mlflow
+```
+
 ## Next Artifacts To Add
 
-- larger local dev eval set beyond the smoke cases
+- imported Spider/BIRD train and eval manifests
 - adapter-vs-base eval dashboard conventions in MLflow
 - execution-repair SFT dataset and runner stage
 
