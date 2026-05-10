@@ -65,8 +65,8 @@ def run_sql_sft(
             summary_path=dry_run_summary_path,
             train_dataset_counts=train_dataset_counts,
             smoke_eval_case_count=smoke_eval_case_count,
-            training_config=_training_config(),
-            lora_config=_lora_config(),
+            training_config=_training_config(manifest),
+            lora_config=_lora_config(manifest),
             explicit=log_mlflow,
             tracking_uri=mlflow_tracking_uri,
             experiment_name=mlflow_experiment,
@@ -84,7 +84,7 @@ def run_sql_sft(
     ]
 
     model = _load_trainable_model(transformers, manifest.student.base_model, torch_module=torch)
-    lora_config = _lora_config()
+    lora_config = _lora_config(manifest)
     model = peft.get_peft_model(
         model,
         peft.LoraConfig(
@@ -96,7 +96,7 @@ def run_sql_sft(
         ),
     )
 
-    training_config = _training_config()
+    training_config = _training_config(manifest)
     training_args = transformers.TrainingArguments(
         output_dir=str(adapter_dir),
         num_train_epochs=training_config["num_train_epochs"],
@@ -192,30 +192,22 @@ def _validate_supported_manifest(manifest: SQLSFTExperimentManifest) -> None:
         raise ValueError("SQL SFT runner does not support validation_datasets yet")
 
 
-def _training_config() -> dict[str, int | float]:
+def _training_config(manifest: SQLSFTExperimentManifest) -> dict[str, int | float]:
     return {
-        "num_train_epochs": 1.0,
-        "per_device_train_batch_size": 1,
-        "gradient_accumulation_steps": 1,
-        "learning_rate": 2e-4,
-        "logging_steps": 1,
+        "num_train_epochs": manifest.trainer.num_train_epochs,
+        "per_device_train_batch_size": manifest.trainer.per_device_train_batch_size,
+        "gradient_accumulation_steps": manifest.trainer.gradient_accumulation_steps,
+        "learning_rate": manifest.trainer.learning_rate,
+        "logging_steps": manifest.trainer.logging_steps,
     }
 
 
-def _lora_config() -> dict[str, Any]:
+def _lora_config(manifest: SQLSFTExperimentManifest) -> dict[str, Any]:
     return {
-        "r": 8,
-        "lora_alpha": 16,
-        "lora_dropout": 0.05,
-        "target_modules": [
-            "q_proj",
-            "k_proj",
-            "v_proj",
-            "o_proj",
-            "gate_proj",
-            "up_proj",
-            "down_proj",
-        ],
+        "r": manifest.lora.r,
+        "lora_alpha": manifest.lora.lora_alpha,
+        "lora_dropout": manifest.lora.lora_dropout,
+        "target_modules": list(manifest.lora.target_modules),
     }
 
 

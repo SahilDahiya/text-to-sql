@@ -34,6 +34,23 @@ class SQLTrainInputsConfig:
 
 
 @dataclass(frozen=True)
+class SQLTrainerConfig:
+    num_train_epochs: float
+    per_device_train_batch_size: int
+    gradient_accumulation_steps: int
+    learning_rate: float
+    logging_steps: int
+
+
+@dataclass(frozen=True)
+class SQLLoRAConfig:
+    r: int
+    lora_alpha: int
+    lora_dropout: float
+    target_modules: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class SQLEvalPlanConfig:
     smoke_dataset: str
     baseline_results: str
@@ -55,6 +72,8 @@ class SQLSFTExperimentManifest:
     student: SQLStudentConfig
     training_method: SQLTrainingMethodConfig
     train_inputs: SQLTrainInputsConfig
+    trainer: SQLTrainerConfig
+    lora: SQLLoRAConfig
     eval_plan: SQLEvalPlanConfig
     output_paths: SQLOutputPathsConfig
 
@@ -84,8 +103,46 @@ def load_sql_sft_manifest(path: str | Path) -> SQLSFTExperimentManifest:
                 str(item) for item in payload["train_inputs"]["validation_datasets"]
             ),
         ),
+        trainer=SQLTrainerConfig(**payload.get("trainer", _default_trainer_payload())),
+        lora=_load_lora_config(payload.get("lora", _default_lora_payload())),
         eval_plan=SQLEvalPlanConfig(**payload["eval_plan"]),
         output_paths=SQLOutputPathsConfig(**payload["output_paths"]),
+    )
+
+
+def _default_trainer_payload() -> dict[str, int | float]:
+    return {
+        "num_train_epochs": 1.0,
+        "per_device_train_batch_size": 1,
+        "gradient_accumulation_steps": 1,
+        "learning_rate": 2e-4,
+        "logging_steps": 1,
+    }
+
+
+def _default_lora_payload() -> dict[str, Any]:
+    return {
+        "r": 8,
+        "lora_alpha": 16,
+        "lora_dropout": 0.05,
+        "target_modules": [
+            "q_proj",
+            "k_proj",
+            "v_proj",
+            "o_proj",
+            "gate_proj",
+            "up_proj",
+            "down_proj",
+        ],
+    }
+
+
+def _load_lora_config(payload: dict[str, Any]) -> SQLLoRAConfig:
+    return SQLLoRAConfig(
+        r=int(payload["r"]),
+        lora_alpha=int(payload["lora_alpha"]),
+        lora_dropout=float(payload["lora_dropout"]),
+        target_modules=tuple(str(item) for item in payload["target_modules"]),
     )
 
 
@@ -106,4 +163,3 @@ def _resolve_workspace_path(path: str | Path) -> Path:
     if candidate.is_absolute():
         return candidate
     return WORKSPACE_ROOT / candidate
-
