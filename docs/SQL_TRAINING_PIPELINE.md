@@ -258,6 +258,31 @@ Exp004 keeps the exp003 eval files fixed and only expands the training slice:
 This lets us compare exp003 and exp004 without moving the local scoring target. The scoring
 path remains direct one-shot SQL only through `sql eval`.
 
+## Exp005 BIRD Schema-Grounded One-Shot Gate
+
+Exp005 keeps the exp003/exp004 eval files fixed and narrows the training change to BIRD
+schema grounding:
+
+- train: `datasets/sql/train/bird_schema_grounded_token1024_120_v1.jsonl`
+- train: `datasets/sql/train/spider_train_100_v1.jsonl`
+- eval: `datasets/sql/eval/spider_validation_25_v1.jsonl`
+- eval: `datasets/sql/eval/bird_validation_25_v1.jsonl`
+- manifest: `experiments/sql/qwen35_0_8b__exp005_bird_schema_grounded_one_shot_sft.json`
+
+The BIRD slice is selected from the cached full BIRD train split, capped at 1024 rendered
+tokens per row, and biased toward exact SQLite identifier quoting, joins, casts, division,
+and evidence-bearing rows. This cap matters: an uncapped schema-grounding slice can turn the
+run into an oversized-context throughput test instead of a one-shot SQL quality test.
+
+Local exp005 result:
+
+- BIRD adapter: `1/25`, with schema/syntax failures still dominant.
+- Spider adapter: `18/25`, matching the exp003/exp004 guardrail.
+
+Read this as a small recovery from exp004 BIRD `0/25`, not a win over exp003 BIRD `2/25`.
+The next one-shot improvement should target validation-like BIRD schemas and quoted-column
+copying more directly, not just add more generic BIRD rows.
+
 Analyze a completed eval result before choosing repair work:
 
 ```bash
