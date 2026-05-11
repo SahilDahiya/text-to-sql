@@ -509,6 +509,25 @@ Success target:
 - If no run beats BIRD, prefer the run with the fewest syntax/schema failures for the next
   data-building step.
 
+Local queue result:
+
+| Experiment | Train rows | Runtime | BIRD | Spider | Read |
+| --- | ---: | ---: | ---: | ---: | --- |
+| exp010 | 220 | `498s` | `1/25` | `20/25` | Good Spider, weak BIRD. |
+| exp011 | 200 | `465s` | `1/25` | `19/25` | Real BIRD 100 did not help BIRD. |
+| exp012 | 350 | `923s` | `0/25` | `16/25` | More real BIRD regressed both. |
+| exp013 | 370 | `899s` | `2/25` | `20/25` | Best balanced no-identifier run. |
+| exp014 | 457 | `1078s` | `3/25` | `19/25` | Best queue run; matches exp007 BIRD and beats Spider. |
+| exp015 | 307 | `1051s` | `2/25` | `18/25` | Lower LR preserves Spider guardrail but loses BIRD. |
+| exp016 | 220 | `430s` | `0/25` | `20/25` | Custom trainer is fast/good Spider, bad BIRD. |
+| exp017 | 200 | `421s` | `1/25` | `20/25` | Custom trainer real BIRD still weak. |
+
+No run beat exp007's BIRD `3/25`, but exp014 is a better balanced run than exp007:
+it matches BIRD `3/25` and improves Spider from `17/25` to `19/25`. The queue also shows
+that simply adding more real BIRD rows is not enough; exp012 regressed to BIRD `0/25`.
+The next one-shot data step should start from exp014 and target BIRD syntax/schema failures
+without giving up the Spider-250 guardrail.
+
 Analyze a completed eval result before choosing repair work:
 
 ```bash
