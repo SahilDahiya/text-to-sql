@@ -462,6 +462,53 @@ FlashAttention path removes the packing safety warning and improves runtime, but
 recover exp007 BIRD `3/25` or the Spider `18/25` guardrail. Do not proceed to Liger or
 bitsandbytes on this packed recipe until the quality issue is understood.
 
+## Exp010-Exp017 Local Unpacked Overnight Queue
+
+The next local queue returns to unpacked one-shot SFT on the RTX 2080 Ti. It avoids
+FlashAttention, packing, Liger, bitsandbytes, repair, and eval-time retries. The goal is to
+separate data-mix quality from runtime-tooling effects.
+
+Queue runner:
+
+```bash
+uv run python scripts/run_sql_experiment_queue.py --mlflow \
+  experiments/sql/qwen35_0_8b__exp010_trl_schema_spider100_unpacked.json \
+  experiments/sql/qwen35_0_8b__exp011_trl_bird100_spider100_unpacked.json \
+  experiments/sql/qwen35_0_8b__exp012_trl_bird250_spider100_unpacked.json \
+  experiments/sql/qwen35_0_8b__exp013_trl_schema_spider250_unpacked.json \
+  experiments/sql/qwen35_0_8b__exp014_trl_identifier_schema_spider250_unpacked.json \
+  experiments/sql/qwen35_0_8b__exp015_trl_identifier_schema_spider100_lr1e4_unpacked.json \
+  experiments/sql/qwen35_0_8b__exp016_transformers_schema_spider100.json \
+  experiments/sql/qwen35_0_8b__exp017_transformers_bird100_spider100.json
+```
+
+Each experiment runs:
+
+- manifest validation
+- SFT train
+- fixed BIRD 25 adapter eval
+- BIRD failure analysis
+- fixed Spider 25 adapter eval
+- Spider failure analysis
+
+Experiment intent:
+
+- exp010: TRL, BIRD schema-grounded 120 + Spider 100.
+- exp011: TRL, real BIRD 100 + Spider 100.
+- exp012: TRL, real BIRD 250 + Spider 100.
+- exp013: TRL, BIRD schema-grounded 120 + Spider 250.
+- exp014: TRL, identifier-copy 87 + BIRD schema-grounded 120 + Spider 250.
+- exp015: TRL, exp007 train mix with lower learning rate `1e-4`.
+- exp016: custom `transformers.Trainer`, exp010 train mix.
+- exp017: custom `transformers.Trainer`, exp011 train mix.
+
+Success target:
+
+- Any BIRD result above exp007 `3/25`.
+- Spider at or above the exp006 guardrail `18/25`.
+- If no run beats BIRD, prefer the run with the fewest syntax/schema failures for the next
+  data-building step.
+
 Analyze a completed eval result before choosing repair work:
 
 ```bash

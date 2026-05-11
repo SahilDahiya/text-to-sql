@@ -1,0 +1,61 @@
+{
+  "schema_version": "sql_sft_experiment:v1",
+  "experiment_id": "qwen35_0_8b__exp016_transformers_schema_spider100",
+  "student": {
+    "model_family": "qwen35",
+    "base_model": "Qwen/Qwen3.5-0.8B-Base",
+    "adapter_name": "qwen35_0_8b_transformers_schema_spider100_exp016"
+  },
+  "training_method": {
+    "method": "lora_sft",
+    "loss_target": "assistant_sql_only",
+    "stage": "direct_sql_sft",
+    "notes": "Custom transformers.Trainer control for exp010 data recipe. Tests whether the original trainer preserves Spider/BIRD behavior better than TRL on schema-grounded rows."
+  },
+  "train_inputs": {
+    "train_datasets": [
+      "datasets/sql/train/bird_schema_grounded_token1024_120_v1.jsonl",
+      "datasets/sql/train/spider_train_100_v1.jsonl"
+    ],
+    "validation_datasets": []
+  },
+  "trainer": {
+    "backend": "transformers_trainer",
+    "num_train_epochs": 1.0,
+    "per_device_train_batch_size": 1,
+    "gradient_accumulation_steps": 1,
+    "learning_rate": 0.0002,
+    "logging_steps": 25,
+    "packing": false,
+    "packing_strategy": "bfd",
+    "max_length": null,
+    "bf16": null,
+    "tf32": null,
+    "gradient_checkpointing": false
+  },
+  "lora": {
+    "r": 8,
+    "lora_alpha": 16,
+    "lora_dropout": 0.05,
+    "target_modules": [
+      "q_proj",
+      "k_proj",
+      "v_proj",
+      "o_proj",
+      "gate_proj",
+      "up_proj",
+      "down_proj"
+    ]
+  },
+  "eval_plan": {
+    "smoke_dataset": "datasets/sql/smoke/sql_smoke_v1.jsonl",
+    "baseline_results": "results/sql/qwen35_0_8b__exp016_transformers_schema_spider100/baseline_smoke.json",
+    "post_train_results": "results/sql/qwen35_0_8b__exp016_transformers_schema_spider100/post_train_smoke.json"
+  },
+  "output_paths": {
+    "experiment_root": "artifacts/sql/qwen35_0_8b__exp016_transformers_schema_spider100",
+    "adapter_dir": "artifacts/sql/qwen35_0_8b__exp016_transformers_schema_spider100/adapter",
+    "train_summary_json": "artifacts/sql/qwen35_0_8b__exp016_transformers_schema_spider100/train_summary.json",
+    "eval_summary_json": "artifacts/sql/qwen35_0_8b__exp016_transformers_schema_spider100/eval_summary.json"
+  }
+}
