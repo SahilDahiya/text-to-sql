@@ -80,9 +80,14 @@ def run_sql_sft(
     tokenizer = _load_tokenizer_like(transformers, manifest.student.base_model)
     _ensure_pad_token(tokenizer)
 
-    model = _load_trainable_model(transformers, manifest.student.base_model, torch_module=torch)
     lora_config = _lora_config(manifest)
     training_config = _training_config(manifest)
+    model = _load_trainable_model(
+        transformers,
+        manifest.student.base_model,
+        torch_module=torch,
+        attn_implementation=manifest.trainer.attn_implementation,
+    )
 
     if manifest.trainer.backend == TRANSFORMERS_TRAINER_BACKEND:
         model, train_output = _train_with_transformers_trainer(
@@ -294,6 +299,7 @@ def _training_config(manifest: SQLSFTExperimentManifest) -> dict[str, Any]:
         "gradient_accumulation_steps": manifest.trainer.gradient_accumulation_steps,
         "learning_rate": manifest.trainer.learning_rate,
         "logging_steps": manifest.trainer.logging_steps,
+        "attn_implementation": manifest.trainer.attn_implementation,
         "packing": manifest.trainer.packing,
         "packing_strategy": manifest.trainer.packing_strategy,
         "max_length": manifest.trainer.max_length,
@@ -411,8 +417,16 @@ def _load_tokenizer_like(transformers: Any, base_model: str) -> Any:
     return transformers.AutoTokenizer.from_pretrained(base_model)
 
 
-def _load_trainable_model(transformers: Any, base_model: str, *, torch_module: Any) -> Any:
+def _load_trainable_model(
+    transformers: Any,
+    base_model: str,
+    *,
+    torch_module: Any,
+    attn_implementation: str | None = None,
+) -> Any:
     kwargs = {"torch_dtype": _default_torch_dtype(torch_module)}
+    if attn_implementation is not None:
+        kwargs["attn_implementation"] = attn_implementation
     if _is_qwen35_model(base_model):
         return transformers.AutoModelForImageTextToText.from_pretrained(base_model, **kwargs)
     return transformers.AutoModelForCausalLM.from_pretrained(base_model, **kwargs)

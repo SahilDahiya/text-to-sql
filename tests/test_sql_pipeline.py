@@ -73,6 +73,7 @@ class SQLPipelineTests(unittest.TestCase):
         self.assertEqual(manifest.student.base_model, "Qwen/Qwen3.5-0.8B-Base")
         self.assertEqual(manifest.training_method.stage, "direct_sql_sft")
         self.assertEqual(manifest.trainer.backend, "transformers_trainer")
+        self.assertIsNone(manifest.trainer.attn_implementation)
         self.assertFalse(manifest.trainer.packing)
         self.assertEqual(manifest.trainer.packing_strategy, "bfd")
         self.assertIsNone(manifest.trainer.max_length)
@@ -98,12 +99,20 @@ class SQLPipelineTests(unittest.TestCase):
         )
 
         self.assertEqual(manifest.trainer.backend, "trl_sft_trainer")
+        self.assertIsNone(manifest.trainer.attn_implementation)
         self.assertTrue(manifest.trainer.packing)
         self.assertEqual(manifest.trainer.packing_strategy, "bfd")
         self.assertEqual(manifest.trainer.max_length, 1024)
         self.assertTrue(manifest.trainer.bf16)
         self.assertFalse(manifest.trainer.tf32)
         self.assertFalse(manifest.trainer.gradient_checkpointing)
+
+    def test_load_sql_sft_manifest_reads_attention_implementation(self) -> None:
+        manifest = load_sql_sft_manifest(
+            "experiments/sql/qwen35_0_8b__exp009_trl_packing_flash_attention_identifier_copy.json"
+        )
+
+        self.assertEqual(manifest.trainer.attn_implementation, "kernels-community/flash-attn2")
 
     def test_run_sql_sft_dry_run_writes_training_summary(self) -> None:
         summary_path = WORKSPACE_ROOT / "artifacts/sql/qwen35_0_8b__exp001_sql_sft/train_summary.json"

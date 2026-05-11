@@ -41,6 +41,7 @@ class SQLTrainerConfig:
     gradient_accumulation_steps: int
     learning_rate: float
     logging_steps: int
+    attn_implementation: str | None
     packing: bool
     packing_strategy: str
     max_length: int | None
@@ -125,6 +126,7 @@ def _default_trainer_payload() -> dict[str, Any]:
         "gradient_accumulation_steps": 1,
         "learning_rate": 2e-4,
         "logging_steps": 1,
+        "attn_implementation": None,
         "packing": False,
         "packing_strategy": "bfd",
         "max_length": None,
@@ -143,6 +145,7 @@ def _load_trainer_config(payload: dict[str, Any]) -> SQLTrainerConfig:
         gradient_accumulation_steps=int(merged["gradient_accumulation_steps"]),
         learning_rate=float(merged["learning_rate"]),
         logging_steps=int(merged["logging_steps"]),
+        attn_implementation=_optional_str(merged["attn_implementation"]),
         packing=bool(merged["packing"]),
         packing_strategy=str(merged["packing_strategy"]),
         max_length=_optional_int(merged["max_length"]),
@@ -162,6 +165,12 @@ def _optional_bool(value: Any) -> bool | None:
     if value is None:
         return None
     return bool(value)
+
+
+def _optional_str(value: Any) -> str | None:
+    if value is None:
+        return None
+    return str(value)
 
 
 def _default_lora_payload() -> dict[str, Any]:

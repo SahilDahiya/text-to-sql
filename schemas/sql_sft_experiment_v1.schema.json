@@ -72,6 +72,9 @@
         "gradient_accumulation_steps": {"type": "integer", "minimum": 1},
         "learning_rate": {"type": "number", "exclusiveMinimum": 0},
         "logging_steps": {"type": "integer", "minimum": 1},
+        "attn_implementation": {
+          "enum": [null, "sdpa", "flash_attention_2", "kernels-community/flash-attn2"]
+        },
         "packing": {"type": "boolean"},
         "packing_strategy": {"enum": ["bfd"]},
         "max_length": {"type": ["integer", "null"], "minimum": 1},

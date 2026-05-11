@@ -221,7 +221,12 @@ def _build_hf_message_predictor(
     tokenizer_like = _load_tokenizer_like(transformers, manifest.student.base_model)
     _ensure_pad_token(tokenizer_like)
     tokenizer = _inner_tokenizer(tokenizer_like)
-    model = _load_trainable_model(transformers, manifest.student.base_model, torch_module=torch)
+    model = _load_trainable_model(
+        transformers,
+        manifest.student.base_model,
+        torch_module=torch,
+        attn_implementation=manifest.trainer.attn_implementation,
+    )
     if model_variant == "adapter":
         if not adapter_dir.exists():
             raise ValueError(f"adapter_dir does not exist: {adapter_dir}")

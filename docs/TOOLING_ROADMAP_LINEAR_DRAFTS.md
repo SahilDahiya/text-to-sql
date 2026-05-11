@@ -122,6 +122,12 @@ Exp008 packed TRL reduced training runtime from about `1346s` to about `675s`, b
 regressed to BIRD `0/25` and Spider `14/25`. TRL warned that BFD packing enabled
 padding-free training without a supported flash-attention implementation.
 
+Local status:
+
+The manifest/config path is implemented, but full train/eval is blocked on the current
+RTX 2080 Ti. `kernels-community/flash-attn2` loads after installing `kernels`, but the first
+forward pass fails with `FlashAttention only supports Ampere GPUs or newer`.
+
 Scope:
 
 - Add a manifest field for model loading kwargs or attention implementation.

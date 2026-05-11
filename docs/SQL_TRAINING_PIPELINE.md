@@ -401,6 +401,51 @@ guardrail. Do not stack Liger or bitsandbytes on this exact recipe. The next too
 should either add a supported flash-attention implementation for packed TRL or return to
 unpacked TRL and improve the data/prompt recipe.
 
+## Exp009 Packed TRL Flash-Attention Gate
+
+Exp009 is the direct follow-up to exp008. It keeps the exp008 prompt, train mix, LoRA
+config, packing config, and fixed eval plan unchanged, but requests a TRL-supported
+attention implementation for BFD packing.
+
+Train mix:
+
+- train: `datasets/sql/train/bird_identifier_copy_token1536_87_v1.jsonl`
+- train: `datasets/sql/train/bird_schema_grounded_token1024_120_v1.jsonl`
+- train: `datasets/sql/train/spider_train_100_v1.jsonl`
+- manifest: `experiments/sql/qwen35_0_8b__exp009_trl_packing_flash_attention_identifier_copy.json`
+
+Backend settings:
+
+- `trainer.backend`: `trl_sft_trainer`
+- `attn_implementation`: `kernels-community/flash-attn2`
+- `packing`: `true`
+- `packing_strategy`: `bfd`
+- `max_length`: `1024`
+- `bf16`: `true`
+- `tf32`: `true`
+- `gradient_checkpointing`: `false`
+
+Implementation notes:
+
+- `trainer.attn_implementation` now flows through the manifest, MLflow trainer config, train
+  model load, and eval model load.
+- The `training` dependency group includes `kernels>=0.14.0`, which lets Transformers load
+  `kernels-community/flash-attn2`.
+- On the current local GPU, `NVIDIA GeForce RTX 2080 Ti` / compute capability `7.5`,
+  `kernels-community/flash-attn2` loads but fails on first forward pass with
+  `FlashAttention only supports Ampere GPUs or newer`.
+
+Local exp009 status:
+
+- Manifest validation passed.
+- Dry-run SFT passed.
+- Unit tests passed.
+- Full train/eval is blocked on this machine because the supported flash-attention backend
+  requires Ampere-or-newer hardware.
+
+Do not read this as an exp009 model result. The next valid measurement requires running the
+checked-in manifest on an Ampere-or-newer GPU, then evaluating fixed BIRD 25 and Spider 25.
+
 Analyze a completed eval result before choosing repair work:
 
 ```bash
