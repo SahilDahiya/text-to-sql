@@ -138,6 +138,35 @@ class SQLPipelineTests(unittest.TestCase):
             set(),
         )
 
+    def test_generate_bird_superstore_schema_lab_v2_adds_direct_fact_computed_order_train_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            dataset_root = Path(tmp_dir) / "bird" / "train"
+            _write_superstore_lab_fixture(dataset_root)
+            train_path = Path(tmp_dir) / "train_v2.jsonl"
+            eval_path = Path(tmp_dir) / "eval_v2.jsonl"
+
+            summary = generate_bird_superstore_schema_lab(
+                train_output_path=train_path,
+                eval_output_path=eval_path,
+                dataset_root=dataset_root,
+                curriculum_version="v2",
+            )
+            train_rows = load_sql_train_examples(train_path)
+            eval_rows = load_sql_eval_cases(eval_path)
+
+        self.assertEqual(summary.train_row_count, 48)
+        self.assertEqual(summary.eval_row_count, 40)
+        self.assertEqual(len(train_rows), 48)
+        self.assertEqual(len(eval_rows), 40)
+        self.assertEqual(
+            sum("computed_order_by_direct_fact" in row.tags for row in train_rows),
+            8,
+        )
+        self.assertEqual(
+            {row.target_sql for row in train_rows} & {case.gold_sql for case in eval_rows},
+            set(),
+        )
+
     def test_sql_leakage_audit_allows_same_db_dev_without_exact_overlap(self) -> None:
         train_row = _train_row(
             row_id="train_001",

@@ -721,6 +721,64 @@ model can learn most of the single-DB schema-linking curriculum, but the next ge
 needs direct fact-table computed-order rows in train, not only joined computed-order rows.
 Do not scale to broad BIRD from this exact curriculum until that failure family is covered.
 
+## Exp022 Superstore Computed-Order Curriculum Fix
+
+Exp022 keeps the Exp021 heldout dev set fixed and changes only the training curriculum.
+
+Intent:
+
+- fix the four Exp021 computed-order schema errors
+- teach direct fact-table computed ordering before adding more DBs
+- preserve the same-DB dev comparison against `bird_superstore_schema_lab_dev_v1.jsonl`
+
+Generate train_v2:
+
+```bash
+uv run python -m sqlbench_lab.cli sql generate-bird-lab \
+  --db-id superstore \
+  --curriculum-version v2 \
+  --train-output datasets/sql/train/bird_superstore_schema_lab_train_v2.jsonl \
+  --eval-output /tmp/bird_superstore_schema_lab_dev_v2_check.jsonl
+```
+
+Generated train_v2 adds direct fact-table computed-order rows:
+
+- `Ship Mode` ordered by sales per ordered unit
+- `Customer ID` ordered by profit per sales dollar
+
+The fixed comparison eval remains:
+
+- `datasets/sql/eval/bird_superstore_schema_lab_dev_v1.jsonl`
+
+Audit leakage:
+
+```bash
+uv run python -m sqlbench_lab.cli sql audit-leakage \
+  --train-dataset datasets/sql/train/bird_superstore_schema_lab_train_v2.jsonl \
+  --eval-dataset datasets/sql/eval/bird_superstore_schema_lab_dev_v1.jsonl
+```
+
+Train exp022:
+
+```bash
+uv run python -m sqlbench_lab.cli sql run-sft \
+  --manifest experiments/sql/qwen35_0_8b__exp022_trl_superstore_computed_order_v2.json \
+  --mlflow
+```
+
+Evaluate exp022:
+
+```bash
+uv run python -m sqlbench_lab.cli sql eval \
+  --manifest experiments/sql/qwen35_0_8b__exp022_trl_superstore_computed_order_v2.json \
+  --model adapter \
+  --dataset datasets/sql/eval/bird_superstore_schema_lab_dev_v1.jsonl \
+  --mlflow
+```
+
+Pass condition: at least `39/40` on the fixed superstore dev set and no remaining
+computed-order schema errors for `Ship Mode`.
+
 ## BIRD DB-Level Expansion Protocol
 
 When expanding beyond `superstore`, treat the database ID as the scientific split unit. The

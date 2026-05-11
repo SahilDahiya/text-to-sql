@@ -36,9 +36,12 @@ def generate_bird_superstore_schema_lab(
     train_output_path: str | Path,
     eval_output_path: str | Path,
     dataset_root: str | Path | None = None,
+    curriculum_version: str = "v1",
 ) -> BIRDSchemaLabSummary:
     """Generate a train-split-only BIRD schema-linking lab for the superstore DB."""
 
+    if curriculum_version not in {"v1", "v2"}:
+        raise ValueError("curriculum_version must be v1 or v2")
     root = Path(dataset_root) if dataset_root is not None else DEFAULT_BIRD_TRAIN_DB_ROOT
     db_path = root / "train_databases" / SUPERSTORE_DB_ID / f"{SUPERSTORE_DB_ID}.sqlite"
     if not db_path.exists():
@@ -58,6 +61,7 @@ def generate_bird_superstore_schema_lab(
                     split_name="train",
                     split_offset=table_index * 100,
                     artifact="train",
+                    curriculum_version=curriculum_version,
                 )
             )
             eval_rows.extend(
@@ -68,6 +72,7 @@ def generate_bird_superstore_schema_lab(
                     split_name="dev",
                     split_offset=table_index * 100,
                     artifact="eval",
+                    curriculum_version=curriculum_version,
                 )
             )
 
@@ -94,6 +99,7 @@ def _rows_for_split(
     split_name: str,
     split_offset: int,
     artifact: str,
+    curriculum_version: str,
 ) -> list[dict[str, Any]]:
     start = 0 if split_name == "train" else 1
     selected = {
@@ -105,6 +111,7 @@ def _rows_for_split(
         table_name=facts["table_name"],
         region=facts["region"],
         values=selected,
+        include_direct_fact_computed_order=artifact == "train" and curriculum_version == "v2",
     )
     output: list[dict[str, Any]] = []
     for index, row in enumerate(rows, start=1):
@@ -123,6 +130,7 @@ def _rows_for_split(
                 "bird",
                 "schema_linking_lab",
                 "split_train_db_only",
+                f"curriculum_{curriculum_version}",
                 f"lab_{split_name}",
                 f"region_{facts['region'].lower()}",
                 row["pattern"],
@@ -164,6 +172,7 @@ def _superstore_curriculum_rows(
     table_name: str,
     region: str,
     values: dict[str, Any],
+    include_direct_fact_computed_order: bool = False,
 ) -> list[dict[str, str]]:
     table_ref = f"`{table_name}`"
     rows = [
@@ -288,6 +297,8 @@ def _superstore_curriculum_rows(
             ),
         },
     ]
+    if include_direct_fact_computed_order:
+        rows.extend(_direct_fact_computed_order_rows(table_name=table_name, region=region))
     return rows
 
 
@@ -365,6 +376,38 @@ def _computed_order_row(*, table_name: str, region: str, variant: str) -> dict[s
             ),
         }
     raise ValueError(f"unsupported superstore computed order variant: {variant}")
+
+
+def _direct_fact_computed_order_rows(*, table_name: str, region: str) -> list[dict[str, str]]:
+    table_ref = f"`{table_name}`"
+    return [
+        {
+            "pattern": "computed_order_by_direct_fact",
+            "question": f"Which {region} ship mode has the highest sales per ordered unit?",
+            "knowledge_text": (
+                "sales per ordered unit = SUM(Sales) / SUM(Quantity); "
+                "`Ship Mode` is on the regional fact table, not a joined table."
+            ),
+            "sql": (
+                f"SELECT `Ship Mode` FROM {table_ref} "
+                "GROUP BY `Ship Mode` "
+                "ORDER BY CAST(SUM(Sales) AS REAL) / SUM(Quantity) DESC LIMIT 1"
+            ),
+        },
+        {
+            "pattern": "computed_order_by_direct_fact",
+            "question": f"Which {region} customer id has the highest profit per sales dollar?",
+            "knowledge_text": (
+                "profit per sales dollar = SUM(Profit) / SUM(Sales); "
+                "`Customer ID` is on the regional fact table, not a joined table."
+            ),
+            "sql": (
+                f"SELECT `Customer ID` FROM {table_ref} "
+                "GROUP BY `Customer ID` "
+                "ORDER BY CAST(SUM(Profit) AS REAL) / SUM(Sales) DESC LIMIT 1"
+            ),
+        },
+    ]
 
 
 def _schema_text(db_path: Path) -> str:
