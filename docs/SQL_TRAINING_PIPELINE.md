@@ -873,6 +873,23 @@ Pass condition: maintain high `superstore` dev accuracy while learning `regional
 dev. If `superstore` regresses materially, the two-DB training recipe is not stable enough
 to expand.
 
+Exp023 local result:
+
+- train rows: `88`
+- train runtime: `744s`
+- train loss: `0.0431`
+- superstore fixed heldout lab dev: `40/40`
+- regional_sales heldout lab dev: `37/40`
+- regional_sales failure counts: row-value mismatch `3`
+
+The two-DB recipe preserved the Exp022 `superstore` result, so adding `regional_sales` did
+not cause same-DB regression. The three `regional_sales` misses are all computed-order
+unit-price cases. The model generated the correct joins and grouping, but used
+`AVG(T1.\`Unit Price\`)` instead of
+`AVG(CAST(REPLACE(T1.\`Unit Price\`, ',', '') AS REAL))`. SQLite executes both, so these
+are clean wrong-result failures rather than schema or syntax errors. The next curriculum
+fix should add more text-number normalization examples before expanding to `sales`.
+
 ## BIRD DB-Level Expansion Protocol
 
 When expanding beyond `superstore`, treat the database ID as the scientific split unit. The
