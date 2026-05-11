@@ -443,8 +443,24 @@ Local exp009 status:
 - Full train/eval is blocked on this machine because the supported flash-attention backend
   requires Ampere-or-newer hardware.
 
-Do not read this as an exp009 model result. The next valid measurement requires running the
-checked-in manifest on an Ampere-or-newer GPU, then evaluating fixed BIRD 25 and Spider 25.
+Cloud exp009 result:
+
+- Instance GPU: `NVIDIA RTX A6000`, compute capability `8.6`.
+- Flash-attention preflight passed with `kernels-community/flash-attn2`.
+- TRL packed training ran without the unsupported packed-attention warning seen in exp008.
+- Packed train sequences: `194` from `307` source rows.
+- Train runtime: about `464s`, faster than exp008's about `675s` and exp007's about
+  `1346s`.
+- Train loss: about `0.3557`.
+- BIRD adapter: `2/25`; failures were schema `8`, syntax `12`, row-count `1`, row-value
+  `2`.
+- Spider adapter: `14/25`; failures were schema `4`, syntax `1`, row-count `2`, row-value
+  `4`.
+
+Read this as a technically valid packed-TRL run, but still a rejected quality recipe. The
+FlashAttention path removes the packing safety warning and improves runtime, but it does not
+recover exp007 BIRD `3/25` or the Spider `18/25` guardrail. Do not proceed to Liger or
+bitsandbytes on this packed recipe until the quality issue is understood.
 
 Analyze a completed eval result before choosing repair work:
 

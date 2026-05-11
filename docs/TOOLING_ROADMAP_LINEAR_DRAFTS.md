@@ -128,6 +128,17 @@ The manifest/config path is implemented, but full train/eval is blocked on the c
 RTX 2080 Ti. `kernels-community/flash-attn2` loads after installing `kernels`, but the first
 forward pass fails with `FlashAttention only supports Ampere GPUs or newer`.
 
+Cloud result:
+
+- Ran on `NVIDIA RTX A6000`, compute capability `8.6`.
+- No unsupported packed-attention warning during training.
+- Train runtime improved to about `464s`.
+- BIRD scored `2/25`.
+- Spider scored `14/25`.
+
+Decision: the flash-attention path is technically validated, but this packed recipe still
+fails the quality gate. Do not stack Liger or bitsandbytes on this recipe as-is.
+
 Scope:
 
 - Add a manifest field for model loading kwargs or attention implementation.
