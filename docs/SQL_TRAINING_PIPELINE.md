@@ -793,6 +793,86 @@ table instead of a joined alias. This is still same-DB generalization, not unsee
 generalization, but the generator pattern is now strong enough to reuse when adding
 `regional_sales`.
 
+## Exp023 Two-DB BIRD Train-Lab
+
+Exp023 adds `regional_sales` as the second BIRD train-lab DB. This is still train-DB dev,
+not unseen-DB generalization.
+
+Regional sales lab database:
+
+- BIRD train DB: `regional_sales`
+- reason: table names and columns with spaces, one fact table (`Sales Orders`), multiple
+  dimensions (`Customers`, `Products`, `Regions`, `Store Locations`, `Sales Team`), text
+  currency fields with commas, and region joins through store locations
+
+Generate the regional_sales lab:
+
+```bash
+uv run python -m sqlbench_lab.cli sql generate-bird-lab \
+  --db-id regional_sales \
+  --train-output datasets/sql/train/bird_regional_sales_schema_lab_train_v1.jsonl \
+  --eval-output datasets/sql/eval/bird_regional_sales_schema_lab_dev_v1.jsonl
+```
+
+Generated artifacts:
+
+- train: `datasets/sql/train/bird_regional_sales_schema_lab_train_v1.jsonl`
+- dev eval: `datasets/sql/eval/bird_regional_sales_schema_lab_dev_v1.jsonl`
+- train rows: `40`
+- dev rows: `40`
+- SQL overlap between train targets and dev gold SQL: `0`
+
+The lab covers:
+
+- exact quoted identifier copying
+- value filters over `Sales Channel`
+- product joins
+- customer joins
+- multi-table customer/product/region joins
+- quoted identifier arithmetic over `Order Quantity` and text `Unit Price`
+- direct fact-table computed `ORDER BY`
+- text date suffix filtering
+- grouped aggregates
+- `HAVING`
+
+Audit the two train-DB dev lanes together:
+
+```bash
+uv run python -m sqlbench_lab.cli sql audit-leakage \
+  --train-dataset datasets/sql/train/bird_superstore_schema_lab_train_v2.jsonl \
+  --train-dataset datasets/sql/train/bird_regional_sales_schema_lab_train_v1.jsonl \
+  --eval-dataset datasets/sql/eval/bird_superstore_schema_lab_dev_v1.jsonl \
+  --eval-dataset datasets/sql/eval/bird_regional_sales_schema_lab_dev_v1.jsonl
+```
+
+Train exp023:
+
+```bash
+uv run python -m sqlbench_lab.cli sql run-sft \
+  --manifest experiments/sql/qwen35_0_8b__exp023_trl_superstore_regional_sales.json \
+  --mlflow
+```
+
+Evaluate train-DB dev lanes separately:
+
+```bash
+uv run python -m sqlbench_lab.cli sql eval \
+  --manifest experiments/sql/qwen35_0_8b__exp023_trl_superstore_regional_sales.json \
+  --model adapter \
+  --dataset datasets/sql/eval/bird_superstore_schema_lab_dev_v1.jsonl \
+  --mlflow
+
+uv run python -m sqlbench_lab.cli sql eval \
+  --manifest experiments/sql/qwen35_0_8b__exp023_trl_superstore_regional_sales.json \
+  --model adapter \
+  --dataset datasets/sql/eval/bird_regional_sales_schema_lab_dev_v1.jsonl \
+  --mlflow
+```
+
+Pass condition: maintain high `superstore` dev accuracy while learning `regional_sales`
+dev. If `superstore` regresses materially, the two-DB training recipe is not stable enough
+to expand.
+
 ## BIRD DB-Level Expansion Protocol
 
 When expanding beyond `superstore`, treat the database ID as the scientific split unit. The

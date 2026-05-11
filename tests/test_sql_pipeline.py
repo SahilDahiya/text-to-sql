@@ -19,6 +19,7 @@ from sqlbench_lab.sql import (
     collect_sql_repair_data,
     evaluate_sqlite_case,
     extract_generated_sql,
+    generate_bird_regional_sales_schema_lab,
     generate_bird_superstore_schema_lab,
     import_sql_benchmark,
     load_sql_eval_cases,
@@ -161,6 +162,34 @@ class SQLPipelineTests(unittest.TestCase):
         self.assertEqual(
             sum("computed_order_by_direct_fact" in row.tags for row in train_rows),
             8,
+        )
+        self.assertEqual(
+            {row.target_sql for row in train_rows} & {case.gold_sql for case in eval_rows},
+            set(),
+        )
+
+    def test_generate_bird_regional_sales_schema_lab_writes_heldout_dev_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            dataset_root = Path(tmp_dir) / "bird" / "train"
+            _write_regional_sales_lab_fixture(dataset_root)
+            train_path = Path(tmp_dir) / "regional_sales_train.jsonl"
+            eval_path = Path(tmp_dir) / "regional_sales_eval.jsonl"
+
+            summary = generate_bird_regional_sales_schema_lab(
+                train_output_path=train_path,
+                eval_output_path=eval_path,
+                dataset_root=dataset_root,
+            )
+            train_rows = load_sql_train_examples(train_path)
+            eval_rows = load_sql_eval_cases(eval_path)
+
+        self.assertEqual(summary.db_id, "regional_sales")
+        self.assertEqual(len(train_rows), 40)
+        self.assertEqual(len(eval_rows), 40)
+        self.assertEqual({row.db_id for row in train_rows}, {"regional_sales"})
+        self.assertEqual(
+            {tag for row in train_rows for tag in row.tags if tag.startswith("region_")},
+            {"region_midwest", "region_northeast", "region_south", "region_west"},
         )
         self.assertEqual(
             {row.target_sql for row in train_rows} & {case.gold_sql for case in eval_rows},
@@ -998,6 +1027,132 @@ def _write_superstore_lab_fixture(dataset_root: Path) -> None:
                     (base + 1, f"O{base}A", "2013-01-01", "2013-01-03", "First Class", f"C{base}A", region, f"P{base}A", 100.0, 2, 0.0, 10.0),
                     (base + 2, f"O{base}B", "2014-01-01", "2014-01-05", "Standard Class", f"C{base}B", region, f"P{base}B", 50.0, 5, 0.1, 5.0),
                 ],
+            )
+
+
+def _write_regional_sales_lab_fixture(dataset_root: Path) -> None:
+    db_dir = dataset_root / "train_databases" / "regional_sales"
+    db_dir.mkdir(parents=True)
+    db_path = db_dir / "regional_sales.sqlite"
+    with sqlite3.connect(db_path) as conn:
+        conn.executescript(
+            """
+            CREATE TABLE Customers (
+                CustomerID INTEGER PRIMARY KEY,
+                `Customer Names` TEXT
+            );
+            CREATE TABLE Products (
+                ProductID INTEGER PRIMARY KEY,
+                `Product Name` TEXT
+            );
+            CREATE TABLE Regions (
+                StateCode TEXT PRIMARY KEY,
+                State TEXT,
+                Region TEXT
+            );
+            CREATE TABLE `Sales Team` (
+                SalesTeamID INTEGER PRIMARY KEY,
+                `Sales Team` TEXT,
+                Region TEXT
+            );
+            CREATE TABLE `Store Locations` (
+                StoreID INTEGER PRIMARY KEY,
+                `City Name` TEXT,
+                County TEXT,
+                StateCode TEXT,
+                State TEXT,
+                Type TEXT,
+                Latitude REAL,
+                Longitude REAL,
+                AreaCode INTEGER,
+                Population INTEGER,
+                `Household Income` INTEGER,
+                `Median Income` INTEGER,
+                `Land Area` INTEGER,
+                `Water Area` INTEGER,
+                `Time Zone` TEXT
+            );
+            CREATE TABLE `Sales Orders` (
+                OrderNumber TEXT PRIMARY KEY,
+                `Sales Channel` TEXT,
+                WarehouseCode TEXT,
+                ProcuredDate TEXT,
+                OrderDate TEXT,
+                ShipDate TEXT,
+                DeliveryDate TEXT,
+                CurrencyCode TEXT,
+                _SalesTeamID INTEGER,
+                _CustomerID INTEGER,
+                _StoreID INTEGER,
+                _ProductID INTEGER,
+                `Order Quantity` INTEGER,
+                `Discount Applied` REAL,
+                `Unit Price` TEXT,
+                `Unit Cost` TEXT
+            );
+            """
+        )
+        customers = [
+            (1, "Acme Corp"),
+            (2, "Bravo Ltd"),
+            (3, "Coda Inc"),
+            (4, "Delta Group"),
+            (5, "Echo LLC"),
+            (6, "Foxtrot Co"),
+            (7, "Gamma Shop"),
+            (8, "Helio Partners"),
+        ]
+        products = [
+            (1, "Cookware"),
+            (2, "Photo Frames"),
+            (3, "Table Lamps"),
+            (4, "Bean Bags"),
+            (5, "Wall Coverings"),
+            (6, "Outdoor Furniture"),
+            (7, "Candles"),
+            (8, "Clocks"),
+        ]
+        conn.executemany("INSERT INTO Customers VALUES (?, ?)", customers)
+        conn.executemany("INSERT INTO Products VALUES (?, ?)", products)
+        for index, region in enumerate(("Midwest", "Northeast", "South", "West"), start=1):
+            state_code = f"S{index}"
+            conn.execute(
+                "INSERT INTO Regions VALUES (?, ?, ?)",
+                (state_code, f"State {index}", region),
+            )
+            conn.execute(
+                "INSERT INTO `Sales Team` VALUES (?, ?, ?)",
+                (index, f"Seller {region}", region),
+            )
+            conn.execute(
+                "INSERT INTO `Store Locations` VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    index,
+                    f"City {index}",
+                    f"County {index}",
+                    state_code,
+                    f"State {index}",
+                    "City",
+                    1.0,
+                    2.0,
+                    100 + index,
+                    1000 + index,
+                    2000 + index,
+                    3000 + index,
+                    4000 + index,
+                    5000 + index,
+                    "UTC",
+                ),
+            )
+            base = index * 100
+            orders = [
+                (f"SO - {base}A", "Distributor", f"WARE-{base}A", "1/1/18", "5/1/18", "5/3/18", "5/4/18", "USD", index, 1, index, 1, 2, 0.0, "1,000.00", "600.00"),
+                (f"SO - {base}B", "In-Store", f"WARE-{base}B", "1/1/19", "6/1/19", "6/3/19", "6/4/19", "USD", index, 2, index, 2, 4, 0.1, "2,000.00", "800.00"),
+                (f"SO - {base}C", "Online", f"WARE-{base}C", "1/1/20", "7/1/20", "7/3/20", "7/4/20", "USD", index, 3, index, 3, 6, 0.2, "3,000.00", "900.00"),
+            ]
+            conn.executemany(
+                "INSERT INTO `Sales Orders` VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                orders,
             )
 
 

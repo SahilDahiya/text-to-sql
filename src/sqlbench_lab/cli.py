@@ -8,6 +8,7 @@ from .sql import (
     analyze_sql_eval_result,
     assert_no_sql_dataset_leakage,
     collect_sql_repair_data,
+    generate_bird_regional_sales_schema_lab,
     generate_bird_superstore_schema_lab,
     import_sql_benchmark,
     load_sql_eval_cases,
@@ -84,7 +85,7 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     bird_lab = sql_subparsers.add_parser("generate-bird-lab", help="Generate train-split BIRD schema-linking lab data")
-    bird_lab.add_argument("--db-id", choices=["superstore"], default="superstore")
+    bird_lab.add_argument("--db-id", choices=["superstore", "regional_sales"], default="superstore")
     bird_lab.add_argument("--train-output", required=True, help="Output SQL train JSONL path")
     bird_lab.add_argument("--eval-output", required=True, help="Output SQL eval JSONL path")
     bird_lab.add_argument("--dataset-root", help="BIRD train split root containing train_databases")
@@ -231,12 +232,23 @@ def _run_sql_command(args: argparse.Namespace) -> int:
         )
         return 0
     if args.sql_command == "generate-bird-lab":
-        summary = generate_bird_superstore_schema_lab(
-            train_output_path=args.train_output,
-            eval_output_path=args.eval_output,
-            dataset_root=args.dataset_root,
-            curriculum_version=args.curriculum_version,
-        )
+        if args.db_id == "superstore":
+            summary = generate_bird_superstore_schema_lab(
+                train_output_path=args.train_output,
+                eval_output_path=args.eval_output,
+                dataset_root=args.dataset_root,
+                curriculum_version=args.curriculum_version,
+            )
+        elif args.db_id == "regional_sales":
+            if args.curriculum_version != "v1":
+                raise ValueError("regional_sales only supports curriculum-version v1")
+            summary = generate_bird_regional_sales_schema_lab(
+                train_output_path=args.train_output,
+                eval_output_path=args.eval_output,
+                dataset_root=args.dataset_root,
+            )
+        else:
+            raise ValueError(f"unsupported BIRD lab db_id: {args.db_id}")
         print(
             "generated BIRD schema lab "
             f"db={summary.db_id} train_rows={summary.train_row_count} "
