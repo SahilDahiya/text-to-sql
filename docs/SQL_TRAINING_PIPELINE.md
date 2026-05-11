@@ -721,6 +721,60 @@ model can learn most of the single-DB schema-linking curriculum, but the next ge
 needs direct fact-table computed-order rows in train, not only joined computed-order rows.
 Do not scale to broad BIRD from this exact curriculum until that failure family is covered.
 
+## BIRD DB-Level Expansion Protocol
+
+When expanding beyond `superstore`, treat the database ID as the scientific split unit. The
+question is not only whether the adapter memorized one generated lab; the question is when
+performance starts transferring to DBs whose schemas were never used in training.
+
+Use three eval lanes for every expansion:
+
+- train-DB dev: generated heldout questions on DBs used for training
+- unseen-DB dev: generated heldout questions on DBs never used for training
+- benchmark dev: official validation imports only for measurement, never for training rows
+
+Rules:
+
+- Never train on BIRD validation rows or hidden benchmark rows.
+- Never mix a DB into both train and unseen-DB dev.
+- Same-DB dev may share `db_id` with train, but it must have no exact task, question, or SQL overlap.
+- Unseen-DB dev must have no exact task, question, SQL, or `db_id` overlap.
+- Record train-DB dev and unseen-DB dev separately in MLflow; do not collapse them into one score.
+- A rising train-DB dev score with flat unseen-DB dev score is overfitting/schema memorization, not generalization.
+
+Audit same-DB dev leakage:
+
+```bash
+uv run python -m sqlbench_lab.cli sql audit-leakage \
+  --train-dataset datasets/sql/train/bird_superstore_schema_lab_train_v1.jsonl \
+  --eval-dataset datasets/sql/eval/bird_superstore_schema_lab_dev_v1.jsonl
+```
+
+Audit unseen-DB dev leakage:
+
+```bash
+uv run python -m sqlbench_lab.cli sql audit-leakage \
+  --train-dataset datasets/sql/train/<train_db_lab>.jsonl \
+  --eval-dataset datasets/sql/eval/<unseen_db_lab_dev>.jsonl \
+  --require-db-disjoint
+```
+
+Expansion order:
+
+1. Fix the Exp021 computed-order failure inside `superstore`.
+2. Add 2-3 more train DB labs with the same pattern families.
+3. Reserve at least 2 BIRD train-split DBs as generated unseen-DB dev labs.
+4. Train on the train DB labs only.
+5. Evaluate both train-DB dev and unseen-DB dev after every run.
+6. Only return to stratified BIRD validation after unseen-DB dev improves.
+
+Initial partition:
+
+- train-lab DBs: `superstore`, then `regional_sales`, `sales`, `bike_share_1`
+- unseen-DB dev reserve: `restaurant`, `airline`
+- do not move a reserve DB into train without first choosing a new reserve DB and recording
+  the change before seeing its eval result
+
 Analyze a completed eval result before choosing repair work:
 
 ```bash

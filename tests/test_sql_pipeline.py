@@ -10,6 +10,8 @@ from pathlib import Path
 
 from sqlbench_lab.sql import (
     analyze_sql_eval_result,
+    assert_no_sql_dataset_leakage,
+    audit_sql_dataset_leakage,
     build_repair_messages,
     build_repair_eval_messages,
     build_sqlite_fixture,
@@ -135,6 +137,90 @@ class SQLPipelineTests(unittest.TestCase):
             {row.target_sql for row in train_rows} & {case.gold_sql for case in eval_rows},
             set(),
         )
+
+    def test_sql_leakage_audit_allows_same_db_dev_without_exact_overlap(self) -> None:
+        train_row = _train_row(
+            row_id="train_001",
+            task_id="task_train",
+            db_id="shared_db",
+            question="List names.",
+            target_sql="SELECT name FROM people",
+        )
+        eval_row = _eval_row(
+            case_id="eval_001",
+            task_id="task_eval",
+            db_id="shared_db",
+            question="Count names.",
+            gold_sql="SELECT COUNT(*) FROM people",
+        )
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            train_path = Path(tmp_dir) / "train.jsonl"
+            eval_path = Path(tmp_dir) / "eval.jsonl"
+            train_path.write_text(json.dumps(train_row) + "\n", encoding="utf-8")
+            eval_path.write_text(json.dumps(eval_row) + "\n", encoding="utf-8")
+
+            summary = audit_sql_dataset_leakage(
+                train_paths=[train_path],
+                eval_paths=[eval_path],
+            )
+
+        self.assertTrue(summary.passed)
+        self.assertEqual(summary.overlapping_db_ids, ("shared_db",))
+
+    def test_sql_leakage_audit_rejects_question_and_sql_overlap(self) -> None:
+        train_row = _train_row(
+            row_id="train_001",
+            task_id="task_train",
+            db_id="train_db",
+            question="List names.",
+            target_sql="SELECT name FROM people;",
+        )
+        eval_row = _eval_row(
+            case_id="eval_001",
+            task_id="task_eval",
+            db_id="eval_db",
+            question="  list   names. ",
+            gold_sql="select name from people",
+        )
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            train_path = Path(tmp_dir) / "train.jsonl"
+            eval_path = Path(tmp_dir) / "eval.jsonl"
+            train_path.write_text(json.dumps(train_row) + "\n", encoding="utf-8")
+            eval_path.write_text(json.dumps(eval_row) + "\n", encoding="utf-8")
+
+            with self.assertRaisesRegex(ValueError, "question overlap.*SQL overlap"):
+                assert_no_sql_dataset_leakage(
+                    train_paths=[train_path],
+                    eval_paths=[eval_path],
+                )
+
+    def test_sql_leakage_audit_rejects_db_overlap_for_unseen_db_eval(self) -> None:
+        train_row = _train_row(
+            row_id="train_001",
+            task_id="task_train",
+            db_id="shared_db",
+            question="List names.",
+            target_sql="SELECT name FROM people",
+        )
+        eval_row = _eval_row(
+            case_id="eval_001",
+            task_id="task_eval",
+            db_id="shared_db",
+            question="Count names.",
+            gold_sql="SELECT COUNT(*) FROM people",
+        )
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            train_path = Path(tmp_dir) / "train.jsonl"
+            eval_path = Path(tmp_dir) / "eval.jsonl"
+            train_path.write_text(json.dumps(train_row) + "\n", encoding="utf-8")
+            eval_path.write_text(json.dumps(eval_row) + "\n", encoding="utf-8")
+
+            with self.assertRaisesRegex(ValueError, "db_id overlap: shared_db"):
+                assert_no_sql_dataset_leakage(
+                    train_paths=[train_path],
+                    eval_paths=[eval_path],
+                    require_db_disjoint=True,
+                )
 
     def test_stratified_selection_round_robins_by_database(self) -> None:
         raw_rows = [
@@ -752,6 +838,64 @@ class SQLPipelineTests(unittest.TestCase):
 
             with self.assertRaisesRegex(ValueError, "duplicate row_id"):
                 load_sql_train_examples(path)
+
+
+def _train_row(
+    *,
+    row_id: str,
+    task_id: str,
+    db_id: str,
+    question: str,
+    target_sql: str,
+) -> dict[str, object]:
+    return {
+        "schema_version": "sql_train_example:v1",
+        "row_id": row_id,
+        "source_benchmark": "synthetic",
+        "source_split": "train",
+        "task_id": task_id,
+        "db_id": db_id,
+        "dialect": "sqlite",
+        "question": question,
+        "schema_text": "CREATE TABLE people (name TEXT);",
+        "knowledge_text": None,
+        "target_sql": target_sql,
+        "task_type": "select",
+        "provenance": {
+            "created_by": "test",
+            "teacher_model": None,
+            "source_path": "tests",
+        },
+        "tags": ["test"],
+    }
+
+
+def _eval_row(
+    *,
+    case_id: str,
+    task_id: str,
+    db_id: str,
+    question: str,
+    gold_sql: str,
+) -> dict[str, object]:
+    return {
+        "schema_version": "sql_eval_case:v1",
+        "case_id": case_id,
+        "source_benchmark": "synthetic",
+        "source_split": "dev",
+        "task_id": task_id,
+        "fixture_id": f"test:{db_id}",
+        "db_id": db_id,
+        "dialect": "sqlite",
+        "question": question,
+        "schema_text": "CREATE TABLE people (name TEXT);",
+        "knowledge_text": None,
+        "gold_sql": gold_sql,
+        "task_type": "select",
+        "order_sensitive": False,
+        "numeric_tolerance": 0.000001,
+        "tags": ["test"],
+    }
 
 
 def _write_superstore_lab_fixture(dataset_root: Path) -> None:

@@ -6,6 +6,7 @@ import argparse
 
 from .sql import (
     analyze_sql_eval_result,
+    assert_no_sql_dataset_leakage,
     collect_sql_repair_data,
     generate_bird_superstore_schema_lab,
     import_sql_benchmark,
@@ -60,6 +61,27 @@ def main(argv: list[str] | None = None) -> int:
     )
     import_benchmark.add_argument("--cache-root", help="Benchmark snapshot cache root")
     import_benchmark.add_argument("--force-download", action="store_true")
+
+    audit_leakage = sql_subparsers.add_parser("audit-leakage", help="Audit SQL train/eval dataset leakage")
+    audit_leakage.add_argument(
+        "--train-dataset",
+        action="append",
+        dest="train_datasets",
+        required=True,
+        help="SQL train JSONL path; repeat for multiple train inputs",
+    )
+    audit_leakage.add_argument(
+        "--eval-dataset",
+        action="append",
+        dest="eval_datasets",
+        required=True,
+        help="SQL eval JSONL path; repeat for multiple eval inputs",
+    )
+    audit_leakage.add_argument(
+        "--require-db-disjoint",
+        action="store_true",
+        help="Fail if any train db_id appears in eval; use for unseen-DB evaluation",
+    )
 
     bird_lab = sql_subparsers.add_parser("generate-bird-lab", help="Generate train-split BIRD schema-linking lab data")
     bird_lab.add_argument("--db-id", choices=["superstore"], default="superstore")
@@ -191,6 +213,20 @@ def _run_sql_command(args: argparse.Namespace) -> int:
             "imported SQL benchmark "
             f"{summary.benchmark}/{summary.split} artifact={summary.artifact} "
             f"selection={summary.selection} rows={summary.row_count} output={summary.output_path}"
+        )
+        return 0
+    if args.sql_command == "audit-leakage":
+        summary = assert_no_sql_dataset_leakage(
+            train_paths=args.train_datasets,
+            eval_paths=args.eval_datasets,
+            require_db_disjoint=args.require_db_disjoint,
+        )
+        print(
+            "passed SQL leakage audit "
+            f"train_rows={summary.train_row_count} eval_cases={summary.eval_case_count} "
+            f"train_dbs={len(summary.train_db_ids)} eval_dbs={len(summary.eval_db_ids)} "
+            f"overlap_dbs={len(summary.overlapping_db_ids)} "
+            f"require_db_disjoint={summary.require_db_disjoint}"
         )
         return 0
     if args.sql_command == "generate-bird-lab":
