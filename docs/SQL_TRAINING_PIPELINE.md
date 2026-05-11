@@ -614,6 +614,33 @@ Read exp019 as a data-coverage test, not a clean prompt-only comparison. The mai
 condition is improvement over exp014 on the old fixed BIRD 25 without falling below the
 Spider guardrail, plus a non-broken result on the stratified 110-row BIRD slice.
 
+Exp018 local result:
+
+| Eval | Result | Failure counts | Read |
+| --- | ---: | --- | --- |
+| Old fixed BIRD 25 | `2/25` | schema `10`, syntax `6`, row-count `1`, row-value `6` | Regresses from exp014 `3/25`. |
+| Spider 25 | `18/25` | schema `2`, row-count `1`, row-value `4` | One point below exp014 but still at guardrail. |
+| Stratified BIRD 110 | `13/110` | execution `4`, schema `34`, syntax `11`, row-count `20`, row-value `28` | Broad BIRD remains weak; schema failures dominate. |
+
+Training metrics:
+
+- train rows: `457`
+- runtime: `1776s`
+- train loss: `0.2933`
+- mean token accuracy at final trainer log: about `0.9638`
+
+Read this as a rejected prompt-only recipe. The PremSQL-style prompt made the prompt longer
+and did not improve BIRD. Keep the stratified BIRD eval files, but do not treat
+`premsql_text` as the default next direction unless a data-coverage run proves otherwise.
+The cleaner next follow-up is exp020: canonical prompt plus stratified BIRD coverage, so
+prompt and data effects stay separable.
+
+```bash
+uv run python -m sqlbench_lab.cli sql run-sft \
+  --manifest experiments/sql/qwen35_0_8b__exp020_trl_canonical_stratified_bird_spider250.json \
+  --mlflow
+```
+
 Analyze a completed eval result before choosing repair work:
 
 ```bash
