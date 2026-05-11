@@ -41,6 +41,12 @@ class SQLTrainerConfig:
     gradient_accumulation_steps: int
     learning_rate: float
     logging_steps: int
+    packing: bool
+    packing_strategy: str
+    max_length: int | None
+    bf16: bool | None
+    tf32: bool | None
+    gradient_checkpointing: bool
 
 
 @dataclass(frozen=True)
@@ -111,7 +117,7 @@ def load_sql_sft_manifest(path: str | Path) -> SQLSFTExperimentManifest:
     )
 
 
-def _default_trainer_payload() -> dict[str, int | float | str]:
+def _default_trainer_payload() -> dict[str, Any]:
     return {
         "backend": "transformers_trainer",
         "num_train_epochs": 1.0,
@@ -119,6 +125,12 @@ def _default_trainer_payload() -> dict[str, int | float | str]:
         "gradient_accumulation_steps": 1,
         "learning_rate": 2e-4,
         "logging_steps": 1,
+        "packing": False,
+        "packing_strategy": "bfd",
+        "max_length": None,
+        "bf16": None,
+        "tf32": None,
+        "gradient_checkpointing": False,
     }
 
 
@@ -131,7 +143,25 @@ def _load_trainer_config(payload: dict[str, Any]) -> SQLTrainerConfig:
         gradient_accumulation_steps=int(merged["gradient_accumulation_steps"]),
         learning_rate=float(merged["learning_rate"]),
         logging_steps=int(merged["logging_steps"]),
+        packing=bool(merged["packing"]),
+        packing_strategy=str(merged["packing_strategy"]),
+        max_length=_optional_int(merged["max_length"]),
+        bf16=_optional_bool(merged["bf16"]),
+        tf32=_optional_bool(merged["tf32"]),
+        gradient_checkpointing=bool(merged["gradient_checkpointing"]),
     )
+
+
+def _optional_int(value: Any) -> int | None:
+    if value is None:
+        return None
+    return int(value)
+
+
+def _optional_bool(value: Any) -> bool | None:
+    if value is None:
+        return None
+    return bool(value)
 
 
 def _default_lora_payload() -> dict[str, Any]:

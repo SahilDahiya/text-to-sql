@@ -353,6 +353,54 @@ and was slower on this dataset. Before moving to bitsandbytes, decide whether BI
 worth the Spider/runtime tradeoff or whether exp008 should use TRL plus a small Spider
 stabilizer.
 
+## Exp008 TRL Packing Runtime Trial
+
+Exp008 keeps the exp007 data recipe fixed and tests whether TRL sequence packing can make
+the same one-shot SFT loop faster without sacrificing fixed-eval quality.
+
+Train mix:
+
+- train: `datasets/sql/train/bird_identifier_copy_token1536_87_v1.jsonl`
+- train: `datasets/sql/train/bird_schema_grounded_token1024_120_v1.jsonl`
+- train: `datasets/sql/train/spider_train_100_v1.jsonl`
+- manifest: `experiments/sql/qwen35_0_8b__exp008_trl_packing_identifier_copy.json`
+
+Backend settings:
+
+- `trainer.backend`: `trl_sft_trainer`
+- `packing`: `true`
+- `packing_strategy`: `bfd`
+- `max_length`: `1024`
+- `bf16`: `true`
+- `tf32`: `false`
+- `gradient_checkpointing`: `false`
+
+Implementation notes:
+
+- TRL rejects packing when it receives the Qwen `AutoProcessor`, because it treats the run
+  as vision-language training. The TRL backend now passes the inner tokenizer to
+  `SFTTrainer` while preserving the existing processor/tokenizer save path.
+- `tf32=true` failed on the local GPU/runtime, so the checked-in exp008 manifest explicitly
+  disables it.
+- TRL warned that BFD packing enables padding-free training without a supported flash
+  attention implementation. This makes exp008 a useful speed/quality measurement, not a
+  recipe to promote blindly.
+
+Local exp008 result:
+
+- Packed train sequences: `194` from `307` source rows.
+- Train runtime: about `675s`, faster than exp007's about `1346s`.
+- Train loss: about `0.3568`.
+- BIRD adapter: `0/25`; failures were schema `12`, syntax `7`, execution `1`, row-count
+  `1`, row-value `4`.
+- Spider adapter: `14/25`; failures were schema `4`, row-count `3`, row-value `4`.
+
+Read this as a rejected fast recipe. Packing materially improved runtime, but it failed both
+quality gates: BIRD dropped below exp007's `3/25`, and Spider dropped below the `18/25`
+guardrail. Do not stack Liger or bitsandbytes on this exact recipe. The next tooling step
+should either add a supported flash-attention implementation for packed TRL or return to
+unpacked TRL and improve the data/prompt recipe.
+
 Analyze a completed eval result before choosing repair work:
 
 ```bash

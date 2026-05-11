@@ -194,26 +194,32 @@ def _train_with_trl_sft_trainer(
     train_dataset = datasets.Dataset.from_list(
         _trl_prompt_completion_rows(tokenizer=tokenizer, rendered_messages=rendered_messages)
     )
-    training_args = trl.SFTConfig(
-        output_dir=str(adapter_dir),
-        num_train_epochs=training_config["num_train_epochs"],
-        per_device_train_batch_size=training_config["per_device_train_batch_size"],
-        gradient_accumulation_steps=training_config["gradient_accumulation_steps"],
-        learning_rate=training_config["learning_rate"],
-        logging_steps=training_config["logging_steps"],
-        save_strategy="no",
-        report_to=[],
-        packing=False,
-        completion_only_loss=True,
-        assistant_only_loss=False,
-        max_length=None,
-        gradient_checkpointing=False,
-    )
+    sft_config_kwargs = {
+        "output_dir": str(adapter_dir),
+        "num_train_epochs": training_config["num_train_epochs"],
+        "per_device_train_batch_size": training_config["per_device_train_batch_size"],
+        "gradient_accumulation_steps": training_config["gradient_accumulation_steps"],
+        "learning_rate": training_config["learning_rate"],
+        "logging_steps": training_config["logging_steps"],
+        "save_strategy": "no",
+        "report_to": [],
+        "packing": training_config["packing"],
+        "packing_strategy": training_config["packing_strategy"],
+        "completion_only_loss": True,
+        "assistant_only_loss": False,
+        "max_length": training_config["max_length"],
+        "gradient_checkpointing": training_config["gradient_checkpointing"],
+    }
+    if training_config["bf16"] is not None:
+        sft_config_kwargs["bf16"] = training_config["bf16"]
+    if training_config["tf32"] is not None:
+        sft_config_kwargs["tf32"] = training_config["tf32"]
+    training_args = trl.SFTConfig(**sft_config_kwargs)
     trainer = trl.SFTTrainer(
         model=model,
         args=training_args,
         train_dataset=train_dataset,
-        processing_class=tokenizer,
+        processing_class=_inner_tokenizer(tokenizer),
         peft_config=_peft_lora_config(peft, lora_config),
     )
     train_output = trainer.train()
@@ -280,7 +286,7 @@ def _validate_supported_manifest(manifest: SQLSFTExperimentManifest) -> None:
         raise ValueError(f"unsupported SQL SFT trainer backend: {manifest.trainer.backend}")
 
 
-def _training_config(manifest: SQLSFTExperimentManifest) -> dict[str, int | float | str]:
+def _training_config(manifest: SQLSFTExperimentManifest) -> dict[str, Any]:
     return {
         "backend": manifest.trainer.backend,
         "num_train_epochs": manifest.trainer.num_train_epochs,
@@ -288,6 +294,12 @@ def _training_config(manifest: SQLSFTExperimentManifest) -> dict[str, int | floa
         "gradient_accumulation_steps": manifest.trainer.gradient_accumulation_steps,
         "learning_rate": manifest.trainer.learning_rate,
         "logging_steps": manifest.trainer.logging_steps,
+        "packing": manifest.trainer.packing,
+        "packing_strategy": manifest.trainer.packing_strategy,
+        "max_length": manifest.trainer.max_length,
+        "bf16": manifest.trainer.bf16,
+        "tf32": manifest.trainer.tf32,
+        "gradient_checkpointing": manifest.trainer.gradient_checkpointing,
     }
 
 

@@ -71,7 +71,13 @@
         "per_device_train_batch_size": {"type": "integer", "minimum": 1},
         "gradient_accumulation_steps": {"type": "integer", "minimum": 1},
         "learning_rate": {"type": "number", "exclusiveMinimum": 0},
-        "logging_steps": {"type": "integer", "minimum": 1}
+        "logging_steps": {"type": "integer", "minimum": 1},
+        "packing": {"type": "boolean"},
+        "packing_strategy": {"enum": ["bfd"]},
+        "max_length": {"type": ["integer", "null"], "minimum": 1},
+        "bf16": {"type": ["boolean", "null"]},
+        "tf32": {"type": ["boolean", "null"]},
+        "gradient_checkpointing": {"type": "boolean"}
       }
     },
     "lora": {

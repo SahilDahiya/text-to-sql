@@ -19,10 +19,11 @@ Order:
 
 1. TRL SFTTrainer alternate backend.
 2. TRL packing/bf16/tf32 optimization pass.
-3. Liger Kernel acceleration trial if packing helps but runtime is still high.
-4. bitsandbytes QLoRA option.
-5. vLLM-backed eval path.
-6. Axolotl recipe mirror only if the custom/TRL runner becomes limiting.
+3. Supported flash-attention path for packed TRL.
+4. Liger Kernel acceleration trial if packing quality is recovered but runtime is still high.
+5. bitsandbytes QLoRA option.
+6. vLLM-backed eval path.
+7. Axolotl recipe mirror only if the custom/TRL runner becomes limiting.
 
 Non-goals:
 
@@ -81,8 +82,10 @@ optimize the TRL recipe before adding QLoRA or Axolotl.
 
 Recommended next split:
 
-- exp008: TRL packing plus explicit `bf16`/`tf32`, same data recipe.
-- exp009: Liger Kernel on top of the best exp008 recipe if runtime remains high.
+- exp008: TRL packing plus `bf16`, same data recipe. `tf32` is only enabled on compatible
+  GPU/runtime stacks.
+- exp009: Liger Kernel or a supported flash-attention path only if packed TRL quality is
+  recovered.
 - exp010: bitsandbytes QLoRA only after the optimized TRL full-precision path is understood.
 
 Success bar for exp008:
@@ -92,6 +95,56 @@ Success bar for exp008:
 - Runtime improves versus exp007 or the slower runtime is justified by better eval quality.
 
 Do not mix data changes into exp008. This should stay a tooling/runtime experiment.
+
+Exp008 result:
+
+- Runtime improved to about `675s` from exp007's about `1346s`.
+- BIRD regressed to `0/25`.
+- Spider regressed to `14/25`.
+- TRL warned that BFD packing enabled padding-free training without a supported flash
+  attention implementation.
+
+Decision: do not promote this exact packed recipe. Treat it as a speed result and a quality
+failure. The next TRL tooling step should not stack bitsandbytes on exp008 as-is.
+
+## Issue: Add Supported Flash-Attention Path For Packed TRL
+
+Priority: High
+
+Description:
+
+Make packed TRL training trustworthy before stacking Liger, bitsandbytes, or larger data
+recipes on top of it.
+
+Context:
+
+Exp008 packed TRL reduced training runtime from about `1346s` to about `675s`, but quality
+regressed to BIRD `0/25` and Spider `14/25`. TRL warned that BFD packing enabled
+padding-free training without a supported flash-attention implementation.
+
+Scope:
+
+- Add a manifest field for model loading kwargs or attention implementation.
+- Test a supported TRL attention implementation such as `flash_attention_2` or
+  `kernels-community/flash-attn2` if the local stack can install and run it.
+- Keep exp008 data, prompt, LoRA config, and fixed eval files unchanged.
+- Create a new controlled manifest, likely
+  `qwen35_0_8b__exp009_trl_packing_flash_attention_identifier_copy`, unless Liger is chosen
+  first for a separate reason.
+- Train and eval fixed BIRD 25 and Spider 25.
+
+Success criteria:
+
+- No TRL padding-free/packing attention warning.
+- Runtime remains materially better than exp007.
+- BIRD recovers to at least exp007 `3/25`.
+- Spider recovers to at least exp006 `18/25`.
+
+Non-goals:
+
+- Do not add bitsandbytes in this experiment.
+- Do not change data rows.
+- Do not treat speed as success if fixed eval quality stays regressed.
 
 ## Issue: Optimize TRL SFTTrainer With Packing And Precision Flags
 
@@ -114,7 +167,8 @@ Scope:
 - Pass those fields through the TRL `SFTConfig`.
 - Create `qwen35_0_8b__exp008_trl_packing_identifier_copy`.
 - Start with `packing=true`, `packing_strategy=bfd`, `max_length=1024`, `bf16=true`,
-  `tf32=true`, and gradient checkpointing disabled unless memory requires it.
+  `tf32=false` on the local runtime, and gradient checkpointing disabled unless memory
+  requires it.
 - Train and eval on fixed BIRD 25 and Spider 25.
 - Log MLflow metrics for train runtime, token count, mean token accuracy, BIRD pass rate,
   and Spider pass rate.
