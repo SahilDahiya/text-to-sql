@@ -560,6 +560,8 @@ class SQLPipelineTests(unittest.TestCase):
         repair_messages = build_repair_messages(repair_examples[0])
 
         self.assertEqual(train_messages[-1]["content"], "SELECT name FROM employees;")
+        self.assertIn("Use table and column names exactly", train_messages[0]["content"])
+        self.assertIn("quote the full identifier with backticks", train_messages[0]["content"])
         self.assertIn("Previous SQL:", repair_messages[1]["content"])
         self.assertIn("no such column: missing", repair_messages[1]["content"])
 

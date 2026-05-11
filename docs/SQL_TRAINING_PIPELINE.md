@@ -283,6 +283,37 @@ Read this as a small recovery from exp004 BIRD `0/25`, not a win over exp003 BIR
 The next one-shot improvement should target validation-like BIRD schemas and quoted-column
 copying more directly, not just add more generic BIRD rows.
 
+## Exp006 Identifier-Copy One-Shot Gate
+
+Exp006 keeps the same fixed eval files and changes two things:
+
+- The SQL system prompt explicitly requires exact schema identifier copying and backtick
+  quoting for SQLite identifiers with spaces, punctuation, parentheses, percent signs,
+  hyphens, or question marks.
+- The train mix adds `datasets/sql/train/bird_identifier_copy_token1536_87_v1.jsonl`, a
+  synthetic train-schema-only BIRD slice that asks simple select/count/distinct questions
+  over awkward column names. It does not use BIRD validation rows.
+
+Train mix:
+
+- train: `datasets/sql/train/bird_identifier_copy_token1536_87_v1.jsonl`
+- train: `datasets/sql/train/bird_schema_grounded_token1024_120_v1.jsonl`
+- train: `datasets/sql/train/spider_train_100_v1.jsonl`
+- manifest: `experiments/sql/qwen35_0_8b__exp006_identifier_copy_one_shot_sft.json`
+
+Because the prompt changed, compare exp006 carefully: adapter-vs-base under the same prompt
+is clean, while exp005-vs-exp006 combines prompt and data changes.
+
+Local exp006 result:
+
+- BIRD base under exp006 prompt: `0/25`.
+- BIRD adapter: `2/25`; schema failures dropped versus exp005, but syntax failures rose.
+- Spider adapter: `18/25`, matching the exp003/exp004/exp005 guardrail.
+
+Read this as real adapter signal over base, but not yet a new best over exp003. The next
+one-shot step should reduce malformed long SQL after identifier copying, likely by adding
+short, validation-shaped arithmetic examples rather than more generic identifier-copy rows.
+
 Analyze a completed eval result before choosing repair work:
 
 ```bash

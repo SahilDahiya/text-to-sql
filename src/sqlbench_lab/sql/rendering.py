@@ -6,7 +6,10 @@ from .models import SQLEvalCase, SQLRepairExample, SQLTrainExample
 
 SQL_SYSTEM_PROMPT = (
     "You are a precise text-to-SQL model. Return only the final SQL statement. "
-    "Use the declared SQL dialect and stay grounded in the provided schema."
+    "Use the declared SQL dialect and stay grounded in the provided schema. "
+    "Use table and column names exactly as they appear in the schema. "
+    "For SQLite identifiers containing spaces, punctuation, parentheses, percent signs, "
+    "hyphens, or question marks, quote the full identifier with backticks."
 )
 
 
