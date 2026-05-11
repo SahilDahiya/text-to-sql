@@ -240,12 +240,11 @@ def _run_sql_command(args: argparse.Namespace) -> int:
                 curriculum_version=args.curriculum_version,
             )
         elif args.db_id == "regional_sales":
-            if args.curriculum_version != "v1":
-                raise ValueError("regional_sales only supports curriculum-version v1")
             summary = generate_bird_regional_sales_schema_lab(
                 train_output_path=args.train_output,
                 eval_output_path=args.eval_output,
                 dataset_root=args.dataset_root,
+                curriculum_version=args.curriculum_version,
             )
         else:
             raise ValueError(f"unsupported BIRD lab db_id: {args.db_id}")

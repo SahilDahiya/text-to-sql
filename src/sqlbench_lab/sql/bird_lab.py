@@ -98,9 +98,12 @@ def generate_bird_regional_sales_schema_lab(
     train_output_path: str | Path,
     eval_output_path: str | Path,
     dataset_root: str | Path | None = None,
+    curriculum_version: str = "v1",
 ) -> BIRDSchemaLabSummary:
     """Generate a train-split-only BIRD schema-linking lab for regional_sales."""
 
+    if curriculum_version not in {"v1", "v2"}:
+        raise ValueError("curriculum_version must be v1 or v2")
     root = Path(dataset_root) if dataset_root is not None else DEFAULT_BIRD_TRAIN_DB_ROOT
     db_path = root / "train_databases" / REGIONAL_SALES_DB_ID / f"{REGIONAL_SALES_DB_ID}.sqlite"
     if not db_path.exists():
@@ -120,6 +123,7 @@ def generate_bird_regional_sales_schema_lab(
                     split_name="train",
                     split_offset=region_index * 100,
                     artifact="train",
+                    curriculum_version=curriculum_version,
                 )
             )
             eval_rows.extend(
@@ -130,6 +134,7 @@ def generate_bird_regional_sales_schema_lab(
                     split_name="dev",
                     split_offset=region_index * 100,
                     artifact="eval",
+                    curriculum_version=curriculum_version,
                 )
             )
 
@@ -232,6 +237,7 @@ def _regional_sales_rows_for_split(
     split_name: str,
     split_offset: int,
     artifact: str,
+    curriculum_version: str,
 ) -> list[dict[str, Any]]:
     start = 0 if split_name == "train" else 1
     selected = {
@@ -239,7 +245,11 @@ def _regional_sales_rows_for_split(
         for key, values in facts.items()
         if isinstance(values, list)
     }
-    rows = _regional_sales_curriculum_rows(region=facts["region"], values=selected)
+    rows = _regional_sales_curriculum_rows(
+        region=facts["region"],
+        values=selected,
+        include_text_number_normalization=artifact == "train" and curriculum_version == "v2",
+    )
     output: list[dict[str, Any]] = []
     for index, row in enumerate(rows, start=1):
         ordinal = split_offset + index
@@ -257,7 +267,7 @@ def _regional_sales_rows_for_split(
                 "bird",
                 "schema_linking_lab",
                 "split_train_db_only",
-                "curriculum_v1",
+                f"curriculum_{curriculum_version}",
                 f"lab_{split_name}",
                 f"region_{facts['region'].lower()}",
                 row["pattern"],
@@ -429,7 +439,12 @@ def _superstore_curriculum_rows(
     return rows
 
 
-def _regional_sales_curriculum_rows(*, region: str, values: dict[str, Any]) -> list[dict[str, str]]:
+def _regional_sales_curriculum_rows(
+    *,
+    region: str,
+    values: dict[str, Any],
+    include_text_number_normalization: bool = False,
+) -> list[dict[str, str]]:
     sales_orders = "`Sales Orders`"
     region_join = (
         f"FROM {sales_orders} AS T1 "
@@ -569,6 +584,8 @@ def _regional_sales_curriculum_rows(*, region: str, values: dict[str, Any]) -> l
             ),
         },
     ]
+    if include_text_number_normalization:
+        rows.extend(_regional_sales_text_number_rows(region=region))
     return rows
 
 
@@ -762,6 +779,58 @@ def _regional_sales_computed_order_row(*, region: str, variant: str) -> dict[str
             ),
         }
     raise ValueError(f"unsupported regional_sales computed order variant: {variant}")
+
+
+def _regional_sales_text_number_rows(*, region: str) -> list[dict[str, str]]:
+    region_join = (
+        "FROM `Sales Orders` AS T1 "
+        "INNER JOIN `Store Locations` AS T2 ON T1._StoreID = T2.StoreID "
+        "INNER JOIN Regions AS T3 ON T2.StateCode = T3.StateCode"
+    )
+    return [
+        {
+            "pattern": "text_number_normalization",
+            "question": f"Which {region} sales channel has the highest average unit cost?",
+            "knowledge_text": (
+                "average unit cost = AVG(`Unit Cost`); `Unit Cost` is text with commas, "
+                "so use CAST(REPLACE(`Unit Cost`, ',', '') AS REAL)."
+            ),
+            "sql": (
+                f"SELECT T1.`Sales Channel` {region_join} "
+                f"WHERE T3.Region = '{_sql_string(region)}' "
+                "GROUP BY T1.`Sales Channel` "
+                "ORDER BY AVG(CAST(REPLACE(T1.`Unit Cost`, ',', '') AS REAL)) DESC LIMIT 1"
+            ),
+        },
+        {
+            "pattern": "text_number_normalization",
+            "question": f"Which {region} sales channel has the largest total unit price?",
+            "knowledge_text": (
+                "largest total unit price = SUM(`Unit Price`); `Unit Price` is text with commas, "
+                "so use CAST(REPLACE(`Unit Price`, ',', '') AS REAL)."
+            ),
+            "sql": (
+                f"SELECT T1.`Sales Channel` {region_join} "
+                f"WHERE T3.Region = '{_sql_string(region)}' "
+                "GROUP BY T1.`Sales Channel` "
+                "ORDER BY SUM(CAST(REPLACE(T1.`Unit Price`, ',', '') AS REAL)) DESC LIMIT 1"
+            ),
+        },
+        {
+            "pattern": "text_number_normalization",
+            "question": f"Which {region} sales channel has the highest average extended unit price?",
+            "knowledge_text": (
+                "extended unit price = `Order Quantity` * normalized `Unit Price`; "
+                "`Unit Price` is text with commas and must be CAST after REPLACE."
+            ),
+            "sql": (
+                f"SELECT T1.`Sales Channel` {region_join} "
+                f"WHERE T3.Region = '{_sql_string(region)}' "
+                "GROUP BY T1.`Sales Channel` "
+                "ORDER BY AVG(T1.`Order Quantity` * CAST(REPLACE(T1.`Unit Price`, ',', '') AS REAL)) DESC LIMIT 1"
+            ),
+        },
+    ]
 
 
 def _direct_fact_computed_order_rows(*, table_name: str, region: str) -> list[dict[str, str]]:

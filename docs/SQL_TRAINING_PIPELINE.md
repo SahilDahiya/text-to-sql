@@ -890,6 +890,75 @@ unit-price cases. The model generated the correct joins and grouping, but used
 are clean wrong-result failures rather than schema or syntax errors. The next curriculum
 fix should add more text-number normalization examples before expanding to `sales`.
 
+## Exp024 Regional Sales Text-Number Normalization Fix
+
+Exp024 keeps both Exp023 dev sets fixed and changes only the `regional_sales` training
+curriculum.
+
+Intent:
+
+- fix the three Exp023 `regional_sales` unit-price normalization failures
+- teach `CAST(REPLACE(..., ',', '') AS REAL)` for comma-formatted text numeric fields
+- preserve the `superstore` `40/40` result while improving `regional_sales`
+
+Generate regional_sales train_v2:
+
+```bash
+uv run python -m sqlbench_lab.cli sql generate-bird-lab \
+  --db-id regional_sales \
+  --curriculum-version v2 \
+  --train-output datasets/sql/train/bird_regional_sales_schema_lab_train_v2.jsonl \
+  --eval-output /tmp/bird_regional_sales_schema_lab_dev_v2_check.jsonl
+```
+
+Generated train_v2 adds text-number normalization rows:
+
+- average normalized `Unit Cost`
+- sum normalized `Unit Price`
+- average extended normalized `Unit Price`
+
+The fixed comparison eval remains:
+
+- `datasets/sql/eval/bird_regional_sales_schema_lab_dev_v1.jsonl`
+- `datasets/sql/eval/bird_superstore_schema_lab_dev_v1.jsonl`
+
+Audit leakage:
+
+```bash
+uv run python -m sqlbench_lab.cli sql audit-leakage \
+  --train-dataset datasets/sql/train/bird_superstore_schema_lab_train_v2.jsonl \
+  --train-dataset datasets/sql/train/bird_regional_sales_schema_lab_train_v2.jsonl \
+  --eval-dataset datasets/sql/eval/bird_superstore_schema_lab_dev_v1.jsonl \
+  --eval-dataset datasets/sql/eval/bird_regional_sales_schema_lab_dev_v1.jsonl
+```
+
+Train exp024:
+
+```bash
+uv run python -m sqlbench_lab.cli sql run-sft \
+  --manifest experiments/sql/qwen35_0_8b__exp024_trl_regional_sales_normalization_v2.json \
+  --mlflow
+```
+
+Evaluate exp024:
+
+```bash
+uv run python -m sqlbench_lab.cli sql eval \
+  --manifest experiments/sql/qwen35_0_8b__exp024_trl_regional_sales_normalization_v2.json \
+  --model adapter \
+  --dataset datasets/sql/eval/bird_regional_sales_schema_lab_dev_v1.jsonl \
+  --mlflow
+
+uv run python -m sqlbench_lab.cli sql eval \
+  --manifest experiments/sql/qwen35_0_8b__exp024_trl_regional_sales_normalization_v2.json \
+  --model adapter \
+  --dataset datasets/sql/eval/bird_superstore_schema_lab_dev_v1.jsonl \
+  --mlflow
+```
+
+Pass condition: close the three `regional_sales` row-value mismatches while keeping
+`superstore` at or near `40/40`.
+
 ## BIRD DB-Level Expansion Protocol
 
 When expanding beyond `superstore`, treat the database ID as the scientific split unit. The
