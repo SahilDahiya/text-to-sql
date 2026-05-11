@@ -17,6 +17,7 @@ from sqlbench_lab.sql import (
     collect_sql_repair_data,
     evaluate_sqlite_case,
     extract_generated_sql,
+    import_sql_benchmark,
     load_sql_eval_cases,
     load_sql_repair_examples,
     load_sql_sft_manifest,
@@ -26,6 +27,7 @@ from sqlbench_lab.sql import (
     run_sql_sft,
     tokenize_sql_sft_messages,
 )
+from sqlbench_lab.sql.benchmark_import import _select_raw_rows
 
 
 WORKSPACE_ROOT = Path(__file__).resolve().parents[1]
@@ -64,7 +66,60 @@ class SQLPipelineTests(unittest.TestCase):
 
         self.assertEqual(len(rows), 5)
         self.assertEqual(rows[0].dialect, "sqlite")
+        self.assertIsNone(rows[0].db_path)
         self.assertEqual(rows[0].target_sql.split()[0], "SELECT")
+
+    def test_import_benchmark_writes_train_db_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            cache_root = Path(tmp_dir) / "cache"
+            bird_root = cache_root / "premai-io__birdbench"
+            train_root = bird_root / "train"
+            db_dir = train_root / "train_databases" / "tiny_db"
+            db_dir.mkdir(parents=True)
+            expected_db_path = str(db_dir / "tiny_db.sqlite")
+            with sqlite3.connect(db_dir / "tiny_db.sqlite") as conn:
+                conn.execute("CREATE TABLE employees (name TEXT)")
+            (train_root / "train.json").write_text(
+                json.dumps(
+                    [
+                        {
+                            "db_id": "tiny_db",
+                            "question": "List names.",
+                            "evidence": "names are in employees.name",
+                            "SQL": "SELECT name FROM employees",
+                        }
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            output_path = Path(tmp_dir) / "bird_train.jsonl"
+
+            summary = import_sql_benchmark(
+                benchmark="bird",
+                split="train",
+                artifact="train",
+                output_path=output_path,
+                cache_root=cache_root,
+            )
+            rows = load_sql_train_examples(output_path)
+
+        self.assertEqual(summary.row_count, 1)
+        self.assertEqual(summary.selection, "first")
+        self.assertEqual(rows[0].db_path, expected_db_path)
+
+    def test_stratified_selection_round_robins_by_database(self) -> None:
+        raw_rows = [
+            {"db_id": "a", "question": "a1"},
+            {"db_id": "a", "question": "a2"},
+            {"db_id": "a", "question": "a3"},
+            {"db_id": "b", "question": "b1"},
+            {"db_id": "b", "question": "b2"},
+            {"db_id": "c", "question": "c1"},
+        ]
+
+        selected = _select_raw_rows(raw_rows, limit=5, selection="stratified")
+
+        self.assertEqual([row["question"] for _, row in selected], ["a1", "b1", "c1", "a2", "b2"])
 
     def test_load_sql_sft_manifest_validates_seed_experiment(self) -> None:
         manifest = load_sql_sft_manifest("experiments/sql/qwen35_0_8b__exp001_sql_sft.json")
@@ -113,6 +168,11 @@ class SQLPipelineTests(unittest.TestCase):
         )
 
         self.assertEqual(manifest.trainer.attn_implementation, "kernels-community/flash-attn2")
+
+    def test_load_sql_sft_manifest_defaults_prompt_style(self) -> None:
+        manifest = load_sql_sft_manifest("experiments/sql/qwen35_0_8b__exp001_sql_sft.json")
+
+        self.assertEqual(manifest.prompt.style, "canonical_chat")
 
     def test_run_sql_sft_dry_run_writes_training_summary(self) -> None:
         summary_path = WORKSPACE_ROOT / "artifacts/sql/qwen35_0_8b__exp001_sql_sft/train_summary.json"
@@ -601,6 +661,39 @@ class SQLPipelineTests(unittest.TestCase):
         self.assertIn("quote the full identifier with backticks", train_messages[0]["content"])
         self.assertIn("Previous SQL:", repair_messages[1]["content"])
         self.assertIn("no such column: missing", repair_messages[1]["content"])
+
+    def test_premsql_prompt_style_labels_evidence_and_sql_slot(self) -> None:
+        train_row = {
+            "schema_version": "sql_train_example:v1",
+            "row_id": "train_001",
+            "source_benchmark": "bird",
+            "source_split": "train",
+            "task_id": "bird_task",
+            "db_id": "tiny_db",
+            "db_path": "external/sql/benchmarks/premai-io__birdbench/train/train_databases/tiny_db/tiny_db.sqlite",
+            "dialect": "sqlite",
+            "question": "Which county has the highest rate?",
+            "schema_text": "CREATE TABLE frpm (`County Name` TEXT, `Free Meal Count (K-12)` INTEGER);",
+            "knowledge_text": "rate = free meals / enrollment",
+            "target_sql": "SELECT `County Name` FROM frpm;",
+            "task_type": "select",
+            "provenance": {
+                "created_by": "benchmark",
+                "teacher_model": None,
+                "source_path": "tests",
+            },
+            "tags": ["bird"],
+        }
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            train_path = Path(tmp_dir) / "train.jsonl"
+            train_path.write_text(json.dumps(train_row) + "\n", encoding="utf-8")
+            row = load_sql_train_examples(train_path)[0]
+
+        messages = build_train_messages(row, prompt_style="premsql_text")
+
+        self.assertIn("# Additional Knowledge:", messages[1]["content"])
+        self.assertIn("# Database and Table Schema:", messages[1]["content"])
+        self.assertTrue(messages[1]["content"].rstrip().endswith("# SQL:"))
 
     def test_load_sql_train_examples_rejects_duplicate_row_ids(self) -> None:
         row = {

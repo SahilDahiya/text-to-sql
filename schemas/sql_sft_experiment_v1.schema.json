@@ -37,6 +37,14 @@
         "notes": {"type": ["string", "null"]}
       }
     },
+    "prompt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["style"],
+      "properties": {
+        "style": {"enum": ["canonical_chat", "premsql_text"]}
+      }
+    },
     "train_inputs": {
       "type": "object",
       "additionalProperties": false,

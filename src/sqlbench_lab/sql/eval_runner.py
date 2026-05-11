@@ -205,7 +205,7 @@ def _build_hf_predictor(
     )
 
     def predict(case: SQLEvalCase) -> str:
-        return predict_messages(build_eval_messages(case))
+        return predict_messages(build_eval_messages(case, prompt_style=manifest.prompt.style))
 
     return predict
 
@@ -278,7 +278,7 @@ def _resolve_repair_predictors(
     )
 
     resolved_predictor = predictor or (
-        lambda case: predict_messages(build_eval_messages(case))
+        lambda case: predict_messages(build_eval_messages(case, prompt_style=manifest.prompt.style))
     )
     resolved_repair_predictor = repair_predictor or (
         lambda case, previous_sql, observation: predict_messages(
@@ -286,6 +286,7 @@ def _resolve_repair_predictors(
                 case,
                 previous_sql=previous_sql,
                 execution_observation=observation,
+                prompt_style=manifest.prompt.style,
             )
         )
     )

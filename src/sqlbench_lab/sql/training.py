@@ -9,7 +9,7 @@ from typing import Any
 
 from .loaders import load_sql_eval_cases, load_sql_train_examples
 from .manifest import SQLSFTExperimentManifest, load_sql_sft_manifest
-from .rendering import build_train_messages
+from .rendering import SUPPORTED_PROMPT_STYLES, build_train_messages
 from .training_types import SQLSFTTrainingSummary
 
 IGNORE_INDEX = -100
@@ -42,7 +42,10 @@ def run_sql_sft(
     if not train_rows:
         raise ValueError("SQL SFT training requires at least one train row")
 
-    rendered_messages = [build_train_messages(row) for row in train_rows]
+    rendered_messages = [
+        build_train_messages(row, prompt_style=manifest.prompt.style)
+        for row in train_rows
+    ]
     experiment_root = manifest.resolve_workspace_path(manifest.output_paths.experiment_root)
     adapter_dir = manifest.resolve_workspace_path(manifest.output_paths.adapter_dir)
     train_summary_path = manifest.resolve_workspace_path(manifest.output_paths.train_summary_json)
@@ -289,6 +292,8 @@ def _validate_supported_manifest(manifest: SQLSFTExperimentManifest) -> None:
         raise ValueError("SQL SFT runner does not support validation_datasets yet")
     if manifest.trainer.backend not in {TRANSFORMERS_TRAINER_BACKEND, TRL_SFT_TRAINER_BACKEND}:
         raise ValueError(f"unsupported SQL SFT trainer backend: {manifest.trainer.backend}")
+    if manifest.prompt.style not in SUPPORTED_PROMPT_STYLES:
+        raise ValueError(f"unsupported SQL prompt_style: {manifest.prompt.style}")
 
 
 def _training_config(manifest: SQLSFTExperimentManifest) -> dict[str, Any]:
@@ -306,6 +311,7 @@ def _training_config(manifest: SQLSFTExperimentManifest) -> dict[str, Any]:
         "bf16": manifest.trainer.bf16,
         "tf32": manifest.trainer.tf32,
         "gradient_checkpointing": manifest.trainer.gradient_checkpointing,
+        "prompt_style": manifest.prompt.style,
     }
 
 

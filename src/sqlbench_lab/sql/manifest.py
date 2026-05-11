@@ -28,6 +28,11 @@ class SQLTrainingMethodConfig:
 
 
 @dataclass(frozen=True)
+class SQLPromptConfig:
+    style: str
+
+
+@dataclass(frozen=True)
 class SQLTrainInputsConfig:
     train_datasets: tuple[str, ...]
     validation_datasets: tuple[str, ...]
@@ -79,6 +84,7 @@ class SQLSFTExperimentManifest:
     experiment_id: str
     student: SQLStudentConfig
     training_method: SQLTrainingMethodConfig
+    prompt: SQLPromptConfig
     train_inputs: SQLTrainInputsConfig
     trainer: SQLTrainerConfig
     lora: SQLLoRAConfig
@@ -105,6 +111,7 @@ def load_sql_sft_manifest(path: str | Path) -> SQLSFTExperimentManifest:
         experiment_id=str(payload["experiment_id"]),
         student=SQLStudentConfig(**payload["student"]),
         training_method=SQLTrainingMethodConfig(**payload["training_method"]),
+        prompt=SQLPromptConfig(**payload.get("prompt", _default_prompt_payload())),
         train_inputs=SQLTrainInputsConfig(
             train_datasets=tuple(str(item) for item in payload["train_inputs"]["train_datasets"]),
             validation_datasets=tuple(
@@ -134,6 +141,10 @@ def _default_trainer_payload() -> dict[str, Any]:
         "tf32": None,
         "gradient_checkpointing": False,
     }
+
+
+def _default_prompt_payload() -> dict[str, Any]:
+    return {"style": "canonical_chat"}
 
 
 def _load_trainer_config(payload: dict[str, Any]) -> SQLTrainerConfig:

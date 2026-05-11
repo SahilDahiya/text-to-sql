@@ -51,6 +51,12 @@ def main(argv: list[str] | None = None) -> int:
     import_benchmark.add_argument("--artifact", choices=["train", "eval"], required=True)
     import_benchmark.add_argument("--output", required=True, help="Output JSONL path")
     import_benchmark.add_argument("--limit", type=int, help="Optional row cap")
+    import_benchmark.add_argument(
+        "--selection",
+        choices=["first", "stratified"],
+        default="first",
+        help="Row selection strategy when --limit is set",
+    )
     import_benchmark.add_argument("--cache-root", help="Benchmark snapshot cache root")
     import_benchmark.add_argument("--force-download", action="store_true")
 
@@ -170,13 +176,14 @@ def _run_sql_command(args: argparse.Namespace) -> int:
             artifact=args.artifact,
             output_path=args.output,
             limit=args.limit,
+            selection=args.selection,
             cache_root=args.cache_root,
             force_download=args.force_download,
         )
         print(
             "imported SQL benchmark "
             f"{summary.benchmark}/{summary.split} artifact={summary.artifact} "
-            f"rows={summary.row_count} output={summary.output_path}"
+            f"selection={summary.selection} rows={summary.row_count} output={summary.output_path}"
         )
         return 0
     if args.sql_command == "run-sft":

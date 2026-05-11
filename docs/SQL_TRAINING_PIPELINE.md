@@ -87,9 +87,11 @@ The first checked-in foundation includes:
 - minimal SQL LoRA SFT runner with explicit `--dry-run`
 - optional MLflow experiment logging for SQL SFT runs
 - direct-SQL and repair prompt renderers
+- selectable prompt style in manifests: `canonical_chat` or `premsql_text`
 - result-equivalence SQLite evaluation
 - base-vs-adapter smoke evaluation CLI with JSON result output
 - Hugging Face benchmark import for PremSQL-style Spider and BIRD snapshots
+- stratified benchmark import for BIRD slices that should cover multiple databases
 
 ## Experiment Observability
 
@@ -527,6 +529,90 @@ it matches BIRD `3/25` and improves Spider from `17/25` to `19/25`. The queue al
 that simply adding more real BIRD rows is not enough; exp012 regressed to BIRD `0/25`.
 The next one-shot data step should start from exp014 and target BIRD syntax/schema failures
 without giving up the Spider-250 guardrail.
+
+## BIRD Dataset Gap From PremSQL Reference
+
+The PremSQL reference keeps `db_path` as a required row field and builds schema text from the
+live SQLite database at prompt time. This repo now preserves `db_path` on imported train rows
+too, while keeping it optional for older checked-in train data. That matters because BIRD
+work needs database-derived enrichment later: value previews, executable filtering, table
+stats, and prompt regeneration.
+
+The old first-N BIRD slices were heavily biased:
+
+- `bird_train_100_v1`: 100 rows from only `movie_platform`
+- `bird_train_250_v1`: 250 rows from only 3 databases
+- `bird_validation_25_v1`: 25 rows from only `california_schools`
+
+The new stratified files are:
+
+- `datasets/sql/train/bird_train_stratified_500_v1.jsonl`: 500 rows across all 69 BIRD train DBs
+- `datasets/sql/eval/bird_validation_stratified_25_v1.jsonl`: quick BIRD check across all 11 validation DBs
+- `datasets/sql/eval/bird_validation_stratified_110_v1.jsonl`: broader BIRD check with 10 rows per validation DB
+
+Generate a stratified BIRD train slice:
+
+```bash
+uv run python -m sqlbench_lab.cli sql import-benchmark \
+  --benchmark bird \
+  --split train \
+  --artifact train \
+  --limit 500 \
+  --selection stratified \
+  --output datasets/sql/train/bird_train_stratified_500_v1.jsonl
+```
+
+Generate the broader stratified BIRD eval slice:
+
+```bash
+uv run python -m sqlbench_lab.cli sql import-benchmark \
+  --benchmark bird \
+  --split validation \
+  --artifact eval \
+  --limit 110 \
+  --selection stratified \
+  --output datasets/sql/eval/bird_validation_stratified_110_v1.jsonl
+```
+
+## Exp018-Exp019 PremSQL-Style BIRD Follow-Up
+
+Exp018 isolates the prompt change. It starts from exp014's best balanced recipe
+(`3/25` BIRD, `19/25` Spider) and changes only the prompt style to `premsql_text`.
+
+```bash
+uv run python -m sqlbench_lab.cli sql run-sft \
+  --manifest experiments/sql/qwen35_0_8b__exp018_trl_premsql_prompt_identifier_schema_spider250.json \
+  --mlflow
+```
+
+After training, run both old and stratified BIRD checks:
+
+```bash
+uv run python -m sqlbench_lab.cli sql eval \
+  --manifest experiments/sql/qwen35_0_8b__exp018_trl_premsql_prompt_identifier_schema_spider250.json \
+  --model adapter \
+  --dataset datasets/sql/eval/bird_validation_25_v1.jsonl \
+  --mlflow
+
+uv run python -m sqlbench_lab.cli sql eval \
+  --manifest experiments/sql/qwen35_0_8b__exp018_trl_premsql_prompt_identifier_schema_spider250.json \
+  --model adapter \
+  --dataset datasets/sql/eval/bird_validation_stratified_110_v1.jsonl \
+  --mlflow
+```
+
+Exp019 then adds stratified real BIRD train coverage on top of the exp014-style recipe:
+identifier-copy rows, schema-grounded rows, stratified 500-row BIRD train, and Spider 250.
+
+```bash
+uv run python -m sqlbench_lab.cli sql run-sft \
+  --manifest experiments/sql/qwen35_0_8b__exp019_trl_premsql_prompt_stratified_bird_spider250.json \
+  --mlflow
+```
+
+Read exp019 as a data-coverage test, not a clean prompt-only comparison. The main pass
+condition is improvement over exp014 on the old fixed BIRD 25 without falling below the
+Spider guardrail, plus a non-broken result on the stratified 110-row BIRD slice.
 
 Analyze a completed eval result before choosing repair work:
 

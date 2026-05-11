@@ -26,6 +26,7 @@ class SQLBenchmarkImportSummary:
     source_root: str
     output_path: str
     row_count: int
+    selection: str
 
 
 def import_sql_benchmark(
@@ -35,6 +36,7 @@ def import_sql_benchmark(
     artifact: str,
     output_path: str | Path,
     limit: int | None = None,
+    selection: str = "first",
     cache_root: str | Path | None = None,
     force_download: bool = False,
 ) -> SQLBenchmarkImportSummary:
@@ -46,6 +48,8 @@ def import_sql_benchmark(
         raise ValueError("artifact must be either 'train' or 'eval'")
     if limit is not None and limit < 1:
         raise ValueError("limit must be at least 1")
+    if selection not in {"first", "stratified"}:
+        raise ValueError("selection must be either 'first' or 'stratified'")
 
     source_root = _ensure_snapshot(
         benchmark=benchmark,
@@ -53,8 +57,7 @@ def import_sql_benchmark(
         force_download=force_download,
     )
     raw_rows, dataset_root, db_folder_name, json_path = _load_raw_rows(benchmark, source_root, split)
-    if limit is not None:
-        raw_rows = raw_rows[:limit]
+    selected_rows = _select_raw_rows(raw_rows, limit=limit, selection=selection)
     rows = [
         _convert_raw_row(
             row,
@@ -66,7 +69,7 @@ def import_sql_benchmark(
             db_folder_name=db_folder_name,
             source_path=json_path,
         )
-        for ordinal, row in enumerate(raw_rows, start=1)
+        for ordinal, row in selected_rows
     ]
     resolved_output = _resolve_workspace_path(output_path)
     resolved_output.parent.mkdir(parents=True, exist_ok=True)
@@ -81,7 +84,47 @@ def import_sql_benchmark(
         source_root=str(source_root),
         output_path=str(_display_path(resolved_output)),
         row_count=len(rows),
+        selection=selection,
     )
+
+
+def _select_raw_rows(
+    raw_rows: list[dict[str, Any]],
+    *,
+    limit: int | None,
+    selection: str,
+) -> list[tuple[int, dict[str, Any]]]:
+    indexed_rows = list(enumerate(raw_rows, start=1))
+    if limit is None:
+        return indexed_rows
+    if selection == "first":
+        return indexed_rows[:limit]
+    if selection != "stratified":
+        raise ValueError("selection must be either 'first' or 'stratified'")
+
+    grouped: dict[str, list[tuple[int, dict[str, Any]]]] = {}
+    group_order: list[str] = []
+    for item in indexed_rows:
+        _, row = item
+        db_id = str(row["db_id"])
+        if db_id not in grouped:
+            grouped[db_id] = []
+            group_order.append(db_id)
+        grouped[db_id].append(item)
+
+    selected: list[tuple[int, dict[str, Any]]] = []
+    while len(selected) < limit:
+        added_this_round = False
+        for db_id in group_order:
+            rows = grouped[db_id]
+            if rows:
+                selected.append(rows.pop(0))
+                added_this_round = True
+                if len(selected) >= limit:
+                    break
+        if not added_this_round:
+            break
+    return selected
 
 
 def _ensure_snapshot(*, benchmark: str, cache_root: Path, force_download: bool) -> Path:
@@ -166,6 +209,7 @@ def _convert_raw_row(
             "schema_version": "sql_train_example:v1",
             "row_id": f"{benchmark}_{split}_{ordinal:05d}",
             **common,
+            "db_path": str(_display_path(db_path)),
             "target_sql": sql,
             "provenance": {
                 "created_by": "benchmark",

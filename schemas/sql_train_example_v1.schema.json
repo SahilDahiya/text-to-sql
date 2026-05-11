@@ -30,6 +30,7 @@
     },
     "task_id": {"type": "string", "minLength": 1},
     "db_id": {"type": "string", "minLength": 1},
+    "db_path": {"type": ["string", "null"]},
     "dialect": {"enum": ["sqlite", "postgresql"]},
     "question": {"type": "string", "minLength": 1},
     "schema_text": {"type": "string", "minLength": 1},
@@ -52,4 +53,3 @@
     }
   }
 }
-
