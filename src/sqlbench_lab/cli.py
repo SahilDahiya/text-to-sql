@@ -7,6 +7,7 @@ import argparse
 from .sql import (
     analyze_sql_eval_result,
     collect_sql_repair_data,
+    generate_bird_superstore_schema_lab,
     import_sql_benchmark,
     load_sql_eval_cases,
     load_sql_repair_examples,
@@ -59,6 +60,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     import_benchmark.add_argument("--cache-root", help="Benchmark snapshot cache root")
     import_benchmark.add_argument("--force-download", action="store_true")
+
+    bird_lab = sql_subparsers.add_parser("generate-bird-lab", help="Generate train-split BIRD schema-linking lab data")
+    bird_lab.add_argument("--db-id", choices=["superstore"], default="superstore")
+    bird_lab.add_argument("--train-output", required=True, help="Output SQL train JSONL path")
+    bird_lab.add_argument("--eval-output", required=True, help="Output SQL eval JSONL path")
+    bird_lab.add_argument("--dataset-root", help="BIRD train split root containing train_databases")
 
     run_sft = sql_subparsers.add_parser("run-sft", help="Run SQL LoRA SFT from a manifest")
     run_sft.add_argument("--manifest", required=True, help="Path to SQL SFT manifest JSON")
@@ -184,6 +191,19 @@ def _run_sql_command(args: argparse.Namespace) -> int:
             "imported SQL benchmark "
             f"{summary.benchmark}/{summary.split} artifact={summary.artifact} "
             f"selection={summary.selection} rows={summary.row_count} output={summary.output_path}"
+        )
+        return 0
+    if args.sql_command == "generate-bird-lab":
+        summary = generate_bird_superstore_schema_lab(
+            train_output_path=args.train_output,
+            eval_output_path=args.eval_output,
+            dataset_root=args.dataset_root,
+        )
+        print(
+            "generated BIRD schema lab "
+            f"db={summary.db_id} train_rows={summary.train_row_count} "
+            f"eval_rows={summary.eval_row_count} train={summary.train_output_path} "
+            f"eval={summary.eval_output_path}"
         )
         return 0
     if args.sql_command == "run-sft":

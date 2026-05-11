@@ -641,6 +641,71 @@ uv run python -m sqlbench_lab.cli sql run-sft \
   --mlflow
 ```
 
+## Exp021 Single-DB BIRD Schema-Linking Lab
+
+The broad BIRD failures show that the model is not reliably schema-linking unseen BIRD
+schemas. Exp021 narrows the problem to one train-split BIRD database so we can debug the
+skill before scaling. This is not a BIRD benchmark score.
+
+Lab database:
+
+- BIRD train DB: `superstore`
+- reason: multiple regional fact tables, `people` and `product` joins, FK relationships,
+  and many awkward identifiers such as `Customer ID`, `Order ID`, `Order Date`,
+  `Ship Mode`, `Product ID`, `Product Name`, and `Sub-Category`
+
+Generate the lab datasets:
+
+```bash
+uv run python -m sqlbench_lab.cli sql generate-bird-lab \
+  --db-id superstore \
+  --train-output datasets/sql/train/bird_superstore_schema_lab_train_v1.jsonl \
+  --eval-output datasets/sql/eval/bird_superstore_schema_lab_dev_v1.jsonl
+```
+
+Generated artifacts:
+
+- train: `datasets/sql/train/bird_superstore_schema_lab_train_v1.jsonl`
+- dev eval: `datasets/sql/eval/bird_superstore_schema_lab_dev_v1.jsonl`
+- train rows: `40`
+- dev rows: `40`
+- SQL overlap between train targets and dev gold SQL: `0`
+
+The lab covers:
+
+- exact quoted identifier copying
+- value filters
+- two-table product joins
+- two-table customer joins
+- three-table joins
+- quoted identifier arithmetic
+- computed `ORDER BY`
+- date extraction
+- grouped aggregates
+- `HAVING`
+
+Train exp021:
+
+```bash
+uv run python -m sqlbench_lab.cli sql run-sft \
+  --manifest experiments/sql/qwen35_0_8b__exp021_trl_superstore_schema_lab.json \
+  --mlflow
+```
+
+Evaluate the lab adapter:
+
+```bash
+uv run python -m sqlbench_lab.cli sql eval \
+  --manifest experiments/sql/qwen35_0_8b__exp021_trl_superstore_schema_lab.json \
+  --model adapter \
+  --dataset datasets/sql/eval/bird_superstore_schema_lab_dev_v1.jsonl \
+  --mlflow
+```
+
+Pass condition: high execution accuracy on the heldout `superstore` lab dev set. If this
+fails, broad BIRD scaling is premature. If this passes, expand the same generator pattern
+to 5-10 BIRD train DBs before returning to the stratified BIRD validation slice.
+
 Analyze a completed eval result before choosing repair work:
 
 ```bash

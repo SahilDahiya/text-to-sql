@@ -17,6 +17,7 @@ from sqlbench_lab.sql import (
     collect_sql_repair_data,
     evaluate_sqlite_case,
     extract_generated_sql,
+    generate_bird_superstore_schema_lab,
     import_sql_benchmark,
     load_sql_eval_cases,
     load_sql_repair_examples,
@@ -106,6 +107,34 @@ class SQLPipelineTests(unittest.TestCase):
         self.assertEqual(summary.row_count, 1)
         self.assertEqual(summary.selection, "first")
         self.assertEqual(rows[0].db_path, expected_db_path)
+
+    def test_generate_bird_superstore_schema_lab_writes_heldout_dev_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            dataset_root = Path(tmp_dir) / "bird" / "train"
+            _write_superstore_lab_fixture(dataset_root)
+            train_path = Path(tmp_dir) / "train.jsonl"
+            eval_path = Path(tmp_dir) / "eval.jsonl"
+
+            summary = generate_bird_superstore_schema_lab(
+                train_output_path=train_path,
+                eval_output_path=eval_path,
+                dataset_root=dataset_root,
+            )
+            train_rows = load_sql_train_examples(train_path)
+            eval_rows = load_sql_eval_cases(eval_path)
+
+        self.assertEqual(summary.db_id, "superstore")
+        self.assertEqual(len(train_rows), 40)
+        self.assertEqual(len(eval_rows), 40)
+        self.assertEqual({row.db_id for row in train_rows}, {"superstore"})
+        self.assertEqual(
+            {tag for row in train_rows for tag in row.tags if tag.startswith("region_")},
+            {"region_central", "region_east", "region_south", "region_west"},
+        )
+        self.assertEqual(
+            {row.target_sql for row in train_rows} & {case.gold_sql for case in eval_rows},
+            set(),
+        )
 
     def test_stratified_selection_round_robins_by_database(self) -> None:
         raw_rows = [
@@ -723,6 +752,80 @@ class SQLPipelineTests(unittest.TestCase):
 
             with self.assertRaisesRegex(ValueError, "duplicate row_id"):
                 load_sql_train_examples(path)
+
+
+def _write_superstore_lab_fixture(dataset_root: Path) -> None:
+    db_dir = dataset_root / "train_databases" / "superstore"
+    db_dir.mkdir(parents=True)
+    db_path = db_dir / "superstore.sqlite"
+    with sqlite3.connect(db_path) as conn:
+        conn.executescript(
+            """
+            CREATE TABLE people (
+                `Customer ID` TEXT,
+                `Customer Name` TEXT,
+                Segment TEXT,
+                Country TEXT,
+                City TEXT,
+                State TEXT,
+                `Postal Code` INTEGER,
+                Region TEXT,
+                PRIMARY KEY (`Customer ID`, Region)
+            );
+            CREATE TABLE product (
+                `Product ID` TEXT,
+                `Product Name` TEXT,
+                Category TEXT,
+                `Sub-Category` TEXT,
+                Region TEXT,
+                PRIMARY KEY (`Product ID`, Region)
+            );
+            CREATE TABLE central_superstore (
+                `Row ID` INTEGER PRIMARY KEY,
+                `Order ID` TEXT,
+                `Order Date` DATE,
+                `Ship Date` DATE,
+                `Ship Mode` TEXT,
+                `Customer ID` TEXT,
+                Region TEXT,
+                `Product ID` TEXT,
+                Sales REAL,
+                Quantity INTEGER,
+                Discount REAL,
+                Profit REAL
+            );
+            CREATE TABLE east_superstore AS SELECT * FROM central_superstore WHERE 0;
+            CREATE TABLE south_superstore AS SELECT * FROM central_superstore WHERE 0;
+            CREATE TABLE west_superstore AS SELECT * FROM central_superstore WHERE 0;
+            """
+        )
+        for region, table_name, base in [
+            ("Central", "central_superstore", 100),
+            ("East", "east_superstore", 200),
+            ("South", "south_superstore", 300),
+            ("West", "west_superstore", 400),
+        ]:
+            conn.executemany(
+                "INSERT INTO people VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                [
+                    (f"C{base}A", f"Alex {region}", "Consumer", "United States", "Austin", "Texas", 10000, region),
+                    (f"C{base}B", f"Blair {region}", "Corporate", "United States", "Boston", "Massachusetts", 20000, region),
+                ],
+            )
+            conn.executemany(
+                "INSERT INTO product VALUES (?, ?, ?, ?, ?)",
+                [
+                    (f"P{base}A", f"Desk {region}", "Furniture", "Tables", region),
+                    (f"P{base}B", f"Paper {region}", "Office Supplies", "Paper", region),
+                ],
+            )
+            conn.executemany(
+                f"INSERT INTO {table_name} VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                [
+                    (base + 1, f"O{base}A", "2013-01-01", "2013-01-03", "First Class", f"C{base}A", region, f"P{base}A", 100.0, 2, 0.0, 10.0),
+                    (base + 2, f"O{base}B", "2014-01-01", "2014-01-05", "Standard Class", f"C{base}B", region, f"P{base}B", 50.0, 5, 0.1, 5.0),
+                ],
+            )
 
 
 if __name__ == "__main__":

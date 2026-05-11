@@ -1,6 +1,7 @@
 """SQL training and evaluation primitives."""
 
 from .benchmark_import import SQLBenchmarkImportSummary, import_sql_benchmark
+from .bird_lab import BIRDSchemaLabSummary, generate_bird_superstore_schema_lab
 from .eval_analysis import SQLEvalAnalysisSummary, SQLEvalFailureAnalysis, analyze_sql_eval_result
 from .eval_runner import SQLEvalRunSummary, extract_generated_sql, run_sql_eval, run_sql_eval_with_repair
 from .eval_types import SQLCaseEvalRecord, SQLRepairAttemptRecord, SQLRepairEvalCaseRecord, SQLRepairEvalRunSummary
@@ -15,6 +16,7 @@ from .training import SQLSFTTrainingSummary, run_sql_sft, tokenize_sql_sft_messa
 
 __all__ = [
     "SQLBenchmarkImportSummary",
+    "BIRDSchemaLabSummary",
     "SQLCaseEvalRecord",
     "SQLEvalCase",
     "SQLEvalAnalysisSummary",
@@ -38,6 +40,7 @@ __all__ = [
     "collect_sql_repair_data",
     "evaluate_sqlite_case",
     "extract_generated_sql",
+    "generate_bird_superstore_schema_lab",
     "import_sql_benchmark",
     "load_sql_eval_cases",
     "load_sql_repair_examples",
