@@ -706,6 +706,21 @@ Pass condition: high execution accuracy on the heldout `superstore` lab dev set.
 fails, broad BIRD scaling is premature. If this passes, expand the same generator pattern
 to 5-10 BIRD train DBs before returning to the stratified BIRD validation slice.
 
+Exp021 local result:
+
+- train rows: `40`
+- train runtime: `476s`
+- train loss: `0.0436`
+- heldout lab dev: `36/40`
+- failure counts: schema `4`
+
+The four failures are all the same structural miss in the heldout computed-order pattern:
+the model selected `T2.\`Ship Mode\`` from a joined `people` or `product` alias even though
+`Ship Mode` belongs to the regional fact table. This is the first useful lab signal: the
+model can learn most of the single-DB schema-linking curriculum, but the next generator pass
+needs direct fact-table computed-order rows in train, not only joined computed-order rows.
+Do not scale to broad BIRD from this exact curriculum until that failure family is covered.
+
 Analyze a completed eval result before choosing repair work:
 
 ```bash
