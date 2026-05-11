@@ -35,6 +35,7 @@ class SQLTrainInputsConfig:
 
 @dataclass(frozen=True)
 class SQLTrainerConfig:
+    backend: str
     num_train_epochs: float
     per_device_train_batch_size: int
     gradient_accumulation_steps: int
@@ -103,21 +104,34 @@ def load_sql_sft_manifest(path: str | Path) -> SQLSFTExperimentManifest:
                 str(item) for item in payload["train_inputs"]["validation_datasets"]
             ),
         ),
-        trainer=SQLTrainerConfig(**payload.get("trainer", _default_trainer_payload())),
+        trainer=_load_trainer_config(payload.get("trainer", {})),
         lora=_load_lora_config(payload.get("lora", _default_lora_payload())),
         eval_plan=SQLEvalPlanConfig(**payload["eval_plan"]),
         output_paths=SQLOutputPathsConfig(**payload["output_paths"]),
     )
 
 
-def _default_trainer_payload() -> dict[str, int | float]:
+def _default_trainer_payload() -> dict[str, int | float | str]:
     return {
+        "backend": "transformers_trainer",
         "num_train_epochs": 1.0,
         "per_device_train_batch_size": 1,
         "gradient_accumulation_steps": 1,
         "learning_rate": 2e-4,
         "logging_steps": 1,
     }
+
+
+def _load_trainer_config(payload: dict[str, Any]) -> SQLTrainerConfig:
+    merged = {**_default_trainer_payload(), **payload}
+    return SQLTrainerConfig(
+        backend=str(merged["backend"]),
+        num_train_epochs=float(merged["num_train_epochs"]),
+        per_device_train_batch_size=int(merged["per_device_train_batch_size"]),
+        gradient_accumulation_steps=int(merged["gradient_accumulation_steps"]),
+        learning_rate=float(merged["learning_rate"]),
+        logging_steps=int(merged["logging_steps"]),
+    )
 
 
 def _default_lora_payload() -> dict[str, Any]:

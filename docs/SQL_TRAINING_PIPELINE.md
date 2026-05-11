@@ -314,6 +314,45 @@ Read this as real adapter signal over base, but not yet a new best over exp003. 
 one-shot step should reduce malformed long SQL after identifier copying, likely by adding
 short, validation-shaped arithmetic examples rather than more generic identifier-copy rows.
 
+## Exp007 TRL SFTTrainer Backend Gate
+
+Exp007 is a tooling-control experiment. It keeps the exp006 prompt and train mix fixed, but
+switches the SFT backend from the repo custom `transformers.Trainer` path to TRL
+`SFTTrainer`.
+
+Train mix:
+
+- train: `datasets/sql/train/bird_identifier_copy_token1536_87_v1.jsonl`
+- train: `datasets/sql/train/bird_schema_grounded_token1024_120_v1.jsonl`
+- train: `datasets/sql/train/spider_train_100_v1.jsonl`
+- manifest: `experiments/sql/qwen35_0_8b__exp007_trl_sft_identifier_copy.json`
+
+Backend settings:
+
+- `trainer.backend`: `trl_sft_trainer`
+- packing disabled
+- prompt/completion dataset format
+- completion-only loss enabled so prompt tokens are masked
+
+Success bar:
+
+- BIRD near exp006 adapter `2/25`.
+- Spider near exp006 adapter `18/25`.
+- No generated-format regression.
+- Runtime is not materially worse than exp006.
+
+Local exp007 result:
+
+- BIRD adapter: `3/25`, the best fixed-BIRD result so far.
+- Spider adapter: `17/25`, one point below the exp006 guardrail.
+- Train runtime: about `1346s`, slower than exp006's about `1026s` on the same train mix.
+
+Read this as a useful but mixed trainer migration: TRL improved BIRD, likely through slightly
+different completion masking/collation mechanics, but did not preserve the Spider guardrail
+and was slower on this dataset. Before moving to bitsandbytes, decide whether BIRD gain is
+worth the Spider/runtime tradeoff or whether exp008 should use TRL plus a small Spider
+stabilizer.
+
 Analyze a completed eval result before choosing repair work:
 
 ```bash

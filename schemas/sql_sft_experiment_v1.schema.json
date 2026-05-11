@@ -64,6 +64,9 @@
         "logging_steps"
       ],
       "properties": {
+        "backend": {
+          "enum": ["transformers_trainer", "trl_sft_trainer"]
+        },
         "num_train_epochs": {"type": "number", "exclusiveMinimum": 0},
         "per_device_train_batch_size": {"type": "integer", "minimum": 1},
         "gradient_accumulation_steps": {"type": "integer", "minimum": 1},

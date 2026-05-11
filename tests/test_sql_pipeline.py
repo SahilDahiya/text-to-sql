@@ -72,10 +72,19 @@ class SQLPipelineTests(unittest.TestCase):
         self.assertEqual(manifest.experiment_id, "qwen35_0_8b__exp001_sql_sft")
         self.assertEqual(manifest.student.base_model, "Qwen/Qwen3.5-0.8B-Base")
         self.assertEqual(manifest.training_method.stage, "direct_sql_sft")
+        self.assertEqual(manifest.trainer.backend, "transformers_trainer")
         self.assertEqual(
             manifest.train_inputs.train_datasets,
             ("datasets/sql/train/qwen35_0_8b_direct_sql_seed_v1.jsonl",),
         )
+
+    def test_load_sql_sft_manifest_reads_trl_backend(self) -> None:
+        manifest = load_sql_sft_manifest(
+            "experiments/sql/qwen35_0_8b__exp007_trl_sft_identifier_copy.json"
+        )
+
+        self.assertEqual(manifest.trainer.backend, "trl_sft_trainer")
+        self.assertEqual(manifest.trainer.logging_steps, 25)
 
     def test_run_sql_sft_dry_run_writes_training_summary(self) -> None:
         summary_path = WORKSPACE_ROOT / "artifacts/sql/qwen35_0_8b__exp001_sql_sft/train_summary.json"

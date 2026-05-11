@@ -16,6 +16,8 @@ IGNORE_INDEX = -100
 SUPPORTED_METHOD = "lora_sft"
 SUPPORTED_LOSS_TARGET = "assistant_sql_only"
 SUPPORTED_STAGE = "direct_sql_sft"
+TRANSFORMERS_TRAINER_BACKEND = "transformers_trainer"
+TRL_SFT_TRAINER_BACKEND = "trl_sft_trainer"
 
 
 def run_sql_sft(
@@ -78,43 +80,35 @@ def run_sql_sft(
     tokenizer = _load_tokenizer_like(transformers, manifest.student.base_model)
     _ensure_pad_token(tokenizer)
 
-    encoded_examples = [
-        tokenize_sql_sft_messages(tokenizer=tokenizer, messages=messages)
-        for messages in rendered_messages
-    ]
-
     model = _load_trainable_model(transformers, manifest.student.base_model, torch_module=torch)
     lora_config = _lora_config(manifest)
-    model = peft.get_peft_model(
-        model,
-        peft.LoraConfig(
-            task_type=peft.TaskType.CAUSAL_LM,
-            r=lora_config["r"],
-            lora_alpha=lora_config["lora_alpha"],
-            lora_dropout=lora_config["lora_dropout"],
-            target_modules=lora_config["target_modules"],
-        ),
-    )
-
     training_config = _training_config(manifest)
-    training_args = transformers.TrainingArguments(
-        output_dir=str(adapter_dir),
-        num_train_epochs=training_config["num_train_epochs"],
-        per_device_train_batch_size=training_config["per_device_train_batch_size"],
-        gradient_accumulation_steps=training_config["gradient_accumulation_steps"],
-        learning_rate=training_config["learning_rate"],
-        logging_steps=training_config["logging_steps"],
-        save_strategy="no",
-        report_to=[],
-        remove_unused_columns=False,
-    )
-    trainer = transformers.Trainer(
-        model=model,
-        args=training_args,
-        train_dataset=_SQLSFTDataset(encoded_examples),
-        data_collator=_SQLSFTDataCollator(pad_token_id=_pad_token_id(tokenizer), torch_module=torch),
-    )
-    train_output = trainer.train()
+
+    if manifest.trainer.backend == TRANSFORMERS_TRAINER_BACKEND:
+        model, train_output = _train_with_transformers_trainer(
+            torch_module=torch,
+            transformers=transformers,
+            peft=peft,
+            tokenizer=tokenizer,
+            model=model,
+            rendered_messages=rendered_messages,
+            adapter_dir=adapter_dir,
+            training_config=training_config,
+            lora_config=lora_config,
+        )
+    elif manifest.trainer.backend == TRL_SFT_TRAINER_BACKEND:
+        model, train_output = _train_with_trl_sft_trainer(
+            peft=peft,
+            tokenizer=tokenizer,
+            model=model,
+            rendered_messages=rendered_messages,
+            adapter_dir=adapter_dir,
+            training_config=training_config,
+            lora_config=lora_config,
+        )
+    else:
+        raise ValueError(f"unsupported SQL SFT trainer backend: {manifest.trainer.backend}")
+
     adapter_dir.mkdir(parents=True, exist_ok=True)
     model.save_pretrained(adapter_dir)
     tokenizer.save_pretrained(adapter_dir)
@@ -146,6 +140,98 @@ def run_sql_sft(
         experiment_name=mlflow_experiment,
     )
     return summary
+
+
+def _train_with_transformers_trainer(
+    *,
+    torch_module: Any,
+    transformers: Any,
+    peft: Any,
+    tokenizer: Any,
+    model: Any,
+    rendered_messages: list[list[dict[str, str]]],
+    adapter_dir: Path,
+    training_config: dict[str, Any],
+    lora_config: dict[str, Any],
+) -> tuple[Any, Any]:
+    encoded_examples = [
+        tokenize_sql_sft_messages(tokenizer=tokenizer, messages=messages)
+        for messages in rendered_messages
+    ]
+    model = peft.get_peft_model(model, _peft_lora_config(peft, lora_config))
+    training_args = transformers.TrainingArguments(
+        output_dir=str(adapter_dir),
+        num_train_epochs=training_config["num_train_epochs"],
+        per_device_train_batch_size=training_config["per_device_train_batch_size"],
+        gradient_accumulation_steps=training_config["gradient_accumulation_steps"],
+        learning_rate=training_config["learning_rate"],
+        logging_steps=training_config["logging_steps"],
+        save_strategy="no",
+        report_to=[],
+        remove_unused_columns=False,
+    )
+    trainer = transformers.Trainer(
+        model=model,
+        args=training_args,
+        train_dataset=_SQLSFTDataset(encoded_examples),
+        data_collator=_SQLSFTDataCollator(pad_token_id=_pad_token_id(tokenizer), torch_module=torch_module),
+    )
+    train_output = trainer.train()
+    return model, train_output
+
+
+def _train_with_trl_sft_trainer(
+    *,
+    peft: Any,
+    tokenizer: Any,
+    model: Any,
+    rendered_messages: list[list[dict[str, str]]],
+    adapter_dir: Path,
+    training_config: dict[str, Any],
+    lora_config: dict[str, Any],
+) -> tuple[Any, Any]:
+    datasets, trl = _import_trl_stack()
+    train_dataset = datasets.Dataset.from_list(
+        _trl_prompt_completion_rows(tokenizer=tokenizer, rendered_messages=rendered_messages)
+    )
+    training_args = trl.SFTConfig(
+        output_dir=str(adapter_dir),
+        num_train_epochs=training_config["num_train_epochs"],
+        per_device_train_batch_size=training_config["per_device_train_batch_size"],
+        gradient_accumulation_steps=training_config["gradient_accumulation_steps"],
+        learning_rate=training_config["learning_rate"],
+        logging_steps=training_config["logging_steps"],
+        save_strategy="no",
+        report_to=[],
+        packing=False,
+        completion_only_loss=True,
+        assistant_only_loss=False,
+        max_length=None,
+        gradient_checkpointing=False,
+    )
+    trainer = trl.SFTTrainer(
+        model=model,
+        args=training_args,
+        train_dataset=train_dataset,
+        processing_class=tokenizer,
+        peft_config=_peft_lora_config(peft, lora_config),
+    )
+    train_output = trainer.train()
+    return trainer.model, train_output
+
+
+def _trl_prompt_completion_rows(
+    *,
+    tokenizer: Any,
+    rendered_messages: list[list[dict[str, str]]],
+) -> list[dict[str, str]]:
+    return [
+        {
+            "prompt": render_sql_sft_prompt(messages),
+            "completion": messages[-1]["content"] + _eos_text(tokenizer),
+        }
+        for messages in rendered_messages
+    ]
 
 
 def tokenize_sql_sft_messages(tokenizer: Any, messages: list[dict[str, str]]) -> dict[str, list[int]]:
@@ -190,10 +276,13 @@ def _validate_supported_manifest(manifest: SQLSFTExperimentManifest) -> None:
         raise ValueError(f"SQL SFT runner only supports stage={SUPPORTED_STAGE!r}")
     if manifest.train_inputs.validation_datasets:
         raise ValueError("SQL SFT runner does not support validation_datasets yet")
+    if manifest.trainer.backend not in {TRANSFORMERS_TRAINER_BACKEND, TRL_SFT_TRAINER_BACKEND}:
+        raise ValueError(f"unsupported SQL SFT trainer backend: {manifest.trainer.backend}")
 
 
-def _training_config(manifest: SQLSFTExperimentManifest) -> dict[str, int | float]:
+def _training_config(manifest: SQLSFTExperimentManifest) -> dict[str, int | float | str]:
     return {
+        "backend": manifest.trainer.backend,
         "num_train_epochs": manifest.trainer.num_train_epochs,
         "per_device_train_batch_size": manifest.trainer.per_device_train_batch_size,
         "gradient_accumulation_steps": manifest.trainer.gradient_accumulation_steps,
@@ -209,6 +298,16 @@ def _lora_config(manifest: SQLSFTExperimentManifest) -> dict[str, Any]:
         "lora_dropout": manifest.lora.lora_dropout,
         "target_modules": list(manifest.lora.target_modules),
     }
+
+
+def _peft_lora_config(peft: Any, lora_config: dict[str, Any]) -> Any:
+    return peft.LoraConfig(
+        task_type=peft.TaskType.CAUSAL_LM,
+        r=lora_config["r"],
+        lora_alpha=lora_config["lora_alpha"],
+        lora_dropout=lora_config["lora_dropout"],
+        target_modules=lora_config["target_modules"],
+    )
 
 
 def _training_metrics(train_output: Any) -> dict[str, float]:
@@ -280,6 +379,18 @@ def _import_training_stack() -> tuple[Any, Any, Any]:
             "Install the training extras before running without --dry-run."
         ) from exc
     return torch, transformers, peft
+
+
+def _import_trl_stack() -> tuple[Any, Any]:
+    try:
+        import datasets
+        import trl
+    except ImportError as exc:
+        raise ImportError(
+            "SQL SFT training with backend=trl_sft_trainer requires datasets and trl. "
+            "Install the training extras before running without --dry-run."
+        ) from exc
+    return datasets, trl
 
 
 def _load_tokenizer_like(transformers: Any, base_model: str) -> Any:
