@@ -959,6 +959,28 @@ uv run python -m sqlbench_lab.cli sql eval \
 Pass condition: close the three `regional_sales` row-value mismatches while keeping
 `superstore` at or near `40/40`.
 
+Exp024 local result:
+
+- train rows: `100`
+- train runtime: `823s`
+- train loss: `0.0392`
+- superstore fixed heldout lab dev: `40/40`
+- regional_sales fixed heldout lab dev: `33/40`
+- regional_sales failure counts: schema `4`, row-value mismatch `3`
+
+Decision: reject Exp024 as a curriculum regression. The extra text-number normalization
+rows preserved `superstore`, but made `regional_sales` worse than Exp023 (`37/40`).
+The original three unit-price failures still missed comma normalization, now generating
+`AVG(CAST(T1.\`Unit Price\` AS REAL))` instead of
+`AVG(CAST(REPLACE(T1.\`Unit Price\`, ',', '') AS REAL))`. The new four failures are exact
+identifier regressions: the model generated `T1.OrderQuantity` instead of quoted
+`T1.\`Order Quantity\``. This suggests the v2 additions biased the adapter toward unquoted
+identifier shortcuts while still failing to teach the full normalization expression.
+
+Next step: do not expand to `sales` from Exp024. Prefer either a prompt/schema rendering
+fix that explicitly marks text numeric columns, or a smaller isolated normalization lab
+that also reinforces quoted identifiers in the same rows.
+
 ## BIRD DB-Level Expansion Protocol
 
 When expanding beyond `superstore`, treat the database ID as the scientific split unit. The
