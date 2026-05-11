@@ -779,6 +779,20 @@ uv run python -m sqlbench_lab.cli sql eval \
 Pass condition: at least `39/40` on the fixed superstore dev set and no remaining
 computed-order schema errors for `Ship Mode`.
 
+Exp022 local result:
+
+- train rows: `48`
+- train runtime: `499s`
+- train loss: `0.0423`
+- fixed heldout lab dev: `40/40`
+- failure counts: none
+
+The added direct fact-table computed-order rows closed the Exp021 failure family. The four
+previous `Ship Mode` computed-order cases now predict `Ship Mode` from the regional fact
+table instead of a joined alias. This is still same-DB generalization, not unseen-DB
+generalization, but the generator pattern is now strong enough to reuse when adding
+`regional_sales`.
+
 ## BIRD DB-Level Expansion Protocol
 
 When expanding beyond `superstore`, treat the database ID as the scientific split unit. The
