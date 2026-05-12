@@ -35,6 +35,15 @@ def main(argv: list[str] | None = None) -> int:
     observe_ui.add_argument("--port", type=int, default=5000, help="MLflow UI bind port")
     observe_ui.add_argument("--backend-store-uri", help="MLflow backend store URI")
 
+    docs_parser = subparsers.add_parser("docs", help="Browser docs commands")
+    docs_subparsers = docs_parser.add_subparsers(dest="docs_command")
+    docs_build = docs_subparsers.add_parser("build", help="Build the static browser docs")
+    docs_build.add_argument("--output", default="site", help="Output directory")
+    docs_serve = docs_subparsers.add_parser("serve", help="Build and serve the browser docs")
+    docs_serve.add_argument("--output", default="site", help="Output directory")
+    docs_serve.add_argument("--host", default="127.0.0.1", help="HTTP bind host")
+    docs_serve.add_argument("--port", type=int, default=8000, help="HTTP bind port")
+
     sql_parser = subparsers.add_parser("sql", help="SQL pipeline commands")
     sql_subparsers = sql_parser.add_subparsers(dest="sql_command")
 
@@ -177,8 +186,28 @@ def main(argv: list[str] | None = None) -> int:
             return _run_observe_command(args)
         except (ImportError, ValueError) as exc:
             parser.error(str(exc))
+    if args.command == "docs":
+        try:
+            return _run_docs_command(args)
+        except (ImportError, ValueError) as exc:
+            parser.error(str(exc))
     parser.print_help()
     return 0
+
+
+def _run_docs_command(args: argparse.Namespace) -> int:
+    from sqlbench_lab.docs_site import build_docs_site, serve_docs_site
+
+    if args.docs_command == "build":
+        summary = build_docs_site(args.output)
+        print(
+            "built SQLBench Lab browser docs "
+            f"pages={summary.page_count} assets={summary.asset_count} output={summary.output_dir}"
+        )
+        return 0
+    if args.docs_command == "serve":
+        return serve_docs_site(args.output, host=args.host, port=args.port)
+    raise ValueError("missing docs command")
 
 
 def _run_observe_command(args: argparse.Namespace) -> int:

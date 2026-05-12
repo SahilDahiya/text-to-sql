@@ -3,8 +3,10 @@
 read_when: you are starting work in this repo or need repo-specific coding rules
 
 ## Start Here
-- Read `docs/README.md` first.
-- The active direction is in `docs/SQL_PIPELINE_PARTS.md`, `docs/SQL_TRAINING_PIPELINE.md`, and `docs/LIVESQLBENCH_COMPETITION.md`.
+- Build or read the browser docs first: `uv run python -m sqlbench_lab.cli docs build`,
+  then open `site/index.html`.
+- The tracked docs source is `src/sqlbench_lab/docs_site/builder.py`. Update it before
+  changing generated HTML.
 - `/home/dahiy/repos/tapasya.mobile/llm` is the reference repo for workflow style, not for task semantics.
 - Do not copy the Nietzsche passage task into this repo. This repo is for SQL training and LiveSQLBench work.
 
@@ -42,9 +44,15 @@ read_when: you are starting work in this repo or need repo-specific coding rules
 - If temporary compatibility code is introduced, the same diff must state why it exists and the exact deletion criteria.
 
 ## Docs
-- Update relevant docs when behavior, contracts, or implementation direction changes.
-- Every new doc must be linked in `docs/README.md`.
-- Include a `read_when` line at the top of each doc.
+- Browser docs are the primary documentation surface.
+- Do not add new markdown docs for repo knowledge, experiment planning, training notes,
+  LiveSQLBench notes, or tooling notes.
+- Update `src/sqlbench_lab/docs_site/builder.py` first when behavior, contracts,
+  implementation direction, or experiment interpretation changes.
+- Rebuild with `uv run python -m sqlbench_lab.cli docs build` after docs-source edits.
+- Add or update tests for new docs pages or required sections in `tests/test_docs_site.py`.
+- Generated `site/` files are browser output and are ignored by git.
+- Markdown is allowed only where a tool requires it, such as `AGENTS.md` or external issue text.
 
 ## Experiment Learning Ledger
 - Keep Linear learning issue `TAP-532` current as the practical fine-tuning learning ledger.
@@ -63,7 +71,8 @@ read_when: you are starting work in this repo or need repo-specific coding rules
   - `## Result`
   - `## Practical learning`
   - `## Rule captured`
-- If an experiment changes the SQL pipeline direction, update both `docs/SQL_TRAINING_PIPELINE.md` and the relevant Linear learning issue.
+- If an experiment changes the SQL pipeline direction, update the browser docs source and
+  the relevant Linear learning issue.
 - Do not record local approximate scores as official benchmark claims. Mark lab, local, same-DB, unseen-DB, and official benchmark results distinctly.
 - For regressions, state the regression mechanism plainly and do not expand from the regressed checkpoint.
 
