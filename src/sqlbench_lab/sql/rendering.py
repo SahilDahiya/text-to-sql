@@ -99,6 +99,8 @@ def _canonical_user_content(example: SQLEvalCase | SQLTrainExample | SQLRepairEx
     ]
     if example.knowledge_text:
         sections.append(f"Knowledge:\n{example.knowledge_text}")
+    if example.column_value_notes:
+        sections.append("Column value notes:\n" + "\n".join(f"- {note}" for note in example.column_value_notes))
     sections.append(f"Question:\n{example.question}")
     return "\n\n".join(sections)
 
@@ -107,6 +109,13 @@ def _premsql_user_content(example: SQLEvalCase | SQLTrainExample | SQLRepairExam
     additional_knowledge = (
         f"# Additional Knowledge:\n{example.knowledge_text}\n"
         if example.knowledge_text
+        else ""
+    )
+    column_value_notes = (
+        "# Column Value Notes:\n"
+        + "\n".join(f"- {note}" for note in example.column_value_notes)
+        + "\n\n"
+        if example.column_value_notes
         else ""
     )
     return (
@@ -122,7 +131,8 @@ def _premsql_user_content(example: SQLEvalCase | SQLTrainExample | SQLRepairExam
         f"# SQL Dialect:\n{example.dialect}\n\n"
         f"# Database ID:\n{example.db_id}\n\n"
         f"# Database and Table Schema:\n{example.schema_text}\n\n"
-        f"{additional_knowledge}\n"
+        f"{additional_knowledge}"
+        f"{column_value_notes}"
         f"# Question: {example.question}\n\n"
         "# SQL:"
     )

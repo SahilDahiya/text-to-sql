@@ -226,6 +226,32 @@ class SQLPipelineTests(unittest.TestCase):
             set(),
         )
 
+    def test_generate_bird_regional_sales_schema_lab_can_add_column_value_notes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            dataset_root = Path(tmp_dir) / "bird" / "train"
+            _write_regional_sales_lab_fixture(dataset_root)
+            train_path = Path(tmp_dir) / "regional_sales_train_notes.jsonl"
+            eval_path = Path(tmp_dir) / "regional_sales_eval_notes.jsonl"
+
+            summary = generate_bird_regional_sales_schema_lab(
+                train_output_path=train_path,
+                eval_output_path=eval_path,
+                dataset_root=dataset_root,
+                include_column_value_notes=True,
+            )
+            train_rows = load_sql_train_examples(train_path)
+            eval_rows = load_sql_eval_cases(eval_path)
+
+        self.assertEqual(summary.db_id, "regional_sales")
+        self.assertEqual(len(train_rows), 40)
+        self.assertEqual(len(eval_rows), 40)
+        self.assertTrue(all(row.column_value_notes for row in train_rows))
+        self.assertTrue(all(case.column_value_notes for case in eval_rows))
+        self.assertIn("Unit Price", train_rows[0].column_value_notes[0])
+        self.assertIn('"1,000.00"', train_rows[0].column_value_notes[0])
+        self.assertIn("may include commas", train_rows[0].column_value_notes[0])
+        self.assertIn("CAST(REPLACE(T1.`Unit Price`, ',', '') AS REAL)", train_rows[0].column_value_notes[0])
+
     def test_generate_bird_regional_sales_normalization_micro_lab_writes_train_only_rows(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             dataset_root = Path(tmp_dir) / "bird" / "train"
@@ -933,6 +959,45 @@ class SQLPipelineTests(unittest.TestCase):
         self.assertIn("# Additional Knowledge:", messages[1]["content"])
         self.assertIn("# Database and Table Schema:", messages[1]["content"])
         self.assertTrue(messages[1]["content"].rstrip().endswith("# SQL:"))
+
+    def test_prompt_rendering_includes_column_value_notes(self) -> None:
+        train_row = {
+            "schema_version": "sql_train_example:v1",
+            "row_id": "train_001",
+            "source_benchmark": "bird",
+            "source_split": "train",
+            "task_id": "bird_task",
+            "db_id": "regional_sales",
+            "db_path": "external/sql/benchmarks/premai-io__birdbench/train/train_databases/regional_sales/regional_sales.sqlite",
+            "dialect": "sqlite",
+            "question": "Which sales channel has the highest average unit price?",
+            "schema_text": "CREATE TABLE `Sales Orders` (`Sales Channel` TEXT, `Unit Price` TEXT);",
+            "knowledge_text": None,
+            "column_value_notes": [
+                "`Sales Orders`.`Unit Price`: TEXT numeric values may include commas, e.g. \"1,000.00\"; "
+                "for numeric aggregation use CAST(REPLACE(T1.`Unit Price`, ',', '') AS REAL)."
+            ],
+            "target_sql": "SELECT `Sales Channel` FROM `Sales Orders`;",
+            "task_type": "select",
+            "provenance": {
+                "created_by": "benchmark",
+                "teacher_model": None,
+                "source_path": "tests",
+            },
+            "tags": ["bird"],
+        }
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            train_path = Path(tmp_dir) / "train.jsonl"
+            train_path.write_text(json.dumps(train_row) + "\n", encoding="utf-8")
+            row = load_sql_train_examples(train_path)[0]
+
+        canonical_messages = build_train_messages(row)
+        premsql_messages = build_train_messages(row, prompt_style="premsql_text")
+
+        self.assertIn("Column value notes:", canonical_messages[1]["content"])
+        self.assertIn("may include commas", canonical_messages[1]["content"])
+        self.assertIn("# Column Value Notes:", premsql_messages[1]["content"])
+        self.assertIn("CAST(REPLACE(T1.`Unit Price`, ',', '') AS REAL)", premsql_messages[1]["content"])
 
     def test_load_sql_train_examples_rejects_duplicate_row_ids(self) -> None:
         row = {

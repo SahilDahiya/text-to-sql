@@ -36,6 +36,10 @@
     "question": {"type": "string", "minLength": 1},
     "schema_text": {"type": "string", "minLength": 1},
     "knowledge_text": {"type": ["string", "null"]},
+    "column_value_notes": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1}
+    },
     "previous_sql": {"type": "string", "minLength": 1},
     "execution_error": {"type": "string", "minLength": 1},
     "target_sql": {"type": "string", "minLength": 1},
@@ -56,4 +60,3 @@
     }
   }
 }
-

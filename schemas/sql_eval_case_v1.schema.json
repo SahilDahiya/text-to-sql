@@ -38,6 +38,10 @@
     "question": {"type": "string", "minLength": 1},
     "schema_text": {"type": "string", "minLength": 1},
     "knowledge_text": {"type": ["string", "null"]},
+    "column_value_notes": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1}
+    },
     "gold_sql": {"type": "string", "minLength": 1},
     "task_type": {"enum": ["select", "management", "unknown"]},
     "order_sensitive": {"type": "boolean"},

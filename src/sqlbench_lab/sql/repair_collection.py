@@ -120,6 +120,7 @@ def _repair_row(
         "question": case.question,
         "schema_text": case.schema_text,
         "knowledge_text": case.knowledge_text,
+        "column_value_notes": list(case.column_value_notes),
         "previous_sql": previous_sql,
         "execution_error": sql_eval_failure_observation(record, failure_type=failure_type),
         "target_sql": case.gold_sql,

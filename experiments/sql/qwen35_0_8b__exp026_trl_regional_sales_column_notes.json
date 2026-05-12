@@ -1,0 +1,64 @@
+{
+  "schema_version": "sql_sft_experiment:v1",
+  "experiment_id": "qwen35_0_8b__exp026_trl_regional_sales_column_notes",
+  "student": {
+    "model_family": "qwen35",
+    "base_model": "Qwen/Qwen3.5-0.8B-Base",
+    "adapter_name": "qwen35_0_8b_trl_regional_sales_column_notes_exp026"
+  },
+  "training_method": {
+    "method": "lora_sft",
+    "loss_target": "assistant_sql_only",
+    "stage": "direct_sql_sft",
+    "notes": "Two-DB BIRD train-lab run. Trains on superstore train_v2 plus regional_sales train_v1 with column_value_notes. Evaluates regional_sales with the same note-bearing prompt shape and superstore unchanged. This is a curriculum/debug run, not a BIRD benchmark score."
+  },
+  "prompt": {
+    "style": "canonical_chat"
+  },
+  "train_inputs": {
+    "train_datasets": [
+      "datasets/sql/train/bird_superstore_schema_lab_train_v2.jsonl",
+      "datasets/sql/train/bird_regional_sales_schema_lab_train_v1_column_notes.jsonl"
+    ],
+    "validation_datasets": []
+  },
+  "trainer": {
+    "backend": "trl_sft_trainer",
+    "num_train_epochs": 3.0,
+    "per_device_train_batch_size": 1,
+    "gradient_accumulation_steps": 1,
+    "learning_rate": 0.0002,
+    "logging_steps": 25,
+    "packing": false,
+    "packing_strategy": "bfd",
+    "max_length": null,
+    "bf16": null,
+    "tf32": null,
+    "gradient_checkpointing": false
+  },
+  "lora": {
+    "r": 8,
+    "lora_alpha": 16,
+    "lora_dropout": 0.05,
+    "target_modules": [
+      "q_proj",
+      "k_proj",
+      "v_proj",
+      "o_proj",
+      "gate_proj",
+      "up_proj",
+      "down_proj"
+    ]
+  },
+  "eval_plan": {
+    "smoke_dataset": "datasets/sql/smoke/sql_smoke_v1.jsonl",
+    "baseline_results": "results/sql/qwen35_0_8b__exp026_trl_regional_sales_column_notes/baseline_smoke.json",
+    "post_train_results": "results/sql/qwen35_0_8b__exp026_trl_regional_sales_column_notes/post_train_smoke.json"
+  },
+  "output_paths": {
+    "experiment_root": "artifacts/sql/qwen35_0_8b__exp026_trl_regional_sales_column_notes",
+    "adapter_dir": "artifacts/sql/qwen35_0_8b__exp026_trl_regional_sales_column_notes/adapter",
+    "train_summary_json": "artifacts/sql/qwen35_0_8b__exp026_trl_regional_sales_column_notes/train_summary.json",
+    "eval_summary_json": "artifacts/sql/qwen35_0_8b__exp026_trl_regional_sales_column_notes/eval_summary.json"
+  }
+}

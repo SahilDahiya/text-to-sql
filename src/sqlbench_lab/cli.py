@@ -91,6 +91,11 @@ def main(argv: list[str] | None = None) -> int:
     bird_lab.add_argument("--eval-output", required=True, help="Output SQL eval JSONL path")
     bird_lab.add_argument("--dataset-root", help="BIRD train split root containing train_databases")
     bird_lab.add_argument("--curriculum-version", choices=["v1", "v2"], default="v1")
+    bird_lab.add_argument(
+        "--include-column-value-notes",
+        action="store_true",
+        help="Add DB-derived column value notes to generated BIRD lab rows",
+    )
 
     bird_normalization_lab = sql_subparsers.add_parser(
         "generate-bird-regional-sales-normalization-lab",
@@ -241,6 +246,8 @@ def _run_sql_command(args: argparse.Namespace) -> int:
         return 0
     if args.sql_command == "generate-bird-lab":
         if args.db_id == "superstore":
+            if args.include_column_value_notes:
+                raise ValueError("--include-column-value-notes is only supported for regional_sales")
             summary = generate_bird_superstore_schema_lab(
                 train_output_path=args.train_output,
                 eval_output_path=args.eval_output,
@@ -253,6 +260,7 @@ def _run_sql_command(args: argparse.Namespace) -> int:
                 eval_output_path=args.eval_output,
                 dataset_root=args.dataset_root,
                 curriculum_version=args.curriculum_version,
+                include_column_value_notes=args.include_column_value_notes,
             )
         else:
             raise ValueError(f"unsupported BIRD lab db_id: {args.db_id}")

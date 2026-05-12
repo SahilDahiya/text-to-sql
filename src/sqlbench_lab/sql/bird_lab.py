@@ -106,6 +106,7 @@ def generate_bird_regional_sales_schema_lab(
     eval_output_path: str | Path,
     dataset_root: str | Path | None = None,
     curriculum_version: str = "v1",
+    include_column_value_notes: bool = False,
 ) -> BIRDSchemaLabSummary:
     """Generate a train-split-only BIRD schema-linking lab for regional_sales."""
 
@@ -120,6 +121,11 @@ def generate_bird_regional_sales_schema_lab(
     train_rows: list[dict[str, Any]] = []
     eval_rows: list[dict[str, Any]] = []
     with sqlite3.connect(db_path) as conn:
+        column_value_notes = (
+            _regional_sales_column_value_notes(conn)
+            if include_column_value_notes
+            else ()
+        )
         for region_index, region in enumerate(REGIONAL_SALES_REGIONS):
             facts = _regional_sales_facts(conn, region=region)
             train_rows.extend(
@@ -131,6 +137,7 @@ def generate_bird_regional_sales_schema_lab(
                     split_offset=region_index * 100,
                     artifact="train",
                     curriculum_version=curriculum_version,
+                    column_value_notes=column_value_notes,
                 )
             )
             eval_rows.extend(
@@ -142,6 +149,7 @@ def generate_bird_regional_sales_schema_lab(
                     split_offset=region_index * 100,
                     artifact="eval",
                     curriculum_version=curriculum_version,
+                    column_value_notes=column_value_notes,
                 )
             )
 
@@ -309,6 +317,7 @@ def _regional_sales_rows_for_split(
     split_offset: int,
     artifact: str,
     curriculum_version: str,
+    column_value_notes: tuple[str, ...] = (),
 ) -> list[dict[str, Any]]:
     start = 0 if split_name == "train" else 1
     selected = {
@@ -344,6 +353,8 @@ def _regional_sales_rows_for_split(
                 row["pattern"],
             ],
         }
+        if column_value_notes:
+            common["column_value_notes"] = list(column_value_notes)
         if artifact == "train":
             output.append(
                 {
@@ -786,6 +797,41 @@ def _regional_sales_facts(conn: sqlite3.Connection, *, region: str) -> dict[str,
     }
     _require_regional_sales_values(facts)
     return facts
+
+
+def _regional_sales_column_value_notes(conn: sqlite3.Connection) -> tuple[str, str]:
+    unit_price_sample = _regional_sales_text_numeric_sample(conn, column_name="Unit Price")
+    unit_cost_sample = _regional_sales_text_numeric_sample(conn, column_name="Unit Cost")
+    return (
+        (
+            "`Sales Orders`.`Unit Price`: TEXT numeric values may include commas, "
+            f'e.g. "{unit_price_sample}"; for numeric aggregation use '
+            "CAST(REPLACE(T1.`Unit Price`, ',', '') AS REAL)."
+        ),
+        (
+            "`Sales Orders`.`Unit Cost`: TEXT numeric values may include commas, "
+            f'e.g. "{unit_cost_sample}"; for numeric aggregation use '
+            "CAST(REPLACE(T1.`Unit Cost`, ',', '') AS REAL)."
+        ),
+    )
+
+
+def _regional_sales_text_numeric_sample(conn: sqlite3.Connection, *, column_name: str) -> str:
+    if column_name not in {"Unit Price", "Unit Cost"}:
+        raise ValueError(f"unsupported regional_sales text numeric column: {column_name}")
+    quoted_column = _quote_identifier(column_name)
+    row = conn.execute(
+        f"""
+        SELECT {quoted_column}
+        FROM `Sales Orders`
+        WHERE {quoted_column} IS NOT NULL
+        ORDER BY {quoted_column}
+        LIMIT 1
+        """
+    ).fetchone()
+    if row is None or row[0] is None:
+        raise ValueError(f"regional_sales has no text numeric sample for {column_name}")
+    return str(row[0])
 
 
 def _computed_order_row(*, table_name: str, region: str, variant: str) -> dict[str, str]:

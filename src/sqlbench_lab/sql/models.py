@@ -34,6 +34,7 @@ class SQLTrainExample:
     question: str
     schema_text: str
     knowledge_text: str | None
+    column_value_notes: tuple[str, ...]
     target_sql: str
     task_type: str
     provenance: SQLProvenance
@@ -53,6 +54,7 @@ class SQLTrainExample:
             question=str(payload["question"]),
             schema_text=str(payload["schema_text"]),
             knowledge_text=_optional_string(payload.get("knowledge_text")),
+            column_value_notes=_string_tuple(payload.get("column_value_notes", [])),
             target_sql=str(payload["target_sql"]),
             task_type=str(payload["task_type"]),
             provenance=SQLProvenance.from_dict(payload["provenance"]),
@@ -72,6 +74,7 @@ class SQLRepairExample:
     question: str
     schema_text: str
     knowledge_text: str | None
+    column_value_notes: tuple[str, ...]
     previous_sql: str
     execution_error: str
     target_sql: str
@@ -92,6 +95,7 @@ class SQLRepairExample:
             question=str(payload["question"]),
             schema_text=str(payload["schema_text"]),
             knowledge_text=_optional_string(payload.get("knowledge_text")),
+            column_value_notes=_string_tuple(payload.get("column_value_notes", [])),
             previous_sql=str(payload["previous_sql"]),
             execution_error=str(payload["execution_error"]),
             target_sql=str(payload["target_sql"]),
@@ -115,6 +119,7 @@ class SQLEvalCase:
     question: str
     schema_text: str
     knowledge_text: str | None
+    column_value_notes: tuple[str, ...]
     gold_sql: str
     task_type: str
     order_sensitive: bool
@@ -136,6 +141,7 @@ class SQLEvalCase:
             question=str(payload["question"]),
             schema_text=str(payload["schema_text"]),
             knowledge_text=_optional_string(payload.get("knowledge_text")),
+            column_value_notes=_string_tuple(payload.get("column_value_notes", [])),
             gold_sql=str(payload["gold_sql"]),
             task_type=str(payload["task_type"]),
             order_sensitive=bool(payload["order_sensitive"]),
@@ -148,3 +154,11 @@ def _optional_string(value: Any) -> str | None:
     if value is None:
         return None
     return str(value)
+
+
+def _string_tuple(value: Any) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, list):
+        raise TypeError(f"expected list for string tuple field, got {type(value).__name__}")
+    return tuple(str(item) for item in value)

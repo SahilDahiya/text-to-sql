@@ -1069,6 +1069,76 @@ may not override a memorized shorter expression when the heldout target asks for
 shape explicit in the base regional_sales train rows or change the prompt/schema rendering
 to mark text numeric columns before decoding.
 
+## Exp026 Regional Sales Column Value Notes
+
+Exp026 tests prompt grounding rather than more adjacent examples. The failure is not SQL
+structure; it is hidden value semantics. `Unit Price` is declared `TEXT`, and the model
+needs evidence that numeric aggregation should remove commas before casting.
+
+Contract change:
+
+- SQL train/eval/repair rows may include optional `column_value_notes`.
+- Prompt rendering includes these notes in both `canonical_chat` and `premsql_text`.
+- Existing datasets remain valid when the field is absent.
+
+Generate note-bearing regional_sales train/dev:
+
+```bash
+uv run python -m sqlbench_lab.cli sql generate-bird-lab \
+  --db-id regional_sales \
+  --curriculum-version v1 \
+  --include-column-value-notes \
+  --train-output datasets/sql/train/bird_regional_sales_schema_lab_train_v1_column_notes.jsonl \
+  --eval-output datasets/sql/eval/bird_regional_sales_schema_lab_dev_v1_column_notes.jsonl
+```
+
+Train inputs:
+
+- `datasets/sql/train/bird_superstore_schema_lab_train_v2.jsonl`
+- `datasets/sql/train/bird_regional_sales_schema_lab_train_v1_column_notes.jsonl`
+
+Fixed comparison evals:
+
+- `datasets/sql/eval/bird_superstore_schema_lab_dev_v1.jsonl`
+- `datasets/sql/eval/bird_regional_sales_schema_lab_dev_v1_column_notes.jsonl`
+
+Audit leakage:
+
+```bash
+uv run python -m sqlbench_lab.cli sql audit-leakage \
+  --train-dataset datasets/sql/train/bird_superstore_schema_lab_train_v2.jsonl \
+  --train-dataset datasets/sql/train/bird_regional_sales_schema_lab_train_v1_column_notes.jsonl \
+  --eval-dataset datasets/sql/eval/bird_superstore_schema_lab_dev_v1.jsonl \
+  --eval-dataset datasets/sql/eval/bird_regional_sales_schema_lab_dev_v1_column_notes.jsonl
+```
+
+Train exp026:
+
+```bash
+uv run --group training --group observability python -m sqlbench_lab.cli sql run-sft \
+  --manifest experiments/sql/qwen35_0_8b__exp026_trl_regional_sales_column_notes.json \
+  --mlflow
+```
+
+Evaluate exp026:
+
+```bash
+uv run --group training --group observability python -m sqlbench_lab.cli sql eval \
+  --manifest experiments/sql/qwen35_0_8b__exp026_trl_regional_sales_column_notes.json \
+  --model adapter \
+  --dataset datasets/sql/eval/bird_regional_sales_schema_lab_dev_v1_column_notes.jsonl \
+  --mlflow
+
+uv run --group training --group observability python -m sqlbench_lab.cli sql eval \
+  --manifest experiments/sql/qwen35_0_8b__exp026_trl_regional_sales_column_notes.json \
+  --model adapter \
+  --dataset datasets/sql/eval/bird_superstore_schema_lab_dev_v1.jsonl \
+  --mlflow
+```
+
+Pass condition: improve `regional_sales` above Exp023/Exp025 `37/40`, ideally to `40/40`,
+while preserving `superstore` at `40/40`.
+
 ## BIRD DB-Level Expansion Protocol
 
 When expanding beyond `superstore`, treat the database ID as the scientific split unit. The
