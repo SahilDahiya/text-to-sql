@@ -3,6 +3,8 @@
 from .benchmark_import import SQLBenchmarkImportSummary, import_sql_benchmark
 from .bird_lab import (
     BIRDSchemaLabSummary,
+    BIRDTrainLabSummary,
+    generate_bird_regional_sales_normalization_micro_lab,
     generate_bird_regional_sales_schema_lab,
     generate_bird_superstore_schema_lab,
 )
@@ -22,6 +24,7 @@ from .training import SQLSFTTrainingSummary, run_sql_sft, tokenize_sql_sft_messa
 __all__ = [
     "SQLBenchmarkImportSummary",
     "BIRDSchemaLabSummary",
+    "BIRDTrainLabSummary",
     "SQLCaseEvalRecord",
     "SQLEvalCase",
     "SQLEvalAnalysisSummary",
@@ -49,6 +52,7 @@ __all__ = [
     "evaluate_sqlite_case",
     "extract_generated_sql",
     "generate_bird_superstore_schema_lab",
+    "generate_bird_regional_sales_normalization_micro_lab",
     "generate_bird_regional_sales_schema_lab",
     "import_sql_benchmark",
     "load_sql_eval_cases",

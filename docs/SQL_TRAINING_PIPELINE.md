@@ -981,6 +981,74 @@ Next step: do not expand to `sales` from Exp024. Prefer either a prompt/schema r
 fix that explicitly marks text numeric columns, or a smaller isolated normalization lab
 that also reinforces quoted identifiers in the same rows.
 
+## Exp025 Regional Sales Normalization Micro-Lab
+
+Exp025 returns to the Exp023 stable base and adds a separate train-only micro-lab instead
+of using the broader rejected Exp024 `regional_sales` v2 curriculum.
+
+Intent:
+
+- preserve the Exp023 `superstore` `40/40` and `regional_sales` `37/40` baseline
+- teach the full expression `CAST(REPLACE(T1.\`Unit Price\`, ',', '') AS REAL)`
+- reinforce `T1.\`Order Quantity\`` in the same rows so normalization does not cause
+  unquoted identifier regressions
+
+Generate the micro-lab:
+
+```bash
+uv run python -m sqlbench_lab.cli sql generate-bird-regional-sales-normalization-lab \
+  --train-output datasets/sql/train/bird_regional_sales_normalization_micro_v1.jsonl
+```
+
+Train inputs:
+
+- `datasets/sql/train/bird_superstore_schema_lab_train_v2.jsonl`
+- `datasets/sql/train/bird_regional_sales_schema_lab_train_v1.jsonl`
+- `datasets/sql/train/bird_regional_sales_normalization_micro_v1.jsonl`
+
+Fixed comparison evals:
+
+- `datasets/sql/eval/bird_superstore_schema_lab_dev_v1.jsonl`
+- `datasets/sql/eval/bird_regional_sales_schema_lab_dev_v1.jsonl`
+
+Audit leakage:
+
+```bash
+uv run python -m sqlbench_lab.cli sql audit-leakage \
+  --train-dataset datasets/sql/train/bird_superstore_schema_lab_train_v2.jsonl \
+  --train-dataset datasets/sql/train/bird_regional_sales_schema_lab_train_v1.jsonl \
+  --train-dataset datasets/sql/train/bird_regional_sales_normalization_micro_v1.jsonl \
+  --eval-dataset datasets/sql/eval/bird_superstore_schema_lab_dev_v1.jsonl \
+  --eval-dataset datasets/sql/eval/bird_regional_sales_schema_lab_dev_v1.jsonl
+```
+
+Train exp025:
+
+```bash
+uv run --group training --group observability python -m sqlbench_lab.cli sql run-sft \
+  --manifest experiments/sql/qwen35_0_8b__exp025_trl_regional_sales_normalization_micro.json \
+  --mlflow
+```
+
+Evaluate exp025:
+
+```bash
+uv run --group training --group observability python -m sqlbench_lab.cli sql eval \
+  --manifest experiments/sql/qwen35_0_8b__exp025_trl_regional_sales_normalization_micro.json \
+  --model adapter \
+  --dataset datasets/sql/eval/bird_regional_sales_schema_lab_dev_v1.jsonl \
+  --mlflow
+
+uv run --group training --group observability python -m sqlbench_lab.cli sql eval \
+  --manifest experiments/sql/qwen35_0_8b__exp025_trl_regional_sales_normalization_micro.json \
+  --model adapter \
+  --dataset datasets/sql/eval/bird_superstore_schema_lab_dev_v1.jsonl \
+  --mlflow
+```
+
+Pass condition: improve `regional_sales` above Exp023 `37/40`, ideally to `40/40`, while
+keeping `superstore` at `40/40` and avoiding unquoted identifier schema failures.
+
 ## BIRD DB-Level Expansion Protocol
 
 When expanding beyond `superstore`, treat the database ID as the scientific split unit. The

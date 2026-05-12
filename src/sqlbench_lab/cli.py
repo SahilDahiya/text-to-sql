@@ -8,6 +8,7 @@ from .sql import (
     analyze_sql_eval_result,
     assert_no_sql_dataset_leakage,
     collect_sql_repair_data,
+    generate_bird_regional_sales_normalization_micro_lab,
     generate_bird_regional_sales_schema_lab,
     generate_bird_superstore_schema_lab,
     import_sql_benchmark,
@@ -90,6 +91,13 @@ def main(argv: list[str] | None = None) -> int:
     bird_lab.add_argument("--eval-output", required=True, help="Output SQL eval JSONL path")
     bird_lab.add_argument("--dataset-root", help="BIRD train split root containing train_databases")
     bird_lab.add_argument("--curriculum-version", choices=["v1", "v2"], default="v1")
+
+    bird_normalization_lab = sql_subparsers.add_parser(
+        "generate-bird-regional-sales-normalization-lab",
+        help="Generate train-only BIRD regional_sales text-number normalization micro-lab data",
+    )
+    bird_normalization_lab.add_argument("--train-output", required=True, help="Output SQL train JSONL path")
+    bird_normalization_lab.add_argument("--dataset-root", help="BIRD train split root containing train_databases")
 
     run_sft = sql_subparsers.add_parser("run-sft", help="Run SQL LoRA SFT from a manifest")
     run_sft.add_argument("--manifest", required=True, help="Path to SQL SFT manifest JSON")
@@ -253,6 +261,16 @@ def _run_sql_command(args: argparse.Namespace) -> int:
             f"db={summary.db_id} train_rows={summary.train_row_count} "
             f"eval_rows={summary.eval_row_count} train={summary.train_output_path} "
             f"eval={summary.eval_output_path}"
+        )
+        return 0
+    if args.sql_command == "generate-bird-regional-sales-normalization-lab":
+        summary = generate_bird_regional_sales_normalization_micro_lab(
+            train_output_path=args.train_output,
+            dataset_root=args.dataset_root,
+        )
+        print(
+            "generated BIRD regional_sales normalization lab "
+            f"db={summary.db_id} train_rows={summary.train_row_count} train={summary.train_output_path}"
         )
         return 0
     if args.sql_command == "run-sft":

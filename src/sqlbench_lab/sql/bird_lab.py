@@ -33,6 +33,13 @@ class BIRDSchemaLabSummary:
     eval_row_count: int
 
 
+@dataclass(frozen=True)
+class BIRDTrainLabSummary:
+    db_id: str
+    train_output_path: str
+    train_row_count: int
+
+
 def generate_bird_superstore_schema_lab(
     *,
     train_output_path: str | Path,
@@ -150,6 +157,70 @@ def generate_bird_regional_sales_schema_lab(
         eval_output_path=str(_display_path(eval_output)),
         train_row_count=len(train_rows),
         eval_row_count=len(eval_rows),
+    )
+
+
+def generate_bird_regional_sales_normalization_micro_lab(
+    *,
+    train_output_path: str | Path,
+    dataset_root: str | Path | None = None,
+) -> BIRDTrainLabSummary:
+    """Generate a train-only BIRD regional_sales normalization micro-lab."""
+
+    root = Path(dataset_root) if dataset_root is not None else DEFAULT_BIRD_TRAIN_DB_ROOT
+    db_path = root / "train_databases" / REGIONAL_SALES_DB_ID / f"{REGIONAL_SALES_DB_ID}.sqlite"
+    if not db_path.exists():
+        raise ValueError(f"BIRD train database not found: {db_path}")
+
+    schema_text = _schema_text(db_path)
+    train_rows: list[dict[str, Any]] = []
+    with sqlite3.connect(db_path) as conn:
+        for region_index, region in enumerate(REGIONAL_SALES_REGIONS):
+            facts = _regional_sales_facts(conn, region=region)
+            rows = _regional_sales_normalization_micro_rows(region=region)
+            for row_index, row in enumerate(rows, start=1):
+                ordinal = region_index * 100 + row_index
+                train_rows.append(
+                    {
+                        "schema_version": "sql_train_example:v1",
+                        "row_id": f"bird_regional_sales_normalization_micro_train_{ordinal:04d}",
+                        "source_benchmark": "bird",
+                        "source_split": "train",
+                        "task_id": f"bird_regional_sales_normalization_micro_train_{ordinal:04d}",
+                        "db_id": REGIONAL_SALES_DB_ID,
+                        "dialect": "sqlite",
+                        "question": row["question"],
+                        "schema_text": schema_text,
+                        "knowledge_text": row["knowledge_text"],
+                        "task_type": "select",
+                        "tags": [
+                            "bird",
+                            "schema_linking_lab",
+                            "split_train_db_only",
+                            "curriculum_v1",
+                            "normalization_micro_lab",
+                            "text_number_normalization",
+                            "quoted_identifier_reinforcement",
+                            f"region_{facts['region'].lower()}",
+                            row["pattern"],
+                        ],
+                        "db_path": str(_display_path(db_path)),
+                        "target_sql": row["sql"],
+                        "provenance": {
+                            "created_by": "curriculum_generator",
+                            "teacher_model": None,
+                            "source_path": str(_display_path(db_path)),
+                        },
+                    }
+                )
+
+    train_output = _resolve_workspace_path(train_output_path)
+    train_output.parent.mkdir(parents=True, exist_ok=True)
+    _write_jsonl(train_output, train_rows)
+    return BIRDTrainLabSummary(
+        db_id=REGIONAL_SALES_DB_ID,
+        train_output_path=str(_display_path(train_output)),
+        train_row_count=len(train_rows),
     )
 
 
@@ -828,6 +899,78 @@ def _regional_sales_text_number_rows(*, region: str) -> list[dict[str, str]]:
                 f"WHERE T3.Region = '{_sql_string(region)}' "
                 "GROUP BY T1.`Sales Channel` "
                 "ORDER BY AVG(T1.`Order Quantity` * CAST(REPLACE(T1.`Unit Price`, ',', '') AS REAL)) DESC LIMIT 1"
+            ),
+        },
+    ]
+
+
+def _regional_sales_normalization_micro_rows(*, region: str) -> list[dict[str, str]]:
+    region_join = (
+        "FROM `Sales Orders` AS T1 "
+        "INNER JOIN `Store Locations` AS T2 ON T1._StoreID = T2.StoreID "
+        "INNER JOIN Regions AS T3 ON T2.StateCode = T3.StateCode"
+    )
+    region_filter = f"WHERE T3.Region = '{_sql_string(region)}'"
+    return [
+        {
+            "pattern": "unit_price_normalization_grouped",
+            "question": (
+                f"For {region}, return each sales channel and its average unit price after removing commas."
+            ),
+            "knowledge_text": (
+                "Use exact column `Sales Channel`. For exact column `Unit Price`, remove commas before CAST: "
+                "CAST(REPLACE(T1.`Unit Price`, ',', '') AS REAL)."
+            ),
+            "sql": (
+                f"SELECT T1.`Sales Channel`, AVG(CAST(REPLACE(T1.`Unit Price`, ',', '') AS REAL)) {region_join} "
+                f"{region_filter} "
+                "GROUP BY T1.`Sales Channel`"
+            ),
+        },
+        {
+            "pattern": "unit_price_normalization_filtered",
+            "question": (
+                f"For {region} distributor orders, what is the average unit price after removing commas?"
+            ),
+            "knowledge_text": (
+                "Filter exact column `Sales Channel` to Distributor and normalize exact column `Unit Price` with "
+                "CAST(REPLACE(T1.`Unit Price`, ',', '') AS REAL)."
+            ),
+            "sql": (
+                f"SELECT AVG(CAST(REPLACE(T1.`Unit Price`, ',', '') AS REAL)) {region_join} "
+                f"{region_filter} "
+                "AND T1.`Sales Channel` = 'Distributor'"
+            ),
+        },
+        {
+            "pattern": "unit_price_order_quantity_reinforcement",
+            "question": (
+                f"For {region}, which sales channel has the highest average extended unit price?"
+            ),
+            "knowledge_text": (
+                "extended unit price = exact column `Order Quantity` times normalized exact column `Unit Price`; "
+                "keep both identifiers quoted."
+            ),
+            "sql": (
+                f"SELECT T1.`Sales Channel` {region_join} "
+                f"{region_filter} "
+                "GROUP BY T1.`Sales Channel` "
+                "ORDER BY AVG(T1.`Order Quantity` * CAST(REPLACE(T1.`Unit Price`, ',', '') AS REAL)) DESC LIMIT 1"
+            ),
+        },
+        {
+            "pattern": "order_quantity_identifier_with_normalization_filter",
+            "question": (
+                f"How many {region} regional sales rows have order quantity present and positive normalized unit price?"
+            ),
+            "knowledge_text": (
+                "Use exact column `Order Quantity`, not OrderQuantity. Normalize exact column `Unit Price` before comparing."
+            ),
+            "sql": (
+                f"SELECT COUNT(*) {region_join} "
+                f"{region_filter} "
+                "AND T1.`Order Quantity` IS NOT NULL "
+                "AND CAST(REPLACE(T1.`Unit Price`, ',', '') AS REAL) > 0"
             ),
         },
     ]
