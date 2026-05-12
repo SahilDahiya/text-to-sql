@@ -36,6 +36,7 @@ class DocsSiteTests(unittest.TestCase):
         self.assertIn("Exp028", training_html)
         self.assertIn("Practical fine-tuning lessons", learnings_html)
         self.assertIn("Canonical slot placement worked", learnings_html)
+        self.assertIn("Exp029", learnings_html)
         self.assertIn("Text-to-SQL Research Map", research_html)
         self.assertIn("Automatic Metadata Extraction", research_html)
         self.assertIn("Modern Fine-Tuning Pipeline", research_html)

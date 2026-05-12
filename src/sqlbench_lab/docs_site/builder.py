@@ -282,6 +282,12 @@ HISTORY_ROWS: list[dict[str, str]] = [
         "signal": "Regional_sales improved to 38/40; superstore held 40/40.",
         "lesson": "Canonical slot placement worked where sidecar examples did not; remaining gap is quoted Order Quantity.",
     },
+    {
+        "phase": "Exp029",
+        "focus": "Add SQLite profile-derived notes to regional_sales train and eval prompts.",
+        "signal": "Regional_sales reached 40/40 and superstore held 40/40; train runtime rose to about 22.4 minutes.",
+        "lesson": "Profile metadata fixed the remaining quoted-identifier failures, but full notes are context-expensive and should be compressed before broad DB expansion.",
+    },
 ]
 
 RUNBOOK_ROWS: list[dict[str, str]] = [
@@ -822,13 +828,13 @@ def _render_home(experiments: list[ExperimentRecord]) -> str:
           <article class="panel">
             <h2>Operating Question</h2>
             <p>Can a small Qwen adapter learn one-shot text-to-SQL on real Spider/BIRD style data, then generalize across held-out databases well enough to justify LiveSQLBench runs?</p>
-            <div class="callout">Current evidence says schema naming and value grounding dominate. Exp028 reached 38/40 on regional_sales and 40/40 on superstore, with remaining errors on quoted identifier shape.</div>
+            <div class="callout">Current evidence says schema naming and value grounding dominate. Exp029 reached 40/40 on regional_sales with profile notes and 40/40 on superstore, after Exp028 exposed quoted identifier failures.</div>
           </article>
           <article class="panel">
             <h2>Next Useful Move</h2>
             <ol class="tight">
-              <li>Patch the regional_sales identifier gap without leaking eval rows.</li>
-              <li>Add the next BIRD train DB as a controlled expansion.</li>
+              <li>Compress profile notes so metadata stays useful without doubling runtime.</li>
+              <li>Add the next BIRD train DB as a controlled expansion with profile metadata available.</li>
               <li>Keep at least one DB unseen and track generalization separately.</li>
               <li>Promote only stable one-shot behavior toward LiveSQLBench.</li>
             </ol>
@@ -998,7 +1004,7 @@ def _render_research() -> str:
         <section class="grid two">
           <article class="panel">
             <h2>Immediate Read</h2>
-            <p>The literature points away from blind row scaling and toward database-grounded context: profiling metadata, schema linking, candidate selection, execution feedback, and strict split hygiene. For the current one-shot lane, the next best move is profile-enriched schema rendering before larger DB expansion.</p>
+            <p>The literature points away from blind row scaling and toward database-grounded context: profiling metadata, schema linking, candidate selection, execution feedback, and strict split hygiene. Exp029 validated profile-enriched schema rendering locally; the next design problem is compressing those notes before larger DB expansion.</p>
           </article>
           <article class="panel">
             <h2>Research Boundary</h2>
@@ -1411,6 +1417,8 @@ def _eval_badges(experiment: ExperimentRecord) -> str:
 
 
 def _open_read(experiment: ExperimentRecord) -> str:
+    if experiment.number == 29:
+        return "Profile notes fixed regional_sales to 40/40 while preserving superstore; runtime cost increased."
     if experiment.number == 28:
         return "Best two-DB lab run; remaining gap is quoted Order Quantity."
     if experiment.number == 27:

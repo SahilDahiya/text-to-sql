@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
@@ -22,6 +23,8 @@ REGIONAL_SALES_REGIONS = ("Midwest", "Northeast", "South", "West")
 DEFAULT_BIRD_TRAIN_DB_ROOT = (
     WORKSPACE_ROOT / "external" / "sql" / "benchmarks" / "premai-io__birdbench" / "train"
 )
+SAFE_SQLITE_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+TEXT_NUMERIC_RE = re.compile(r"^-?\d{1,3}(?:,\d{3})*(?:\.\d+)?$|^-?\d+(?:\.\d+)?$")
 
 
 @dataclass(frozen=True)
@@ -864,39 +867,150 @@ def _regional_sales_facts(conn: sqlite3.Connection, *, region: str) -> dict[str,
     return facts
 
 
-def _regional_sales_column_value_notes(conn: sqlite3.Connection) -> tuple[str, str]:
-    unit_price_sample = _regional_sales_text_numeric_sample(conn, column_name="Unit Price")
-    unit_cost_sample = _regional_sales_text_numeric_sample(conn, column_name="Unit Cost")
-    return (
-        (
-            "`Sales Orders`.`Unit Price`: TEXT numeric values may include commas, "
-            f'e.g. "{unit_price_sample}"; for numeric aggregation use '
-            "CAST(REPLACE(T1.`Unit Price`, ',', '') AS REAL)."
+def _regional_sales_column_value_notes(conn: sqlite3.Connection) -> tuple[str, ...]:
+    return _sqlite_profile_notes(
+        conn,
+        table_columns=(
+            ("Sales Orders", "Unit Price"),
+            ("Sales Orders", "Unit Cost"),
+            ("Sales Orders", "Order Quantity"),
+            ("Sales Orders", "Sales Channel"),
+            ("Customers", "Customer Names"),
+            ("Products", "Product Name"),
         ),
-        (
-            "`Sales Orders`.`Unit Cost`: TEXT numeric values may include commas, "
-            f'e.g. "{unit_cost_sample}"; for numeric aggregation use '
-            "CAST(REPLACE(T1.`Unit Cost`, ',', '') AS REAL)."
-        ),
+        table_aliases={
+            "Sales Orders": "T1",
+            "Customers": "T4",
+            "Products": "T5",
+        },
     )
 
 
-def _regional_sales_text_numeric_sample(conn: sqlite3.Connection, *, column_name: str) -> str:
-    if column_name not in {"Unit Price", "Unit Cost"}:
-        raise ValueError(f"unsupported regional_sales text numeric column: {column_name}")
+def _sqlite_profile_notes(
+    conn: sqlite3.Connection,
+    *,
+    table_columns: tuple[tuple[str, str], ...],
+    table_aliases: dict[str, str],
+) -> tuple[str, ...]:
+    notes: list[str] = []
+    for table_name, column_name in table_columns:
+        profile = _sqlite_column_profile(conn, table_name=table_name, column_name=column_name)
+        alias = table_aliases[table_name]
+        identifier_ref = f"{alias}.`{column_name}`"
+        if _profile_is_text_numeric(profile):
+            sample = _first_text_numeric_sample(
+                conn,
+                table_name=table_name,
+                column_name=column_name,
+            )
+            notes.append(
+                f"`{table_name}`.`{column_name}`: TEXT numeric values may include commas, "
+                f'e.g. "{sample}"; for numeric aggregation use '
+                f"CAST(REPLACE({identifier_ref}, ',', '') AS REAL). "
+                f"{profile['non_null_count']}/{profile['row_count']} non-NULL, "
+                f"{profile['distinct_count']} distinct."
+            )
+        elif _requires_quoting(column_name):
+            examples = ", ".join(profile["sample_values"])
+            notes.append(
+                f"`{table_name}`.`{column_name}`: exact identifier contains spaces or punctuation; "
+                f"use backticks as {identifier_ref}, not {_unquoted_shortcut(column_name)}. "
+                f"Declared {profile['declared_type']}; {profile['non_null_count']}/{profile['row_count']} non-NULL, "
+                f"{profile['distinct_count']} distinct; sample values: {examples}."
+            )
+        else:
+            examples = ", ".join(profile["sample_values"])
+            notes.append(
+                f"`{table_name}`.`{column_name}`: exact identifier is {alias}.{column_name}. "
+                f"Declared {profile['declared_type']}; {profile['non_null_count']}/{profile['row_count']} non-NULL, "
+                f"{profile['distinct_count']} distinct; sample values: {examples}."
+            )
+    return tuple(notes)
+
+
+def _sqlite_column_profile(
+    conn: sqlite3.Connection,
+    *,
+    table_name: str,
+    column_name: str,
+) -> dict[str, Any]:
+    table_info = conn.execute(f"PRAGMA table_info({_quote_identifier(table_name)})").fetchall()
+    declared_type = None
+    for row in table_info:
+        if row[1] == column_name:
+            declared_type = str(row[2] or "UNKNOWN").upper()
+            break
+    if declared_type is None:
+        raise ValueError(f"SQLite column not found: {table_name}.{column_name}")
+    quoted_table = _quote_identifier(table_name)
+    quoted_column = _quote_identifier(column_name)
+    row_count = int(conn.execute(f"SELECT COUNT(*) FROM {quoted_table}").fetchone()[0])
+    non_null_count = int(
+        conn.execute(f"SELECT COUNT({quoted_column}) FROM {quoted_table}").fetchone()[0]
+    )
+    distinct_count = int(
+        conn.execute(f"SELECT COUNT(DISTINCT {quoted_column}) FROM {quoted_table}").fetchone()[0]
+    )
+    sample_rows = conn.execute(
+        f"""
+        SELECT {quoted_column}
+        FROM {quoted_table}
+        WHERE {quoted_column} IS NOT NULL
+        GROUP BY {quoted_column}
+        ORDER BY COUNT(*) DESC, {quoted_column}
+        LIMIT 3
+        """
+    ).fetchall()
+    sample_values = tuple(str(row[0]) for row in sample_rows if row[0] is not None)
+    if not sample_values:
+        raise ValueError(f"SQLite column has no non-NULL samples: {table_name}.{column_name}")
+    return {
+        "table_name": table_name,
+        "column_name": column_name,
+        "declared_type": declared_type,
+        "row_count": row_count,
+        "non_null_count": non_null_count,
+        "distinct_count": distinct_count,
+        "sample_values": sample_values,
+    }
+
+
+def _first_text_numeric_sample(
+    conn: sqlite3.Connection,
+    *,
+    table_name: str,
+    column_name: str,
+) -> str:
+    quoted_table = _quote_identifier(table_name)
     quoted_column = _quote_identifier(column_name)
     row = conn.execute(
         f"""
         SELECT {quoted_column}
-        FROM `Sales Orders`
+        FROM {quoted_table}
         WHERE {quoted_column} IS NOT NULL
         ORDER BY {quoted_column}
         LIMIT 1
         """
     ).fetchone()
     if row is None or row[0] is None:
-        raise ValueError(f"regional_sales has no text numeric sample for {column_name}")
+        raise ValueError(f"SQLite column has no text numeric sample: {table_name}.{column_name}")
     return str(row[0])
+
+
+def _profile_is_text_numeric(profile: dict[str, Any]) -> bool:
+    declared_type = str(profile["declared_type"]).upper()
+    sample_values = tuple(str(value) for value in profile["sample_values"])
+    return "TEXT" in declared_type and bool(sample_values) and all(
+        TEXT_NUMERIC_RE.fullmatch(value) for value in sample_values
+    )
+
+
+def _requires_quoting(identifier: str) -> bool:
+    return SAFE_SQLITE_IDENTIFIER_RE.fullmatch(identifier) is None
+
+
+def _unquoted_shortcut(identifier: str) -> str:
+    return identifier.replace(" ", "").replace("-", "").replace("?", "")
 
 
 def _computed_order_row(*, table_name: str, region: str, variant: str) -> dict[str, str]:

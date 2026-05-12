@@ -284,6 +284,8 @@ class SQLPipelineTests(unittest.TestCase):
         self.assertIn('"1,000.00"', train_rows[0].column_value_notes[0])
         self.assertIn("may include commas", train_rows[0].column_value_notes[0])
         self.assertIn("CAST(REPLACE(T1.`Unit Price`, ',', '') AS REAL)", train_rows[0].column_value_notes[0])
+        self.assertTrue(any("T1.`Order Quantity`, not OrderQuantity" in note for note in train_rows[0].column_value_notes))
+        self.assertTrue(any("T1.`Sales Channel`, not SalesChannel" in note for note in train_rows[0].column_value_notes))
 
     def test_generate_bird_regional_sales_normalization_micro_lab_writes_train_only_rows(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
