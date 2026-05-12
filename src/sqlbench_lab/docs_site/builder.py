@@ -307,6 +307,12 @@ HISTORY_ROWS: list[dict[str, str]] = [
         "signal": "Unseen holdout moved from 4/50 to 5/50; regional_sales and superstore both held 40/40.",
         "lesson": "More train DB coverage reduced schema errors without damaging seen labs, but the gain was tiny and value errors increased. Expansion alone is not enough.",
     },
+    {
+        "phase": "Exp031",
+        "focus": "Attach generic SQLite profile metadata to sales, bike_share_1, and the fixed unseen holdout.",
+        "signal": "Unseen holdout moved from 5/50 to 7/50; raw and profile-note holdout prompts both scored 7/50; seen guardrails held 40/40.",
+        "lesson": "Minimal deterministic profile notes are feasible and mildly helpful, but two notes per row are too weak. The next metadata work should improve note selection/schema linking, not just add longer notes locally.",
+    },
 ]
 
 RUNBOOK_ROWS: list[dict[str, str]] = [
@@ -847,15 +853,15 @@ def _render_home(experiments: list[ExperimentRecord]) -> str:
           <article class="panel">
             <h2>Operating Question</h2>
             <p>Can a small Qwen adapter learn one-shot text-to-SQL on real Spider/BIRD style data, then generalize across held-out databases well enough to justify LiveSQLBench runs?</p>
-            <div class="callout">Current evidence says schema naming and value grounding dominate. Exp030 added sales and bike_share_1 train coverage, preserved 40/40 on both seen labs, and moved the fixed DB-disjoint restaurant plus airline holdout only from 4/50 to 5/50.</div>
+            <div class="callout">Current evidence says schema naming and value grounding dominate. Exp031 added compact profile metadata, preserved 40/40 on both seen labs, and moved the fixed DB-disjoint restaurant plus airline holdout from 5/50 to 7/50.</div>
           </article>
           <article class="panel">
             <h2>Next Useful Move</h2>
             <ol class="tight">
-              <li>Run Exp031: add generic SQLite profile metadata to the real BIRD sales and bike_share_1 train rows.</li>
+              <li>Use Exp031 as the new local baseline for the metadata lane: 7/50 on restaurant plus airline.</li>
               <li>Keep the restaurant and airline holdout fixed as the unseen-DB gate.</li>
-              <li>Measure whether profile notes move unseen DB transfer beyond the Exp030 5/50 noise band.</li>
-              <li>After that, add schema linking and candidate selection as separate lanes, not mixed into one-shot SFT scoring.</li>
+              <li>Improve profile-note selection and schema linking before adding more raw rows or longer local prompts.</li>
+              <li>Candidate selection and repair remain separate lanes, not mixed into one-shot SFT scoring.</li>
               <li>Promote only stable one-shot behavior toward LiveSQLBench.</li>
             </ol>
           </article>
@@ -1024,7 +1030,7 @@ def _render_research() -> str:
         <section class="grid two">
           <article class="panel">
             <h2>Immediate Read</h2>
-            <p>The literature points away from blind row scaling and toward database-grounded context: profiling metadata, schema linking, candidate selection, execution feedback, and strict split hygiene. Exp030 validated that modest DB expansion is safe but weak; Exp031 should implement the first paper-aligned step: generic SQLite profile notes for real BIRD train rows.</p>
+            <p>The literature points away from blind row scaling and toward database-grounded context: profiling metadata, schema linking, candidate selection, execution feedback, and strict split hygiene. Exp031 implemented the first paper-aligned step with deterministic SQLite profile notes and produced a small unseen-DB gain. The next gap is better schema linking and note selection.</p>
           </article>
           <article class="panel">
             <h2>Research Boundary</h2>
@@ -1230,11 +1236,11 @@ def _render_agent_workflow() -> str:
         </section>
         <section class="panel full">
           <h2>Remembered Next Plan</h2>
-          <p>Exp031 should compare Exp030 against the same fixed holdout after adding compact profile metadata to the real BIRD train rows. Do not jump straight to agents, repair, or reranking until this one-shot metadata lane is measured.</p>
+          <p>Exp031 compared Exp030 against the same fixed holdout after adding compact profile metadata to real BIRD rows. The result was 7/50, up from 5/50, with both seen guardrails preserved. Do not jump straight to agents, repair, or reranking until schema-linking and profile-note selection are improved.</p>
           <table class="key-table">
             <tr><th>Paper pattern</th><td>Profile columns, summarize useful value/shape metadata, then use schema linking before candidate selection.</td></tr>
             <tr><th>Repo now</th><td>Raw DDL for real BIRD rows, with hand-authored/profile notes only in regional_sales lab data.</td></tr>
-            <tr><th>Next implementation</th><td>Generic SQLite profiler emits compact column_value_notes for sales and bike_share_1, then rerun restaurant plus airline holdout.</td></tr>
+            <tr><th>Next implementation</th><td>Improve deterministic note selection, add schema-linking supervision, then rerun restaurant plus airline holdout.</td></tr>
           </table>
         </section>
         <section class="panel full">

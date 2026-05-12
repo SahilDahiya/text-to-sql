@@ -11,6 +11,7 @@ from pathlib import Path
 from sqlbench_lab.sql import (
     analyze_sql_eval_result,
     assert_no_sql_dataset_leakage,
+    attach_sqlite_profile_metadata,
     audit_sql_dataset_leakage,
     build_repair_messages,
     build_repair_eval_messages,
@@ -1128,6 +1129,70 @@ class SQLPipelineTests(unittest.TestCase):
         self.assertIn("may include commas", canonical_messages[1]["content"])
         self.assertIn("# Column Value Notes:", premsql_messages[1]["content"])
         self.assertIn("CAST(REPLACE(T1.`Unit Price`, ',', '') AS REAL)", premsql_messages[1]["content"])
+
+    def test_attach_sqlite_profile_metadata_adds_compact_train_notes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "sales.sqlite"
+            with sqlite3.connect(db_path) as conn:
+                conn.executescript(
+                    """
+                    CREATE TABLE Customers (
+                        CustomerID INTEGER PRIMARY KEY,
+                        Name TEXT
+                    );
+                    CREATE TABLE Sales (
+                        SalesID INTEGER PRIMARY KEY,
+                        CustomerID INTEGER NOT NULL,
+                        Quantity INTEGER NOT NULL,
+                        FOREIGN KEY (CustomerID) REFERENCES Customers(CustomerID)
+                    );
+                    INSERT INTO Customers VALUES (80, 'Acme'), (81, 'Globex');
+                    INSERT INTO Sales VALUES (1, 80, 3), (2, 80, 4), (3, 81, 1);
+                    """
+                )
+            train_row = {
+                "schema_version": "sql_train_example:v1",
+                "row_id": "train_001",
+                "source_benchmark": "bird",
+                "source_split": "train",
+                "task_id": "bird_task",
+                "db_id": "sales",
+                "db_path": str(db_path),
+                "dialect": "sqlite",
+                "question": "How many sales ids are there for customer id 80?",
+                "schema_text": (
+                    "CREATE TABLE Customers (CustomerID INTEGER PRIMARY KEY, Name TEXT);"
+                    "CREATE TABLE Sales (SalesID INTEGER PRIMARY KEY, CustomerID INTEGER);"
+                ),
+                "knowledge_text": None,
+                "target_sql": "SELECT COUNT(SalesID) FROM Sales WHERE CustomerID = 80",
+                "task_type": "select",
+                "provenance": {
+                    "created_by": "benchmark",
+                    "teacher_model": None,
+                    "source_path": "tests",
+                },
+                "tags": ["bird"],
+            }
+            input_path = Path(tmp_dir) / "train.jsonl"
+            output_path = Path(tmp_dir) / "train_profile_notes.jsonl"
+            input_path.write_text(json.dumps(train_row) + "\n", encoding="utf-8")
+
+            summary = attach_sqlite_profile_metadata(
+                input_path=input_path,
+                output_path=output_path,
+                artifact="train",
+                max_column_notes=4,
+            )
+            rows = load_sql_train_examples(output_path)
+
+        self.assertEqual(summary.row_count, 1)
+        self.assertEqual(summary.db_count, 1)
+        self.assertEqual(len(rows[0].column_value_notes), 4)
+        joined_notes = "\n".join(rows[0].column_value_notes)
+        self.assertIn("`Sales`.`CustomerID`", joined_notes)
+        self.assertIn("joins `Customers`.`CustomerID`", joined_notes)
+        self.assertIn("'80'", joined_notes)
 
     def test_load_sql_train_examples_rejects_duplicate_row_ids(self) -> None:
         row = {

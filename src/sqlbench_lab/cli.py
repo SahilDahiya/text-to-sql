@@ -7,6 +7,7 @@ import argparse
 from .sql import (
     analyze_sql_eval_result,
     assert_no_sql_dataset_leakage,
+    attach_sqlite_profile_metadata,
     collect_sql_repair_data,
     generate_bird_regional_sales_normalization_micro_lab,
     generate_bird_regional_sales_schema_lab,
@@ -159,6 +160,38 @@ def main(argv: list[str] | None = None) -> int:
     analyze_eval = sql_subparsers.add_parser("analyze-eval", help="Analyze a SQL eval result JSON")
     analyze_eval.add_argument("--result", required=True, help="Path to SQL eval result JSON")
     analyze_eval.add_argument("--output", help="Output analysis JSON path")
+
+    profile_metadata = sql_subparsers.add_parser(
+        "profile-metadata",
+        help="Attach compact SQLite profile metadata to SQL train/eval JSONL",
+    )
+    profile_metadata.add_argument("--input", required=True, help="Input SQL JSONL path")
+    profile_metadata.add_argument("--output", required=True, help="Output SQL JSONL path")
+    profile_metadata.add_argument("--artifact", choices=["train", "eval"], required=True)
+    profile_metadata.add_argument(
+        "--max-column-notes",
+        type=int,
+        default=12,
+        help="Maximum column profile notes per row",
+    )
+    profile_metadata.add_argument(
+        "--max-sample-values",
+        type=int,
+        default=3,
+        help="Maximum sample values per profiled column",
+    )
+    profile_metadata.add_argument(
+        "--max-exact-profile-rows",
+        type=int,
+        default=50000,
+        help="Use exact column stats only for tables up to this row count",
+    )
+    profile_metadata.add_argument(
+        "--profile-sample-rows",
+        type=int,
+        default=10000,
+        help="Non-NULL sample row cap for large-table profile stats",
+    )
 
     collect_repair = sql_subparsers.add_parser("collect-repair-data", help="Collect repair JSONL from eval failures")
     collect_repair.add_argument("--result", required=True, help="Path to SQL eval result JSON")
@@ -396,6 +429,22 @@ def _run_sql_command(args: argparse.Namespace) -> int:
         )
         if failure_counts:
             print(f"failure_counts: {failure_counts}")
+        return 0
+    if args.sql_command == "profile-metadata":
+        summary = attach_sqlite_profile_metadata(
+            input_path=args.input,
+            output_path=args.output,
+            artifact=args.artifact,
+            max_column_notes=args.max_column_notes,
+            max_sample_values=args.max_sample_values,
+            max_exact_profile_rows=args.max_exact_profile_rows,
+            profile_sample_rows=args.profile_sample_rows,
+        )
+        print(
+            "attached SQLite profile metadata "
+            f"artifact={summary.artifact} rows={summary.row_count} dbs={summary.db_count} "
+            f"notes={summary.total_note_count} output={summary.output_path}"
+        )
         return 0
     if args.sql_command == "collect-repair-data":
         summary = collect_sql_repair_data(
