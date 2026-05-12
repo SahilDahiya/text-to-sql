@@ -1227,6 +1227,24 @@ uv run --group training --group observability python -m sqlbench_lab.cli sql eva
 Pass condition: improve `regional_sales` above `37/40`, ideally to `40/40`, while
 preserving `superstore` at `40/40`.
 
+Exp027 local result:
+
+- train rows: `96`
+- train runtime: `815s`
+- train loss: `0.0359`
+- superstore fixed heldout lab dev: `40/40`
+- regional_sales fixed heldout lab dev: `37/40`
+- regional_sales failure counts: row-value mismatch `3`
+
+Decision: neutral, not a fix. The 8 direct contrast rows preserved the stable result but
+still did not alter the three unit-price computed-order failures. The adapter again
+generated `AVG(T1.\`Unit Price\`)` for each failed case.
+
+Practical learning: a small number of contrast rows outside the exact canonical slot is
+still too weak for this adapter. The next attempt should either put `sales_channel_avg_unit_price`
+directly into the regional_sales train split's computed-order slot, or increase the direct
+target-shape curriculum enough to make the normalized expression dominant.
+
 ## BIRD DB-Level Expansion Protocol
 
 When expanding beyond `superstore`, treat the database ID as the scientific split unit. The
