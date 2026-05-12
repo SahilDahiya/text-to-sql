@@ -32,6 +32,18 @@ read_when: you are starting work in this repo or need repo-specific coding rules
 - Do not train on hidden or protected benchmark data.
 - Do not report local approximate scores as official LiveSQLBench scores.
 
+## Remembered Research Direction
+- Current next experiment direction is Exp031: add generic SQLite profile metadata to
+  real BIRD train rows before adding more raw rows.
+- The motivating paper pattern is: profile columns, summarize useful value/shape
+  metadata, use schema linking, then candidate generation/selection. This repo is
+  currently only at raw DDL plus narrow hand/profile notes.
+- Keep Exp031 one-shot: compare Exp030 against the same restaurant plus airline
+  DB-disjoint holdout after adding compact `column_value_notes` to sales and
+  bike_share_1 train rows.
+- Do not jump to repair agents, reranking, or LiveSQLBench claims until the
+  one-shot metadata lane is measured.
+
 ## Hard-Cut Product Policy
 - Optimize for one canonical current-state implementation.
 - Prefer fail-fast diagnostics and explicit recovery steps.

@@ -93,6 +93,13 @@ PIPELINE_STAGES: list[dict[str, str]] = [
         "risk": "Overfitting a template instead of learning schema use.",
     },
     {
+        "stage": "Profile Metadata",
+        "job": "Attach compact SQLite-derived column/value notes to real benchmark rows before broader scaling.",
+        "artifact": "datasets/sql/*/*_profile_notes*.jsonl",
+        "command": "uv run python -m sqlbench_lab.cli sql profile-metadata ...",
+        "risk": "Training on raw DDL when the missing skill is value grounding and schema linking.",
+    },
+    {
         "stage": "Prompt Rendering",
         "job": "Render canonical chat prompts with schema and optional value notes.",
         "artifact": "Rendered SFT rows",
@@ -845,9 +852,10 @@ def _render_home(experiments: list[ExperimentRecord]) -> str:
           <article class="panel">
             <h2>Next Useful Move</h2>
             <ol class="tight">
-              <li>Add the next train DBs only with a matching unseen-DB gate; sales and bike_share_1 alone were not enough.</li>
+              <li>Run Exp031: add generic SQLite profile metadata to the real BIRD sales and bike_share_1 train rows.</li>
               <li>Keep the restaurant and airline holdout fixed as the unseen-DB gate.</li>
-              <li>Improve schema/value grounding on broader train coverage, then rerun the same holdout.</li>
+              <li>Measure whether profile notes move unseen DB transfer beyond the Exp030 5/50 noise band.</li>
+              <li>After that, add schema linking and candidate selection as separate lanes, not mixed into one-shot SFT scoring.</li>
               <li>Promote only stable one-shot behavior toward LiveSQLBench.</li>
             </ol>
           </article>
@@ -1016,7 +1024,7 @@ def _render_research() -> str:
         <section class="grid two">
           <article class="panel">
             <h2>Immediate Read</h2>
-            <p>The literature points away from blind row scaling and toward database-grounded context: profiling metadata, schema linking, candidate selection, execution feedback, and strict split hygiene. Exp030 validated that modest DB expansion is safe but weak; the next design problem is better schema/value grounding before larger scaling.</p>
+            <p>The literature points away from blind row scaling and toward database-grounded context: profiling metadata, schema linking, candidate selection, execution feedback, and strict split hygiene. Exp030 validated that modest DB expansion is safe but weak; Exp031 should implement the first paper-aligned step: generic SQLite profile notes for real BIRD train rows.</p>
           </article>
           <article class="panel">
             <h2>Research Boundary</h2>
@@ -1219,6 +1227,15 @@ def _render_agent_workflow() -> str:
               <li>Reference manifest, dataset, result, and analysis paths.</li>
             </ul>
           </article>
+        </section>
+        <section class="panel full">
+          <h2>Remembered Next Plan</h2>
+          <p>Exp031 should compare Exp030 against the same fixed holdout after adding compact profile metadata to the real BIRD train rows. Do not jump straight to agents, repair, or reranking until this one-shot metadata lane is measured.</p>
+          <table class="key-table">
+            <tr><th>Paper pattern</th><td>Profile columns, summarize useful value/shape metadata, then use schema linking before candidate selection.</td></tr>
+            <tr><th>Repo now</th><td>Raw DDL for real BIRD rows, with hand-authored/profile notes only in regional_sales lab data.</td></tr>
+            <tr><th>Next implementation</th><td>Generic SQLite profiler emits compact column_value_notes for sales and bike_share_1, then rerun restaurant plus airline holdout.</td></tr>
+          </table>
         </section>
         <section class="panel full">
           <h2>Experiment Closeout Checklist</h2>
