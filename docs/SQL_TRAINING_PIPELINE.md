@@ -1049,6 +1049,26 @@ uv run --group training --group observability python -m sqlbench_lab.cli sql eva
 Pass condition: improve `regional_sales` above Exp023 `37/40`, ideally to `40/40`, while
 keeping `superstore` at `40/40` and avoiding unquoted identifier schema failures.
 
+Exp025 local result:
+
+- train rows: `104`
+- train runtime: `1217s`
+- train loss: `0.0360`
+- superstore fixed heldout lab dev: `40/40`
+- regional_sales fixed heldout lab dev: `37/40`
+- regional_sales failure counts: row-value mismatch `3`
+
+Decision: neutral, not a fix. Exp025 preserved the Exp023 two-DB result and avoided the
+Exp024 schema regression, but it did not improve `regional_sales`. The same three
+computed-order unit-price cases still generated `AVG(T1.\`Unit Price\`)` instead of
+`AVG(CAST(REPLACE(T1.\`Unit Price\`, ',', '') AS REAL))`.
+
+Practical learning: a small side micro-lab can prevent blast-radius regressions, but it
+may not override a memorized shorter expression when the heldout target asks for the same
+`ORDER BY AVG(unit price) DESC LIMIT 1` shape. The next experiment should make the target
+shape explicit in the base regional_sales train rows or change the prompt/schema rendering
+to mark text numeric columns before decoding.
+
 ## BIRD DB-Level Expansion Protocol
 
 When expanding beyond `superstore`, treat the database ID as the scientific split unit. The
