@@ -1139,6 +1139,26 @@ uv run --group training --group observability python -m sqlbench_lab.cli sql eva
 Pass condition: improve `regional_sales` above Exp023/Exp025 `37/40`, ideally to `40/40`,
 while preserving `superstore` at `40/40`.
 
+Exp026 local result:
+
+- train rows: `88`
+- train runtime: `815s`
+- train loss: `0.0357`
+- superstore fixed heldout lab dev: `40/40`
+- regional_sales note-bearing heldout lab dev: `37/40`
+- regional_sales failure counts: row-value mismatch `3`
+
+Decision: neutral, not a fix. Adding passive column value notes to both training and eval
+prompts preserved the stable result, but did not change the three unit-price computed-order
+failures. The adapter still generated `AVG(T1.\`Unit Price\`)` instead of
+`AVG(CAST(REPLACE(T1.\`Unit Price\`, ',', '') AS REAL))`.
+
+Practical learning: value notes are necessary for principled grounding, but this SFT setup
+did not learn to apply them to an already-learned shorter decode path. The next attempt
+should make the correction part of the exact target shape, for example with direct
+same-shape contrast rows or a stronger renderer rule that ties text numeric notes to
+numeric aggregation.
+
 ## BIRD DB-Level Expansion Protocol
 
 When expanding beyond `superstore`, treat the database ID as the scientific split unit. The
