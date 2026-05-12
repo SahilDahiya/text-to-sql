@@ -294,6 +294,12 @@ HISTORY_ROWS: list[dict[str, str]] = [
         "signal": "Adapter scored 4/50 versus base 3/50; failures were still schema-error heavy.",
         "lesson": "Seen-DB curriculum wins did not transfer. The next loop needs broader train DB coverage and cleaner schema-linking support, not more same-DB polishing.",
     },
+    {
+        "phase": "Exp030",
+        "focus": "Add 100 real BIRD train rows from sales and bike_share_1 while keeping restaurant and airline unseen.",
+        "signal": "Unseen holdout moved from 4/50 to 5/50; regional_sales and superstore both held 40/40.",
+        "lesson": "More train DB coverage reduced schema errors without damaging seen labs, but the gain was tiny and value errors increased. Expansion alone is not enough.",
+    },
 ]
 
 RUNBOOK_ROWS: list[dict[str, str]] = [
@@ -834,14 +840,14 @@ def _render_home(experiments: list[ExperimentRecord]) -> str:
           <article class="panel">
             <h2>Operating Question</h2>
             <p>Can a small Qwen adapter learn one-shot text-to-SQL on real Spider/BIRD style data, then generalize across held-out databases well enough to justify LiveSQLBench runs?</p>
-            <div class="callout">Current evidence says schema naming and value grounding dominate. Exp029 reached 40/40 on regional_sales with profile notes and 40/40 on superstore, but the first DB-disjoint holdout gate only reached 4/50 on restaurant plus airline.</div>
+            <div class="callout">Current evidence says schema naming and value grounding dominate. Exp030 added sales and bike_share_1 train coverage, preserved 40/40 on both seen labs, and moved the fixed DB-disjoint restaurant plus airline holdout only from 4/50 to 5/50.</div>
           </article>
           <article class="panel">
             <h2>Next Useful Move</h2>
             <ol class="tight">
-              <li>Add the next train DBs before more same-DB polish; `sales` and `bike_share_1` are the current candidates.</li>
+              <li>Add the next train DBs only with a matching unseen-DB gate; sales and bike_share_1 alone were not enough.</li>
               <li>Keep the restaurant and airline holdout fixed as the unseen-DB gate.</li>
-              <li>Use profile metadata and schema-linking support on broader train coverage, then rerun the same holdout.</li>
+              <li>Improve schema/value grounding on broader train coverage, then rerun the same holdout.</li>
               <li>Promote only stable one-shot behavior toward LiveSQLBench.</li>
             </ol>
           </article>
@@ -948,7 +954,7 @@ def _render_learnings() -> str:
           <article class="panel">
             <h2>Current Partition</h2>
             <table class="key-table">
-              <tr><th>Train labs</th><td>superstore, regional_sales; then sales and bike_share_1 when ready.</td></tr>
+              <tr><th>Train labs</th><td>superstore, regional_sales, sales, and bike_share_1.</td></tr>
               <tr><th>Reserve</th><td>restaurant and airline stay unseen until a new reserve is chosen before looking.</td></tr>
               <tr><th>Benchmark</th><td>BIRD validation and LiveSQLBench are measurement only, never training sources.</td></tr>
             </table>
@@ -1010,7 +1016,7 @@ def _render_research() -> str:
         <section class="grid two">
           <article class="panel">
             <h2>Immediate Read</h2>
-            <p>The literature points away from blind row scaling and toward database-grounded context: profiling metadata, schema linking, candidate selection, execution feedback, and strict split hygiene. Exp029 validated profile-enriched schema rendering locally; the next design problem is compressing those notes before larger DB expansion.</p>
+            <p>The literature points away from blind row scaling and toward database-grounded context: profiling metadata, schema linking, candidate selection, execution feedback, and strict split hygiene. Exp030 validated that modest DB expansion is safe but weak; the next design problem is better schema/value grounding before larger scaling.</p>
           </article>
           <article class="panel">
             <h2>Research Boundary</h2>
@@ -1197,7 +1203,7 @@ def _render_agent_workflow() -> str:
           <article class="panel">
             <h2>Repo Rules</h2>
             <ul class="tight">
-              <li>Read docs/README.md first when entering the repo.</li>
+              <li>Build or read the browser docs first when entering the repo.</li>
               <li>Use uv for Python commands.</li>
               <li>Fail hard on invalid state; no silent fallbacks.</li>
               <li>Keep SQL training, eval, and LiveSQLBench adapters explicit.</li>

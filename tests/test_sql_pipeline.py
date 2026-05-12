@@ -474,6 +474,48 @@ class SQLPipelineTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "no benchmark rows found"):
             _filter_raw_rows_by_db_id(raw_rows, db_ids=("missing_db",))
 
+    def test_import_benchmark_preserves_source_task_ids_after_db_filter(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            cache_root = Path(tmp_dir) / "cache"
+            bird_root = cache_root / "premai-io__birdbench"
+            train_root = bird_root / "train"
+            for db_id in ("skip_db", "target_db"):
+                db_dir = train_root / "train_databases" / db_id
+                db_dir.mkdir(parents=True)
+                with sqlite3.connect(db_dir / f"{db_id}.sqlite") as conn:
+                    conn.execute("CREATE TABLE employees (name TEXT)")
+            (train_root / "train.json").write_text(
+                json.dumps(
+                    [
+                        {
+                            "db_id": "skip_db",
+                            "question": "Skip names.",
+                            "SQL": "SELECT name FROM employees",
+                        },
+                        {
+                            "db_id": "target_db",
+                            "question": "Target names.",
+                            "SQL": "SELECT name FROM employees",
+                        },
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            output_path = Path(tmp_dir) / "bird_train.jsonl"
+
+            import_sql_benchmark(
+                benchmark="bird",
+                split="train",
+                artifact="train",
+                output_path=output_path,
+                cache_root=cache_root,
+                db_ids=("target_db",),
+            )
+            rows = load_sql_train_examples(output_path)
+
+        self.assertEqual(rows[0].row_id, "bird_train_00002")
+        self.assertEqual(rows[0].task_id, "bird_train_00002")
+
     def test_load_sql_sft_manifest_validates_seed_experiment(self) -> None:
         manifest = load_sql_sft_manifest("experiments/sql/qwen35_0_8b__exp001_sql_sft.json")
 

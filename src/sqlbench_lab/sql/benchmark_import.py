@@ -58,8 +58,9 @@ def import_sql_benchmark(
         force_download=force_download,
     )
     raw_rows, dataset_root, db_folder_name, json_path = _load_raw_rows(benchmark, source_root, split)
-    filtered_rows = _filter_raw_rows_by_db_id(raw_rows, db_ids=db_ids)
-    selected_rows = _select_raw_rows(filtered_rows, limit=limit, selection=selection)
+    indexed_rows = list(enumerate(raw_rows, start=1))
+    filtered_rows = _filter_indexed_raw_rows_by_db_id(indexed_rows, db_ids=db_ids)
+    selected_rows = _select_indexed_raw_rows(filtered_rows, limit=limit, selection=selection)
     rows = [
         _convert_raw_row(
             row,
@@ -95,12 +96,20 @@ def _filter_raw_rows_by_db_id(
     *,
     db_ids: tuple[str, ...],
 ) -> list[dict[str, Any]]:
+    return [row for _, row in _filter_indexed_raw_rows_by_db_id(list(enumerate(raw_rows, start=1)), db_ids=db_ids)]
+
+
+def _filter_indexed_raw_rows_by_db_id(
+    indexed_rows: list[tuple[int, dict[str, Any]]],
+    *,
+    db_ids: tuple[str, ...],
+) -> list[tuple[int, dict[str, Any]]]:
     if not db_ids:
-        return raw_rows
+        return indexed_rows
     normalized = {db_id.strip() for db_id in db_ids if db_id.strip()}
     if not normalized:
-        return raw_rows
-    filtered = [row for row in raw_rows if str(row["db_id"]) in normalized]
+        return indexed_rows
+    filtered = [item for item in indexed_rows if str(item[1]["db_id"]) in normalized]
     if not filtered:
         raise ValueError(f"no benchmark rows found for db_id filter: {', '.join(sorted(normalized))}")
     return filtered
@@ -112,7 +121,19 @@ def _select_raw_rows(
     limit: int | None,
     selection: str,
 ) -> list[tuple[int, dict[str, Any]]]:
-    indexed_rows = list(enumerate(raw_rows, start=1))
+    return _select_indexed_raw_rows(
+        list(enumerate(raw_rows, start=1)),
+        limit=limit,
+        selection=selection,
+    )
+
+
+def _select_indexed_raw_rows(
+    indexed_rows: list[tuple[int, dict[str, Any]]],
+    *,
+    limit: int | None,
+    selection: str,
+) -> list[tuple[int, dict[str, Any]]]:
     if limit is None:
         return indexed_rows
     if selection == "first":
