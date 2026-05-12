@@ -46,6 +46,27 @@ read_when: you are starting work in this repo or need repo-specific coding rules
 - Every new doc must be linked in `docs/README.md`.
 - Include a `read_when` line at the top of each doc.
 
+## Experiment Learning Ledger
+- Keep Linear learning issue `TAP-532` current as the practical fine-tuning learning ledger.
+- After every meaningful training/eval experiment, add a learning record. Do this even when the experiment fails or regresses.
+- Prefer adding a comment to an existing learning child issue when the result reinforces an existing lesson. Create a new child issue under `TAP-532` when the experiment teaches a distinct new lesson.
+- Learning records must be practical, not decorative. Include:
+  - experiment ID and changed variable
+  - what stayed fixed
+  - train/eval datasets and whether DB-level holdout applies
+  - key metrics and failure counts
+  - decision: promote, reject, or investigate
+  - the practical lesson a future engineer should remember
+- Keep wording consistent with the existing learning child issues:
+  - `## Experiment` or `## Experiments`
+  - `## What changed`
+  - `## Result`
+  - `## Practical learning`
+  - `## Rule captured`
+- If an experiment changes the SQL pipeline direction, update both `docs/SQL_TRAINING_PIPELINE.md` and the relevant Linear learning issue.
+- Do not record local approximate scores as official benchmark claims. Mark lab, local, same-DB, unseen-DB, and official benchmark results distinctly.
+- For regressions, state the regression mechanism plainly and do not expand from the regressed checkpoint.
+
 ## Git
 - Safe by default: `git status`, `git diff`, `git log`.
 - No destructive operations unless explicitly requested.
