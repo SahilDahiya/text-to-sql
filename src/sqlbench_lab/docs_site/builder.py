@@ -347,6 +347,297 @@ RUNBOOK_ROWS: list[dict[str, str]] = [
     },
 ]
 
+RESEARCH_PAPER_ROWS: list[dict[str, str]] = [
+    {
+        "paper": "Automatic Metadata Extraction for Text-to-SQL",
+        "source": "https://arxiv.org/pdf/2505.19988",
+        "theme": "DB profiling, profile summaries, query-log analysis, SQL-to-text examples.",
+        "use": "Build a SQLite profiler that emits value-shape notes, text-numeric notes, top values, and join candidates before the next SFT run.",
+        "priority": "Now",
+    },
+    {
+        "paper": "BIRD: Big Bench for Large-Scale Database Grounded Text-to-SQL",
+        "source": "https://arxiv.org/abs/2305.03111",
+        "theme": "Real database values, dirty contents, external knowledge, efficiency.",
+        "use": "Keep BIRD as the main training/eval substrate; avoid treating Spider-style schema-only success as enough.",
+        "priority": "Now",
+    },
+    {
+        "paper": "Spider",
+        "source": "https://arxiv.org/abs/1809.08887",
+        "theme": "Cross-domain schema generalization with train/test database split.",
+        "use": "Use Spider for broad SQL pattern coverage and DB-disjoint split hygiene, but do not let it mask BIRD value-grounding gaps.",
+        "priority": "Now",
+    },
+    {
+        "paper": "Spider 2.0",
+        "source": "https://arxiv.org/abs/2411.07763",
+        "theme": "Enterprise workflows, huge schemas, dialect docs, project files, multi-query tasks.",
+        "use": "Use as a north-star for why LiveSQLBench needs agents, metadata retrieval, dialect handling, and workflow artifacts.",
+        "priority": "Future",
+    },
+    {
+        "paper": "LiveSQLBench",
+        "source": "https://livesqlbench.ai/",
+        "theme": "Live benchmark ladder with Base-Lite, Base-Full, Large, and agent-oriented releases.",
+        "use": "Keep official score claims isolated from local BIRD/Spider lab scores; move from lite to full to large only after local gates.",
+        "priority": "Now",
+    },
+    {
+        "paper": "Text-to-SQL Empowered by Large Language Models / DAIL-SQL",
+        "source": "https://arxiv.org/abs/2308.15363",
+        "theme": "Prompt representation, example selection, example organization, token efficiency, SFT comparison.",
+        "use": "Improve few-shot/example selection and track token budget as a first-class metric before scaling prompts.",
+        "priority": "Near",
+    },
+    {
+        "paper": "DIN-SQL",
+        "source": "https://arxiv.org/abs/2304.11015",
+        "theme": "Decomposed text-to-SQL with self-correction.",
+        "use": "Use decomposition as a later inference/agent pattern; do not mix it into current one-shot SFT scoring.",
+        "priority": "Near",
+    },
+    {
+        "paper": "C3",
+        "source": "https://arxiv.org/abs/2307.07306",
+        "theme": "Clear prompting, calibration with hints, consistent output.",
+        "use": "Mine prompt-format lessons for deterministic SQL-only output and explicit dialect/schema constraints.",
+        "priority": "Near",
+    },
+    {
+        "paper": "RESDSQL",
+        "source": "https://arxiv.org/abs/2302.05965",
+        "theme": "Decoupled schema linking and skeleton parsing.",
+        "use": "Treat schema linking as its own train/eval target before expecting end-to-end SQL improvements.",
+        "priority": "Near",
+    },
+    {
+        "paper": "CHESS",
+        "source": "https://arxiv.org/abs/2405.16755",
+        "theme": "Retriever, schema selector, candidate generator, iterative refinement, unit tester.",
+        "use": "Reference design for LiveSQLBench agent mode and for separating schema selection from SQL generation.",
+        "priority": "Future",
+    },
+    {
+        "paper": "MAC-SQL",
+        "source": "https://arxiv.org/abs/2312.11242",
+        "theme": "Multi-agent decomposition, sub-database selection, SQL refinement, fine-tuned SQL-Llama.",
+        "use": "Future agent scaffold: decomposer plus selector plus refiner; keep separate from one-shot model quality.",
+        "priority": "Future",
+    },
+    {
+        "paper": "SQLFixAgent",
+        "source": "https://huggingface.co/papers/2406.13408",
+        "theme": "Execution/error-aware correction with consistency-enhanced multi-agent repair.",
+        "use": "Use after one-shot plateau, when collected repair rows can train or evaluate a repair-stage adapter.",
+        "priority": "Future",
+    },
+    {
+        "paper": "CHASE-SQL",
+        "source": "https://arxiv.org/abs/2410.01943",
+        "theme": "Multi-path reasoning and preference-optimized candidate selection.",
+        "use": "Future reranking lane: generate several SQL candidates, execute or score them, then select.",
+        "priority": "Future",
+    },
+    {
+        "paper": "XiYan-SQL",
+        "source": "https://arxiv.org/abs/2411.08599",
+        "theme": "Multi-generator ensemble, M-Schema, SFT plus ICL, refiner, selection model.",
+        "use": "Longer-term architecture for candidate diversity and selection; useful once base one-shot generator is stable.",
+        "priority": "Future",
+    },
+    {
+        "paper": "Qwen2.5-Coder Technical Report",
+        "source": "https://arxiv.org/abs/2409.12186",
+        "theme": "Code-specialized data mixture, synthetic data, executable-code filtering, model-size ladder.",
+        "use": "Guides model choice and data hygiene for SQL/code tasks; supports trying coder bases if Qwen3.5 base stalls.",
+        "priority": "Near",
+    },
+    {
+        "paper": "Survey on LLMs for Text-to-SQL",
+        "source": "https://arxiv.org/abs/2407.15186",
+        "theme": "Benchmarks, prompting, fine-tuning, base models, future directions.",
+        "use": "Use as the living literature map when adding new research rows to this page.",
+        "priority": "Reference",
+    },
+]
+
+TRAINING_PIPELINE_ROWS: list[dict[str, str]] = [
+    {
+        "stage": "Goal And Metric Contract",
+        "basic": "Define task, target model, local eval, official benchmark boundary, and pass/fail metric.",
+        "advanced": "Separate seen-DB, unseen-DB, benchmark-dev, and official scores; define promotion gates before training.",
+        "repo": "Keep result-equivalence as primary SQL metric and never call local scores official LiveSQLBench scores.",
+    },
+    {
+        "stage": "Data Inventory And Rights",
+        "basic": "List raw sources, licenses, splits, and allowed use.",
+        "advanced": "Track source hashes, generation prompts, synthetic-data lineage, and protected-split exclusions.",
+        "repo": "Public Spider/BIRD train/dev only; hidden or protected benchmark data is excluded from train.",
+    },
+    {
+        "stage": "Data Contracts",
+        "basic": "Validate JSONL schema, required fields, dialect, db_id, task_id, SQL target.",
+        "advanced": "Add semantic validators: executable SQL, schema references, literal/value checks, token-length budgets.",
+        "repo": "Keep strict loaders and fail hard before writing durable datasets.",
+    },
+    {
+        "stage": "Split And Leakage Hygiene",
+        "basic": "Train/validation/test split with duplicate question and target checks.",
+        "advanced": "DB-disjoint holdouts, SQL AST overlap checks, value/literal overlap audits, synthetic template family splits.",
+        "repo": "Use db_id as split unit when measuring generalization.",
+    },
+    {
+        "stage": "Context Construction",
+        "basic": "Render question, dialect, schema, optional evidence, and assistant SQL target.",
+        "advanced": "Add profile metadata, schema linking, retrieved examples, compressed database docs, and context budget accounting.",
+        "repo": "Next high-value lane is SQLite profiling metadata before broader data expansion.",
+    },
+    {
+        "stage": "Tokenization And Loss Masking",
+        "basic": "Tokenize with correct chat template and train only assistant completion when desired.",
+        "advanced": "Verify masks by unit test, track prompt/completion token histograms, evaluate packing side effects.",
+        "repo": "Assistant-SQL-only loss stays explicit in manifests.",
+    },
+    {
+        "stage": "Training Method",
+        "basic": "Start with SFT and LoRA on a small model.",
+        "advanced": "Compare full fine-tune, LoRA, QLoRA, DoRA, DPO/ORPO/KTO, reward modeling, GRPO only when data supports it.",
+        "repo": "Current lane remains direct one-shot SFT; repair/preference/RL wait until one-shot plateaus.",
+    },
+    {
+        "stage": "Runtime Recipe",
+        "basic": "Choose batch size, accumulation, learning rate, epochs, precision, seed, and checkpoint cadence.",
+        "advanced": "Use Accelerate/FSDP/DeepSpeed for scale, gradient checkpointing, FlashAttention when hardware supports it, and packing only after quality gates.",
+        "repo": "RTX 2080 Ti uses non-FlashAttention local runs; cloud is for targeted high-confidence experiments.",
+    },
+    {
+        "stage": "Evaluation",
+        "basic": "Run fixed eval sets and compare base vs adapter.",
+        "advanced": "Add per-failure taxonomy, cost/latency, inference determinism, candidate diversity, ablations, and confidence intervals.",
+        "repo": "Every experiment needs eval JSON plus analysis JSON before deciding next action.",
+    },
+    {
+        "stage": "Observability",
+        "basic": "Log params, metrics, artifacts, and model outputs.",
+        "advanced": "Track dataset lineage, git commit, source hashes, hardware, package lock, token stats, failure buckets, and qualitative notes.",
+        "repo": "MLflow is browser/comparison layer; manifests and JSON artifacts remain durable contract.",
+    },
+    {
+        "stage": "Model Registry And Serving",
+        "basic": "Save adapter, tokenizer, config, and train summary.",
+        "advanced": "Merge/serve adapters, vLLM batch eval, compatibility tests, rollback plan, and model card.",
+        "repo": "Add vLLM after one-shot quality is stable enough to justify larger eval sweeps.",
+    },
+    {
+        "stage": "Feedback And Next Data",
+        "basic": "Read failures and add targeted examples.",
+        "advanced": "Collect repair rows, preference pairs, negative candidates, SQL-to-text examples, and active-learning queues.",
+        "repo": "Failures decide data. Do not add broad rows when one schema/value skill is missing.",
+    },
+]
+
+FRAMEWORK_ROWS: list[dict[str, str]] = [
+    {
+        "framework": "Transformers Trainer",
+        "source": "https://huggingface.co/docs/transformers/main/trainer",
+        "role": "General model loading, training loop, generation, TrainingArguments.",
+        "repo_use": "Baseline backend and eval path; keep only if it gives control TRL hides.",
+    },
+    {
+        "framework": "Datasets",
+        "source": "https://huggingface.co/docs/datasets/v1.1.3/processing.html",
+        "role": "Map/filter/split/shuffle dataset transforms and Arrow-backed scaling.",
+        "repo_use": "Useful when DB labs grow beyond small JSONL files.",
+    },
+    {
+        "framework": "PEFT",
+        "source": "https://huggingface.co/docs/peft/developer_guides/quantization",
+        "role": "LoRA/adapter training and quantized PEFT workflows.",
+        "repo_use": "Current adapter substrate; keep LoRA config explicit in manifests.",
+    },
+    {
+        "framework": "TRL SFTTrainer",
+        "source": "https://huggingface.co/docs/trl/sft_trainer",
+        "role": "SFT-specific trainer with packing, chat templates, assistant/completion loss controls.",
+        "repo_use": "Canonical SFT backend for Qwen SQL experiments.",
+    },
+    {
+        "framework": "bitsandbytes / QLoRA",
+        "source": "https://arxiv.org/abs/2305.14314",
+        "role": "4-bit NF4, double quantization, paged optimizers for memory-efficient tuning.",
+        "repo_use": "Add when memory blocks larger model/context experiments, not as a quality fix by itself.",
+    },
+    {
+        "framework": "Accelerate",
+        "source": "https://huggingface.co/docs/transformers/accelerate",
+        "role": "Launch/device abstraction for single-GPU, multi-GPU, FSDP, and DeepSpeed setups.",
+        "repo_use": "Use for cloud/distributed reproducibility after local recipe is stable.",
+    },
+    {
+        "framework": "Axolotl",
+        "source": "https://docs.axolotl.ai/",
+        "role": "Recipe-driven full fine-tuning, LoRA, QLoRA, DPO/ORPO/KTO, GRPO, RM/PRM.",
+        "repo_use": "Mirror best repo recipe later; do not make it the source of truth yet.",
+    },
+    {
+        "framework": "vLLM",
+        "source": "https://docs.vllm.ai/en/v0.7.0/serving/openai_compatible_server.html",
+        "role": "High-throughput OpenAI-compatible serving and LoRA module serving.",
+        "repo_use": "Future eval acceleration and LiveSQLBench serving path.",
+    },
+    {
+        "framework": "MLflow",
+        "source": "https://mlflow.org/docs/latest/ml/tracking",
+        "role": "Experiment tracking for params, metrics, artifacts, datasets, and run comparison.",
+        "repo_use": "Keep dashboard and comparison layer; log manifest/result artifact paths.",
+    },
+    {
+        "framework": "DVC",
+        "source": "https://dvc.org/doc/user-guide/project-structure/dvc-files",
+        "role": "Git-tracked pointers for large datasets and model artifacts.",
+        "repo_use": "Consider once ignored external/results/artifacts need reproducible cross-machine sync.",
+    },
+]
+
+HYGIENE_ROWS: list[dict[str, str]] = [
+    {
+        "rule": "One variable per experiment",
+        "why": "Without isolation, we cannot tell whether data, prompt, trainer, model, or decoding caused movement.",
+        "check": "Manifest diff names the changed variable and fixed variables.",
+    },
+    {
+        "rule": "Dataset lineage is part of the model",
+        "why": "A checkpoint without source rows, generation command, and leakage audit is not reproducible.",
+        "check": "Manifest points to train/eval datasets; generated data has command or builder code.",
+    },
+    {
+        "rule": "Never score on trained dev rows",
+        "why": "Repair rows, SQL-to-text rows, and synthetic examples collected from eval failures contaminate that eval.",
+        "check": "Once an eval slice feeds training, retire it for headline scoring.",
+    },
+    {
+        "rule": "Track failure mix, not only pass rate",
+        "why": "A flat score can hide useful shifts from wrong-result failures into syntax/schema failures or vice versa.",
+        "check": "Every eval has analysis JSON with failure_counts.",
+    },
+    {
+        "rule": "Local lab scores are not benchmark scores",
+        "why": "Official benchmarks include hidden data, runner constraints, dialect details, and scoring policies.",
+        "check": "Docs and MLflow tags distinguish lab, local, same-DB, unseen-DB, and official.",
+    },
+    {
+        "rule": "Speed optimizations need quality gates",
+        "why": "Packing and FlashAttention can improve runtime while damaging completion boundaries or learned behavior.",
+        "check": "Runtime improvements promote only if fixed eval gates hold.",
+    },
+    {
+        "rule": "Keep research as operating memory",
+        "why": "Papers should change the next experiment or pipeline design, not sit as decorative bibliography.",
+        "check": "Every research row has a repo-use decision.",
+    },
+]
+
 
 def build_docs_site(output_dir: str | Path = "site") -> DocsSiteSummary:
     """Generate browser docs from structured repo state."""
@@ -363,6 +654,7 @@ def build_docs_site(output_dir: str | Path = "site") -> DocsSiteSummary:
         "pipeline.html": _render_pipeline(),
         "training.html": _render_training(experiments),
         "learnings.html": _render_learnings(),
+        "research.html": _render_research(),
         "runbook.html": _render_runbook(),
         "evaluation.html": _render_evaluation(experiments),
         "livesqlbench.html": _render_livesqlbench(),
@@ -652,6 +944,97 @@ def _render_learnings() -> str:
         </section>
     """
     return _page("Learnings", "learnings", body)
+
+
+def _render_research() -> str:
+    paper_rows = "\n".join(
+        f"""
+        <tr>
+          <td><strong>{_escape(row['paper'])}</strong><br><a href="{_escape(row['source'])}">source</a></td>
+          <td>{_badge(row['priority'])}</td>
+          <td>{_escape(row['theme'])}</td>
+          <td>{_escape(row['use'])}</td>
+        </tr>
+        """
+        for row in RESEARCH_PAPER_ROWS
+    )
+    pipeline_rows = "\n".join(
+        f"""
+        <tr>
+          <td><strong>{_escape(row['stage'])}</strong></td>
+          <td>{_escape(row['basic'])}</td>
+          <td>{_escape(row['advanced'])}</td>
+          <td>{_escape(row['repo'])}</td>
+        </tr>
+        """
+        for row in TRAINING_PIPELINE_ROWS
+    )
+    framework_rows = "\n".join(
+        f"""
+        <tr>
+          <td><strong>{_escape(row['framework'])}</strong><br><a href="{_escape(row['source'])}">source</a></td>
+          <td>{_escape(row['role'])}</td>
+          <td>{_escape(row['repo_use'])}</td>
+        </tr>
+        """
+        for row in FRAMEWORK_ROWS
+    )
+    hygiene_rows = "\n".join(
+        f"""
+        <tr>
+          <td><strong>{_escape(row['rule'])}</strong></td>
+          <td>{_escape(row['why'])}</td>
+          <td>{_escape(row['check'])}</td>
+        </tr>
+        """
+        for row in HYGIENE_ROWS
+    )
+    body = f"""
+        <section class="page-head compact">
+          <p class="eyebrow">Research</p>
+          <h1>Text-to-SQL literature and modern fine-tuning pipeline map.</h1>
+          <p class="lead">Last researched 2026-05-12. Each source is kept only if it changes a concrete SQLBench Lab design choice, experiment, or hygiene rule.</p>
+        </section>
+        <section class="grid two">
+          <article class="panel">
+            <h2>Immediate Read</h2>
+            <p>The literature points away from blind row scaling and toward database-grounded context: profiling metadata, schema linking, candidate selection, execution feedback, and strict split hygiene. For the current one-shot lane, the next best move is profile-enriched schema rendering before larger DB expansion.</p>
+          </article>
+          <article class="panel">
+            <h2>Research Boundary</h2>
+            <p>Agent, repair, reranking, and preference/RL methods are useful future lanes, but they must not pollute the one-shot SFT metric. Promote them only after the direct generator has a stable local baseline and clean artifacts.</p>
+          </article>
+        </section>
+        <section class="panel full">
+          <h2>Text-to-SQL Research Map</h2>
+          <table class="dense-table">
+            <thead><tr><th>Paper / System</th><th>Priority</th><th>Core Idea</th><th>How We Use It</th></tr></thead>
+            <tbody>{paper_rows}</tbody>
+          </table>
+        </section>
+        <section class="panel full">
+          <h2>Modern Fine-Tuning Pipeline</h2>
+          <table class="dense-table">
+            <thead><tr><th>Stage</th><th>Basic</th><th>Advanced</th><th>SQLBench Contract</th></tr></thead>
+            <tbody>{pipeline_rows}</tbody>
+          </table>
+        </section>
+        <section class="panel full">
+          <h2>Framework Stack</h2>
+          <table class="dense-table">
+            <thead><tr><th>Framework / Method</th><th>Role</th><th>Repo Decision</th></tr></thead>
+            <tbody>{framework_rows}</tbody>
+          </table>
+        </section>
+        <section class="panel full">
+          <h2>Training Hygiene Rules</h2>
+          <table class="dense-table">
+            <thead><tr><th>Rule</th><th>Why It Matters</th><th>Check</th></tr></thead>
+            <tbody>{hygiene_rows}</tbody>
+          </table>
+        </section>
+    """
+    return _page("Research", "research", body)
 
 
 def _render_runbook() -> str:
@@ -1173,6 +1556,7 @@ def _nav(active: str, prefix: str) -> str:
         ("pipeline", "Pipeline", "pipeline.html"),
         ("training", "Training", "training.html"),
         ("learnings", "Learnings", "learnings.html"),
+        ("research", "Research", "research.html"),
         ("runbook", "Runbook", "runbook.html"),
         ("evaluation", "Evaluation", "evaluation.html"),
         ("livesqlbench", "LiveSQLBench", "livesqlbench.html"),
