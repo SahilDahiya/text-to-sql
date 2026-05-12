@@ -1309,6 +1309,25 @@ uv run --group training --group observability python -m sqlbench_lab.cli sql eva
 Pass condition: improve `regional_sales` above `37/40`, ideally to `40/40`, while
 preserving `superstore` at `40/40`.
 
+Exp028 local result:
+
+- train rows: `88`
+- train runtime: `790s`
+- train loss: `0.0428`
+- superstore fixed heldout lab dev: `40/40`
+- regional_sales fixed heldout lab dev: `38/40`
+- regional_sales failure counts: schema `1`, syntax `1`
+
+Decision: partial win. Moving normalized unit price into the canonical computed-order
+train slot eliminated the three unit-price row-value mismatches that survived Exp025-027.
+The remaining failures are now exact identifier regressions on `Order Quantity`: one
+`T1.OrderQuantity` schema error and one unquoted `T1.Order Quantity` syntax error.
+
+Practical learning: canonical slot placement worked where sidecar examples and passive
+notes did not. The next experiment should preserve the v3 unit-price slot and add a small
+canonical identifier reinforcement for `Order Quantity`, not revert to the weaker sidecar
+normalization approach.
+
 ## BIRD DB-Level Expansion Protocol
 
 When expanding beyond `superstore`, treat the database ID as the scientific split unit. The
