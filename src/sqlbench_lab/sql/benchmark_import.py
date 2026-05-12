@@ -37,6 +37,7 @@ def import_sql_benchmark(
     output_path: str | Path,
     limit: int | None = None,
     selection: str = "first",
+    db_ids: tuple[str, ...] = (),
     cache_root: str | Path | None = None,
     force_download: bool = False,
 ) -> SQLBenchmarkImportSummary:
@@ -57,7 +58,8 @@ def import_sql_benchmark(
         force_download=force_download,
     )
     raw_rows, dataset_root, db_folder_name, json_path = _load_raw_rows(benchmark, source_root, split)
-    selected_rows = _select_raw_rows(raw_rows, limit=limit, selection=selection)
+    filtered_rows = _filter_raw_rows_by_db_id(raw_rows, db_ids=db_ids)
+    selected_rows = _select_raw_rows(filtered_rows, limit=limit, selection=selection)
     rows = [
         _convert_raw_row(
             row,
@@ -86,6 +88,22 @@ def import_sql_benchmark(
         row_count=len(rows),
         selection=selection,
     )
+
+
+def _filter_raw_rows_by_db_id(
+    raw_rows: list[dict[str, Any]],
+    *,
+    db_ids: tuple[str, ...],
+) -> list[dict[str, Any]]:
+    if not db_ids:
+        return raw_rows
+    normalized = {db_id.strip() for db_id in db_ids if db_id.strip()}
+    if not normalized:
+        return raw_rows
+    filtered = [row for row in raw_rows if str(row["db_id"]) in normalized]
+    if not filtered:
+        raise ValueError(f"no benchmark rows found for db_id filter: {', '.join(sorted(normalized))}")
+    return filtered
 
 
 def _select_raw_rows(

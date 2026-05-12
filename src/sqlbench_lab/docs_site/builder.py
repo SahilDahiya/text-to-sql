@@ -288,6 +288,12 @@ HISTORY_ROWS: list[dict[str, str]] = [
         "signal": "Regional_sales reached 40/40 and superstore held 40/40; train runtime rose to about 22.4 minutes.",
         "lesson": "Profile metadata fixed the remaining quoted-identifier failures, but full notes are context-expensive and should be compressed before broad DB expansion.",
     },
+    {
+        "phase": "Unseen Gate 001",
+        "focus": "Run the Exp029 adapter on a DB-disjoint BIRD holdout from restaurant and airline.",
+        "signal": "Adapter scored 4/50 versus base 3/50; failures were still schema-error heavy.",
+        "lesson": "Seen-DB curriculum wins did not transfer. The next loop needs broader train DB coverage and cleaner schema-linking support, not more same-DB polishing.",
+    },
 ]
 
 RUNBOOK_ROWS: list[dict[str, str]] = [
@@ -828,14 +834,14 @@ def _render_home(experiments: list[ExperimentRecord]) -> str:
           <article class="panel">
             <h2>Operating Question</h2>
             <p>Can a small Qwen adapter learn one-shot text-to-SQL on real Spider/BIRD style data, then generalize across held-out databases well enough to justify LiveSQLBench runs?</p>
-            <div class="callout">Current evidence says schema naming and value grounding dominate. Exp029 reached 40/40 on regional_sales with profile notes and 40/40 on superstore, after Exp028 exposed quoted identifier failures.</div>
+            <div class="callout">Current evidence says schema naming and value grounding dominate. Exp029 reached 40/40 on regional_sales with profile notes and 40/40 on superstore, but the first DB-disjoint holdout gate only reached 4/50 on restaurant plus airline.</div>
           </article>
           <article class="panel">
             <h2>Next Useful Move</h2>
             <ol class="tight">
-              <li>Compress profile notes so metadata stays useful without doubling runtime.</li>
-              <li>Add the next BIRD train DB as a controlled expansion with profile metadata available.</li>
-              <li>Keep at least one DB unseen and track generalization separately.</li>
+              <li>Add the next train DBs before more same-DB polish; `sales` and `bike_share_1` are the current candidates.</li>
+              <li>Keep the restaurant and airline holdout fixed as the unseen-DB gate.</li>
+              <li>Use profile metadata and schema-linking support on broader train coverage, then rerun the same holdout.</li>
               <li>Promote only stable one-shot behavior toward LiveSQLBench.</li>
             </ol>
           </article>

@@ -34,6 +34,7 @@ from sqlbench_lab.sql import (
     tokenize_sql_sft_messages,
 )
 from sqlbench_lab.sql.benchmark_import import _select_raw_rows
+from sqlbench_lab.sql.benchmark_import import _filter_raw_rows_by_db_id
 
 
 WORKSPACE_ROOT = Path(__file__).resolve().parents[1]
@@ -454,6 +455,24 @@ class SQLPipelineTests(unittest.TestCase):
         selected = _select_raw_rows(raw_rows, limit=5, selection="stratified")
 
         self.assertEqual([row["question"] for _, row in selected], ["a1", "b1", "c1", "a2", "b2"])
+
+    def test_filter_raw_rows_by_db_id_restricts_import_rows(self) -> None:
+        raw_rows = [
+            {"db_id": "restaurant", "question": "r1"},
+            {"db_id": "restaurant", "question": "r2"},
+            {"db_id": "airline", "question": "a1"},
+            {"db_id": "sales", "question": "s1"},
+        ]
+
+        filtered = _filter_raw_rows_by_db_id(raw_rows, db_ids=("restaurant", "airline"))
+
+        self.assertEqual([row["question"] for row in filtered], ["r1", "r2", "a1"])
+
+    def test_filter_raw_rows_by_db_id_rejects_empty_match(self) -> None:
+        raw_rows = [{"db_id": "restaurant", "question": "r1"}]
+
+        with self.assertRaisesRegex(ValueError, "no benchmark rows found"):
+            _filter_raw_rows_by_db_id(raw_rows, db_ids=("missing_db",))
 
     def test_load_sql_sft_manifest_validates_seed_experiment(self) -> None:
         manifest = load_sql_sft_manifest("experiments/sql/qwen35_0_8b__exp001_sql_sft.json")

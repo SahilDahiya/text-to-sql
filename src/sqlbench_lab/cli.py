@@ -73,6 +73,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     import_benchmark.add_argument("--cache-root", help="Benchmark snapshot cache root")
     import_benchmark.add_argument("--force-download", action="store_true")
+    import_benchmark.add_argument(
+        "--db-id",
+        action="append",
+        dest="db_ids",
+        help="Restrict import to specific db_id values; repeat for multiple DBs",
+    )
 
     audit_leakage = sql_subparsers.add_parser("audit-leakage", help="Audit SQL train/eval dataset leakage")
     audit_leakage.add_argument(
@@ -258,6 +264,7 @@ def _run_sql_command(args: argparse.Namespace) -> int:
             output_path=args.output,
             limit=args.limit,
             selection=args.selection,
+            db_ids=tuple(args.db_ids or ()),
             cache_root=args.cache_root,
             force_download=args.force_download,
         )
