@@ -1245,6 +1245,70 @@ still too weak for this adapter. The next attempt should either put `sales_chann
 directly into the regional_sales train split's computed-order slot, or increase the direct
 target-shape curriculum enough to make the normalized expression dominant.
 
+## Exp028 Regional Sales Unit-Price Canonical Slot
+
+Exp028 changes the normal regional_sales computed-order train slot instead of adding more
+sidecar examples. The v3 regional_sales train lab keeps the v1 row count and shape, but the
+train computed-order slot teaches normalized average `Unit Price` with a `CurrencyCode = 'USD'`
+filter to avoid exact overlap with the fixed dev gold SQL.
+
+Generate regional_sales train_v3:
+
+```bash
+uv run python -m sqlbench_lab.cli sql generate-bird-lab \
+  --db-id regional_sales \
+  --curriculum-version v3 \
+  --train-output datasets/sql/train/bird_regional_sales_schema_lab_train_v3_unit_price_slot.jsonl \
+  --eval-output /tmp/bird_regional_sales_schema_lab_dev_v3_check.jsonl
+```
+
+Train inputs:
+
+- `datasets/sql/train/bird_superstore_schema_lab_train_v2.jsonl`
+- `datasets/sql/train/bird_regional_sales_schema_lab_train_v3_unit_price_slot.jsonl`
+
+Fixed comparison evals:
+
+- `datasets/sql/eval/bird_superstore_schema_lab_dev_v1.jsonl`
+- `datasets/sql/eval/bird_regional_sales_schema_lab_dev_v1.jsonl`
+
+Audit leakage:
+
+```bash
+uv run python -m sqlbench_lab.cli sql audit-leakage \
+  --train-dataset datasets/sql/train/bird_superstore_schema_lab_train_v2.jsonl \
+  --train-dataset datasets/sql/train/bird_regional_sales_schema_lab_train_v3_unit_price_slot.jsonl \
+  --eval-dataset datasets/sql/eval/bird_superstore_schema_lab_dev_v1.jsonl \
+  --eval-dataset datasets/sql/eval/bird_regional_sales_schema_lab_dev_v1.jsonl
+```
+
+Train exp028:
+
+```bash
+uv run --group training --group observability python -m sqlbench_lab.cli sql run-sft \
+  --manifest experiments/sql/qwen35_0_8b__exp028_trl_regional_sales_unit_price_slot_v3.json \
+  --mlflow
+```
+
+Evaluate exp028:
+
+```bash
+uv run --group training --group observability python -m sqlbench_lab.cli sql eval \
+  --manifest experiments/sql/qwen35_0_8b__exp028_trl_regional_sales_unit_price_slot_v3.json \
+  --model adapter \
+  --dataset datasets/sql/eval/bird_regional_sales_schema_lab_dev_v1.jsonl \
+  --mlflow
+
+uv run --group training --group observability python -m sqlbench_lab.cli sql eval \
+  --manifest experiments/sql/qwen35_0_8b__exp028_trl_regional_sales_unit_price_slot_v3.json \
+  --model adapter \
+  --dataset datasets/sql/eval/bird_superstore_schema_lab_dev_v1.jsonl \
+  --mlflow
+```
+
+Pass condition: improve `regional_sales` above `37/40`, ideally to `40/40`, while
+preserving `superstore` at `40/40`.
+
 ## BIRD DB-Level Expansion Protocol
 
 When expanding beyond `superstore`, treat the database ID as the scientific split unit. The

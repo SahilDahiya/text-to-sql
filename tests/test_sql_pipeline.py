@@ -227,6 +227,38 @@ class SQLPipelineTests(unittest.TestCase):
             set(),
         )
 
+    def test_generate_bird_regional_sales_schema_lab_v3_changes_train_computed_slot(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            dataset_root = Path(tmp_dir) / "bird" / "train"
+            _write_regional_sales_lab_fixture(dataset_root)
+            train_path = Path(tmp_dir) / "regional_sales_train_v3.jsonl"
+            eval_path = Path(tmp_dir) / "regional_sales_eval_v3.jsonl"
+
+            summary = generate_bird_regional_sales_schema_lab(
+                train_output_path=train_path,
+                eval_output_path=eval_path,
+                dataset_root=dataset_root,
+                curriculum_version="v3",
+            )
+            train_rows = load_sql_train_examples(train_path)
+            eval_rows = load_sql_eval_cases(eval_path)
+
+        self.assertEqual(summary.train_row_count, 40)
+        self.assertEqual(summary.eval_row_count, 40)
+        train_computed_rows = [row for row in train_rows if "computed_order_by_direct_fact" in row.tags]
+        eval_computed_cases = [case for case in eval_rows if "computed_order_by_direct_fact" in case.tags]
+        self.assertEqual(len(train_computed_rows), 4)
+        self.assertEqual(len(eval_computed_cases), 4)
+        self.assertTrue(
+            all("AVG(CAST(REPLACE(T1.`Unit Price`, ',', '') AS REAL))" in row.target_sql for row in train_computed_rows)
+        )
+        self.assertTrue(all("T1.CurrencyCode = 'USD'" in row.target_sql for row in train_computed_rows))
+        self.assertTrue(all("T1.CurrencyCode = 'USD'" not in case.gold_sql for case in eval_computed_cases))
+        self.assertEqual(
+            {row.target_sql for row in train_rows} & {case.gold_sql for case in eval_rows},
+            set(),
+        )
+
     def test_generate_bird_regional_sales_schema_lab_can_add_column_value_notes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             dataset_root = Path(tmp_dir) / "bird" / "train"

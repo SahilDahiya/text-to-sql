@@ -110,8 +110,8 @@ def generate_bird_regional_sales_schema_lab(
 ) -> BIRDSchemaLabSummary:
     """Generate a train-split-only BIRD schema-linking lab for regional_sales."""
 
-    if curriculum_version not in {"v1", "v2"}:
-        raise ValueError("curriculum_version must be v1 or v2")
+    if curriculum_version not in {"v1", "v2", "v3"}:
+        raise ValueError("curriculum_version must be v1, v2, or v3")
     root = Path(dataset_root) if dataset_root is not None else DEFAULT_BIRD_TRAIN_DB_ROOT
     db_path = root / "train_databases" / REGIONAL_SALES_DB_ID / f"{REGIONAL_SALES_DB_ID}.sqlite"
     if not db_path.exists():
@@ -388,6 +388,8 @@ def _regional_sales_rows_for_split(
         for key, values in facts.items()
         if isinstance(values, list)
     }
+    if artifact == "train" and curriculum_version == "v3":
+        selected["computed_variant"] = "sales_channel_avg_unit_price_currency_filter"
     rows = _regional_sales_curriculum_rows(
         region=facts["region"],
         values=selected,
@@ -954,6 +956,21 @@ def _regional_sales_computed_order_row(*, region: str, variant: str) -> dict[str
             "sql": (
                 f"SELECT T1.`Sales Channel` {region_join} "
                 f"WHERE T3.Region = '{_sql_string(region)}' "
+                "GROUP BY T1.`Sales Channel` "
+                "ORDER BY AVG(CAST(REPLACE(T1.`Unit Price`, ',', '') AS REAL)) DESC LIMIT 1"
+            ),
+        }
+    if variant == "sales_channel_avg_unit_price_currency_filter":
+        return {
+            "question": f"Among {region} USD orders, which sales channel has the highest average unit price?",
+            "knowledge_text": (
+                "average unit price = AVG(`Unit Price`); `Unit Price` is text with commas, "
+                "so normalize it before CAST. Currency is exact column `CurrencyCode`."
+            ),
+            "sql": (
+                f"SELECT T1.`Sales Channel` {region_join} "
+                f"WHERE T3.Region = '{_sql_string(region)}' "
+                "AND T1.CurrencyCode = 'USD' "
                 "GROUP BY T1.`Sales Channel` "
                 "ORDER BY AVG(CAST(REPLACE(T1.`Unit Price`, ',', '') AS REAL)) DESC LIMIT 1"
             ),

@@ -91,7 +91,7 @@ def main(argv: list[str] | None = None) -> int:
     bird_lab.add_argument("--train-output", required=True, help="Output SQL train JSONL path")
     bird_lab.add_argument("--eval-output", required=True, help="Output SQL eval JSONL path")
     bird_lab.add_argument("--dataset-root", help="BIRD train split root containing train_databases")
-    bird_lab.add_argument("--curriculum-version", choices=["v1", "v2"], default="v1")
+    bird_lab.add_argument("--curriculum-version", choices=["v1", "v2", "v3"], default="v1")
     bird_lab.add_argument(
         "--include-column-value-notes",
         action="store_true",
