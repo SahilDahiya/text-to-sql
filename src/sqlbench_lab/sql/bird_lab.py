@@ -232,6 +232,69 @@ def generate_bird_regional_sales_normalization_micro_lab(
     )
 
 
+def generate_bird_regional_sales_unit_price_contrast_lab(
+    *,
+    train_output_path: str | Path,
+    dataset_root: str | Path | None = None,
+) -> BIRDTrainLabSummary:
+    """Generate train-only regional_sales rows for direct unit-price target-shape supervision."""
+
+    root = Path(dataset_root) if dataset_root is not None else DEFAULT_BIRD_TRAIN_DB_ROOT
+    db_path = root / "train_databases" / REGIONAL_SALES_DB_ID / f"{REGIONAL_SALES_DB_ID}.sqlite"
+    if not db_path.exists():
+        raise ValueError(f"BIRD train database not found: {db_path}")
+
+    schema_text = _schema_text(db_path)
+    train_rows: list[dict[str, Any]] = []
+    with sqlite3.connect(db_path) as conn:
+        _regional_sales_column_value_notes(conn)
+        for region_index, region in enumerate(REGIONAL_SALES_REGIONS):
+            rows = _regional_sales_unit_price_contrast_rows(region=region)
+            for row_index, row in enumerate(rows, start=1):
+                ordinal = region_index * 100 + row_index
+                train_rows.append(
+                    {
+                        "schema_version": "sql_train_example:v1",
+                        "row_id": f"bird_regional_sales_unit_price_contrast_train_{ordinal:04d}",
+                        "source_benchmark": "bird",
+                        "source_split": "train",
+                        "task_id": f"bird_regional_sales_unit_price_contrast_train_{ordinal:04d}",
+                        "db_id": REGIONAL_SALES_DB_ID,
+                        "dialect": "sqlite",
+                        "question": row["question"],
+                        "schema_text": schema_text,
+                        "knowledge_text": row["knowledge_text"],
+                        "task_type": "select",
+                        "tags": [
+                            "bird",
+                            "schema_linking_lab",
+                            "split_train_db_only",
+                            "curriculum_v1",
+                            "unit_price_target_shape",
+                            "text_number_normalization",
+                            f"region_{region.lower()}",
+                            row["pattern"],
+                        ],
+                        "db_path": str(_display_path(db_path)),
+                        "target_sql": row["sql"],
+                        "provenance": {
+                            "created_by": "curriculum_generator",
+                            "teacher_model": None,
+                            "source_path": str(_display_path(db_path)),
+                        },
+                    }
+                )
+
+    train_output = _resolve_workspace_path(train_output_path)
+    train_output.parent.mkdir(parents=True, exist_ok=True)
+    _write_jsonl(train_output, train_rows)
+    return BIRDTrainLabSummary(
+        db_id=REGIONAL_SALES_DB_ID,
+        train_output_path=str(_display_path(train_output)),
+        train_row_count=len(train_rows),
+    )
+
+
 def _rows_for_split(
     *,
     facts: dict[str, Any],
@@ -1017,6 +1080,47 @@ def _regional_sales_normalization_micro_rows(*, region: str) -> list[dict[str, s
                 f"{region_filter} "
                 "AND T1.`Order Quantity` IS NOT NULL "
                 "AND CAST(REPLACE(T1.`Unit Price`, ',', '') AS REAL) > 0"
+            ),
+        },
+    ]
+
+
+def _regional_sales_unit_price_contrast_rows(*, region: str) -> list[dict[str, str]]:
+    region_join = (
+        "FROM `Sales Orders` AS T1 "
+        "INNER JOIN `Store Locations` AS T2 ON T1._StoreID = T2.StoreID "
+        "INNER JOIN Regions AS T3 ON T2.StateCode = T3.StateCode"
+    )
+    region_filter = f"WHERE T3.Region = '{_sql_string(region)}'"
+    normalized_average = "AVG(CAST(REPLACE(T1.`Unit Price`, ',', '') AS REAL))"
+    return [
+        {
+            "pattern": "unit_price_lowest_average",
+            "question": f"Which {region} sales channel has the lowest average unit price?",
+            "knowledge_text": (
+                "`Unit Price` is text numeric and may contain commas; for AVG, use "
+                "AVG(CAST(REPLACE(T1.`Unit Price`, ',', '') AS REAL))."
+            ),
+            "sql": (
+                f"SELECT T1.`Sales Channel` {region_join} "
+                f"{region_filter} "
+                "GROUP BY T1.`Sales Channel` "
+                f"ORDER BY {normalized_average} ASC LIMIT 1"
+            ),
+        },
+        {
+            "pattern": "unit_price_highest_average_currency_filter",
+            "question": f"Among {region} USD orders, which sales channel has the highest average unit price?",
+            "knowledge_text": (
+                "`Unit Price` is text numeric and may contain commas; for AVG, use "
+                "AVG(CAST(REPLACE(T1.`Unit Price`, ',', '') AS REAL)). Currency is exact column `CurrencyCode`."
+            ),
+            "sql": (
+                f"SELECT T1.`Sales Channel` {region_join} "
+                f"{region_filter} "
+                "AND T1.CurrencyCode = 'USD' "
+                "GROUP BY T1.`Sales Channel` "
+                f"ORDER BY {normalized_average} DESC LIMIT 1"
             ),
         },
     ]

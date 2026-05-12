@@ -21,6 +21,7 @@ from sqlbench_lab.sql import (
     extract_generated_sql,
     generate_bird_regional_sales_normalization_micro_lab,
     generate_bird_regional_sales_schema_lab,
+    generate_bird_regional_sales_unit_price_contrast_lab,
     generate_bird_superstore_schema_lab,
     import_sql_benchmark,
     load_sql_eval_cases,
@@ -283,6 +284,40 @@ class SQLPipelineTests(unittest.TestCase):
             all("CAST(REPLACE(T1.`Unit Price`, ',', '') AS REAL)" in row.target_sql for row in train_rows)
         )
         self.assertTrue(any("T1.`Order Quantity`" in row.target_sql for row in train_rows))
+        self.assertEqual(
+            {row.target_sql for row in train_rows} & {case.gold_sql for case in eval_rows},
+            set(),
+        )
+
+    def test_generate_bird_regional_sales_unit_price_contrast_lab_writes_train_only_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            dataset_root = Path(tmp_dir) / "bird" / "train"
+            _write_regional_sales_lab_fixture(dataset_root)
+            train_path = Path(tmp_dir) / "regional_sales_unit_price_train.jsonl"
+            eval_path = Path(tmp_dir) / "regional_sales_eval.jsonl"
+
+            summary = generate_bird_regional_sales_unit_price_contrast_lab(
+                train_output_path=train_path,
+                dataset_root=dataset_root,
+            )
+            generate_bird_regional_sales_schema_lab(
+                train_output_path=Path(tmp_dir) / "regional_sales_train.jsonl",
+                eval_output_path=eval_path,
+                dataset_root=dataset_root,
+            )
+            train_rows = load_sql_train_examples(train_path)
+            eval_rows = load_sql_eval_cases(eval_path)
+
+        self.assertEqual(summary.db_id, "regional_sales")
+        self.assertEqual(summary.train_row_count, 8)
+        self.assertEqual(len(train_rows), 8)
+        self.assertEqual({row.db_id for row in train_rows}, {"regional_sales"})
+        self.assertEqual(sum("unit_price_target_shape" in row.tags for row in train_rows), 8)
+        self.assertTrue(
+            all("AVG(CAST(REPLACE(T1.`Unit Price`, ',', '') AS REAL))" in row.target_sql for row in train_rows)
+        )
+        self.assertEqual(sum(" ASC LIMIT 1" in row.target_sql for row in train_rows), 4)
+        self.assertEqual(sum("T1.CurrencyCode = 'USD'" in row.target_sql for row in train_rows), 4)
         self.assertEqual(
             {row.target_sql for row in train_rows} & {case.gold_sql for case in eval_rows},
             set(),

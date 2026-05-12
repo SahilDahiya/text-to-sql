@@ -1159,6 +1159,74 @@ should make the correction part of the exact target shape, for example with dire
 same-shape contrast rows or a stronger renderer rule that ties text numeric notes to
 numeric aggregation.
 
+## Exp027 Regional Sales Unit-Price Target-Shape Contrast
+
+Exp027 tests direct target-shape supervision. Exp025 added adjacent micro examples, and
+Exp026 added passive value notes. Neither changed the repeated `AVG(Unit Price)` decode
+path. This run adds train-only rows that use the same normalized aggregate/order-by shape
+as the failures while avoiding exact dev SQL overlap.
+
+Generate the train-only contrast lab:
+
+```bash
+uv run python -m sqlbench_lab.cli sql generate-bird-regional-sales-unit-price-lab \
+  --train-output datasets/sql/train/bird_regional_sales_unit_price_contrast_train_v1.jsonl
+```
+
+The contrast rows include:
+
+- lowest average normalized `Unit Price` by `Sales Channel` (`ASC LIMIT 1`)
+- highest average normalized `Unit Price` by `Sales Channel` with a `CurrencyCode = 'USD'` filter
+
+Train inputs:
+
+- `datasets/sql/train/bird_superstore_schema_lab_train_v2.jsonl`
+- `datasets/sql/train/bird_regional_sales_schema_lab_train_v1.jsonl`
+- `datasets/sql/train/bird_regional_sales_unit_price_contrast_train_v1.jsonl`
+
+Fixed comparison evals:
+
+- `datasets/sql/eval/bird_superstore_schema_lab_dev_v1.jsonl`
+- `datasets/sql/eval/bird_regional_sales_schema_lab_dev_v1.jsonl`
+
+Audit leakage:
+
+```bash
+uv run python -m sqlbench_lab.cli sql audit-leakage \
+  --train-dataset datasets/sql/train/bird_superstore_schema_lab_train_v2.jsonl \
+  --train-dataset datasets/sql/train/bird_regional_sales_schema_lab_train_v1.jsonl \
+  --train-dataset datasets/sql/train/bird_regional_sales_unit_price_contrast_train_v1.jsonl \
+  --eval-dataset datasets/sql/eval/bird_superstore_schema_lab_dev_v1.jsonl \
+  --eval-dataset datasets/sql/eval/bird_regional_sales_schema_lab_dev_v1.jsonl
+```
+
+Train exp027:
+
+```bash
+uv run --group training --group observability python -m sqlbench_lab.cli sql run-sft \
+  --manifest experiments/sql/qwen35_0_8b__exp027_trl_regional_sales_unit_price_contrast.json \
+  --mlflow
+```
+
+Evaluate exp027:
+
+```bash
+uv run --group training --group observability python -m sqlbench_lab.cli sql eval \
+  --manifest experiments/sql/qwen35_0_8b__exp027_trl_regional_sales_unit_price_contrast.json \
+  --model adapter \
+  --dataset datasets/sql/eval/bird_regional_sales_schema_lab_dev_v1.jsonl \
+  --mlflow
+
+uv run --group training --group observability python -m sqlbench_lab.cli sql eval \
+  --manifest experiments/sql/qwen35_0_8b__exp027_trl_regional_sales_unit_price_contrast.json \
+  --model adapter \
+  --dataset datasets/sql/eval/bird_superstore_schema_lab_dev_v1.jsonl \
+  --mlflow
+```
+
+Pass condition: improve `regional_sales` above `37/40`, ideally to `40/40`, while
+preserving `superstore` at `40/40`.
+
 ## BIRD DB-Level Expansion Protocol
 
 When expanding beyond `superstore`, treat the database ID as the scientific split unit. The

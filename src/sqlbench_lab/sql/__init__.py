@@ -6,6 +6,7 @@ from .bird_lab import (
     BIRDTrainLabSummary,
     generate_bird_regional_sales_normalization_micro_lab,
     generate_bird_regional_sales_schema_lab,
+    generate_bird_regional_sales_unit_price_contrast_lab,
     generate_bird_superstore_schema_lab,
 )
 from .eval_analysis import SQLEvalAnalysisSummary, SQLEvalFailureAnalysis, analyze_sql_eval_result
@@ -54,6 +55,7 @@ __all__ = [
     "generate_bird_superstore_schema_lab",
     "generate_bird_regional_sales_normalization_micro_lab",
     "generate_bird_regional_sales_schema_lab",
+    "generate_bird_regional_sales_unit_price_contrast_lab",
     "import_sql_benchmark",
     "load_sql_eval_cases",
     "load_sql_repair_examples",

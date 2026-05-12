@@ -10,6 +10,7 @@ from .sql import (
     collect_sql_repair_data,
     generate_bird_regional_sales_normalization_micro_lab,
     generate_bird_regional_sales_schema_lab,
+    generate_bird_regional_sales_unit_price_contrast_lab,
     generate_bird_superstore_schema_lab,
     import_sql_benchmark,
     load_sql_eval_cases,
@@ -103,6 +104,13 @@ def main(argv: list[str] | None = None) -> int:
     )
     bird_normalization_lab.add_argument("--train-output", required=True, help="Output SQL train JSONL path")
     bird_normalization_lab.add_argument("--dataset-root", help="BIRD train split root containing train_databases")
+
+    bird_unit_price_lab = sql_subparsers.add_parser(
+        "generate-bird-regional-sales-unit-price-lab",
+        help="Generate train-only BIRD regional_sales unit-price target-shape lab data",
+    )
+    bird_unit_price_lab.add_argument("--train-output", required=True, help="Output SQL train JSONL path")
+    bird_unit_price_lab.add_argument("--dataset-root", help="BIRD train split root containing train_databases")
 
     run_sft = sql_subparsers.add_parser("run-sft", help="Run SQL LoRA SFT from a manifest")
     run_sft.add_argument("--manifest", required=True, help="Path to SQL SFT manifest JSON")
@@ -278,6 +286,16 @@ def _run_sql_command(args: argparse.Namespace) -> int:
         )
         print(
             "generated BIRD regional_sales normalization lab "
+            f"db={summary.db_id} train_rows={summary.train_row_count} train={summary.train_output_path}"
+        )
+        return 0
+    if args.sql_command == "generate-bird-regional-sales-unit-price-lab":
+        summary = generate_bird_regional_sales_unit_price_contrast_lab(
+            train_output_path=args.train_output,
+            dataset_root=args.dataset_root,
+        )
+        print(
+            "generated BIRD regional_sales unit-price lab "
             f"db={summary.db_id} train_rows={summary.train_row_count} train={summary.train_output_path}"
         )
         return 0
