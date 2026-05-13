@@ -20,7 +20,7 @@ from .evaluator import evaluate_sqlite_case
 from .loaders import load_sql_eval_cases
 from .manifest import SQLSFTExperimentManifest, load_sql_sft_manifest
 from .models import SQLEvalCase
-from .rendering import build_eval_messages, build_repair_eval_messages
+from .rendering import SQL_SYSTEM_PROMPT, build_eval_messages, build_repair_eval_messages
 from .repair_collection import STRONG_REPAIR_FAILURE_TYPES
 from .training import (
     _ensure_pad_token,
@@ -41,6 +41,8 @@ def run_sql_eval(
     model_variant: str,
     eval_dataset: str | Path | None = None,
     max_new_tokens: int = 128,
+    system_prompt: str | None = None,
+    result_label: str | None = None,
     predictor: Callable[[SQLEvalCase], str] | None = None,
     log_mlflow: bool | None = None,
     mlflow_tracking_uri: str | None = None,
@@ -57,7 +59,12 @@ def run_sql_eval(
     if not cases:
         raise ValueError("SQL eval requires at least one eval case")
 
-    result_path = _eval_result_path(manifest, model_variant, eval_dataset=eval_dataset)
+    result_path = _eval_result_path(
+        manifest,
+        model_variant,
+        eval_dataset=eval_dataset,
+        result_label=result_label,
+    )
     result_path.parent.mkdir(parents=True, exist_ok=True)
     adapter_dir = manifest.resolve_workspace_path(manifest.output_paths.adapter_dir)
     predict_sql = predictor or _build_hf_predictor(
@@ -65,6 +72,7 @@ def run_sql_eval(
         model_variant=model_variant,
         adapter_dir=adapter_dir,
         max_new_tokens=max_new_tokens,
+        system_prompt=system_prompt,
     )
 
     records = [_evaluate_case(case, model_variant=model_variant, predict_sql=predict_sql) for case in cases]
@@ -196,6 +204,7 @@ def _build_hf_predictor(
     model_variant: str,
     adapter_dir: Path,
     max_new_tokens: int,
+    system_prompt: str | None = None,
 ) -> Callable[[SQLEvalCase], str]:
     predict_messages = _build_hf_message_predictor(
         manifest=manifest,
@@ -205,7 +214,13 @@ def _build_hf_predictor(
     )
 
     def predict(case: SQLEvalCase) -> str:
-        return predict_messages(build_eval_messages(case, prompt_style=manifest.prompt.style))
+        return predict_messages(
+            build_eval_messages(
+                case,
+                prompt_style=manifest.prompt.style,
+                system_prompt=system_prompt or SQL_SYSTEM_PROMPT,
+            )
+        )
 
     return predict
 
@@ -397,10 +412,12 @@ def _eval_result_path(
     model_variant: str,
     *,
     eval_dataset: str | Path | None,
+    result_label: str | None = None,
 ) -> Path:
     if eval_dataset is not None:
         dataset_stem = Path(eval_dataset).stem
-        return _workspace_results_root() / manifest.experiment_id / f"{model_variant}__{dataset_stem}.json"
+        label = f"__{_safe_result_label(result_label)}" if result_label else ""
+        return _workspace_results_root() / manifest.experiment_id / f"{model_variant}__{dataset_stem}{label}.json"
     if model_variant == "base":
         return manifest.resolve_workspace_path(manifest.eval_plan.baseline_results)
     if model_variant == "adapter":
@@ -422,6 +439,13 @@ def _workspace_results_root() -> Path:
     from sqlbench_lab.paths import WORKSPACE_ROOT
 
     return WORKSPACE_ROOT / "results" / "sql"
+
+
+def _safe_result_label(value: str) -> str:
+    label = value.strip().replace("/", "_").replace("\\", "_").replace(":", "_")
+    if not label:
+        raise ValueError("result_label must not be empty")
+    return label
 
 
 def _write_eval_summary(path: Path, summary: SQLEvalRunSummary) -> None:

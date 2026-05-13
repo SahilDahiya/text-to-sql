@@ -20,9 +20,10 @@ def build_train_messages(
     example: SQLTrainExample,
     *,
     prompt_style: str = CANONICAL_PROMPT_STYLE,
+    system_prompt: str = SQL_SYSTEM_PROMPT,
 ) -> list[dict[str, str]]:
     return [
-        {"role": "system", "content": SQL_SYSTEM_PROMPT},
+        {"role": "system", "content": system_prompt},
         {"role": "user", "content": _base_user_content(example, prompt_style=prompt_style)},
         {"role": "assistant", "content": example.target_sql},
     ]
@@ -32,6 +33,7 @@ def build_repair_messages(
     example: SQLRepairExample,
     *,
     prompt_style: str = CANONICAL_PROMPT_STYLE,
+    system_prompt: str = SQL_SYSTEM_PROMPT,
 ) -> list[dict[str, str]]:
     user_content = "\n\n".join(
         [
@@ -41,7 +43,7 @@ def build_repair_messages(
         ]
     )
     return [
-        {"role": "system", "content": SQL_SYSTEM_PROMPT},
+        {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_content},
         {"role": "assistant", "content": example.target_sql},
     ]
@@ -51,9 +53,10 @@ def build_eval_messages(
     case: SQLEvalCase,
     *,
     prompt_style: str = CANONICAL_PROMPT_STYLE,
+    system_prompt: str = SQL_SYSTEM_PROMPT,
 ) -> list[dict[str, str]]:
     return [
-        {"role": "system", "content": SQL_SYSTEM_PROMPT},
+        {"role": "system", "content": system_prompt},
         {"role": "user", "content": _base_user_content(case, prompt_style=prompt_style)},
     ]
 
@@ -64,6 +67,7 @@ def build_repair_eval_messages(
     previous_sql: str,
     execution_observation: str,
     prompt_style: str = CANONICAL_PROMPT_STYLE,
+    system_prompt: str = SQL_SYSTEM_PROMPT,
 ) -> list[dict[str, str]]:
     user_content = "\n\n".join(
         [
@@ -74,7 +78,7 @@ def build_repair_eval_messages(
         ]
     )
     return [
-        {"role": "system", "content": SQL_SYSTEM_PROMPT},
+        {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_content},
     ]
 

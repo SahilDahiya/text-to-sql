@@ -246,6 +246,7 @@ def log_sql_prompt_candidate_run(
                     else ""
                 ),
                 "sqlbench.decision": summary.decision,
+                "sqlbench.eval_dataset_role": summary.eval_dataset_role or "",
                 "sqlbench.model_variant": summary.model_variant or "",
                 "sqlbench.git_commit": _git_commit(),
             }
@@ -264,6 +265,7 @@ def log_sql_prompt_candidate_run(
                 "fresh_gate.case_count": summary.fresh_gate_case_count or "",
                 "source.manifest": summary.source_manifest or "",
                 "eval.result": summary.eval_result or "",
+                "eval.dataset_role": summary.eval_dataset_role or "",
                 "mlflow.run_name": run_name,
             }
         )

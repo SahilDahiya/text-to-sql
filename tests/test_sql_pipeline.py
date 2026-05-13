@@ -13,6 +13,7 @@ from sqlbench_lab.sql import (
     assert_no_sql_dataset_leakage,
     attach_sqlite_profile_metadata,
     audit_sql_dataset_leakage,
+    build_eval_messages,
     build_repair_messages,
     build_repair_eval_messages,
     build_sqlite_fixture,
@@ -151,11 +152,13 @@ class SQLPipelineTests(unittest.TestCase):
             )
 
             self.assertEqual(summary.prompt_dev_case_count, 1)
+            self.assertEqual(summary.eval_dataset_role, "prompt_dev")
             self.assertEqual(summary.eval_pass_rate, 0.0)
             self.assertEqual(summary.failure_counts, {"prediction_schema_error": 1})
             payload = json.loads(output_path.read_text(encoding="utf-8"))
             self.assertEqual(payload["schema_version"], "sql_prompt_candidate:v1")
             self.assertEqual(payload["candidate_id"], "c000")
+            self.assertEqual(payload["eval_dataset_role"], "prompt_dev")
 
     def test_import_benchmark_writes_train_db_path(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -761,6 +764,25 @@ class SQLPipelineTests(unittest.TestCase):
         self.assertEqual(payload["model_variant"], "adapter")
         self.assertEqual(payload["passed_count"], 2)
 
+    def test_run_sql_eval_result_label_keeps_prompt_candidate_outputs_separate(self) -> None:
+        result_path = (
+            WORKSPACE_ROOT
+            / "results/sql/qwen35_0_8b__exp001_sql_sft/adapter__sql_smoke_v1__c001.json"
+        )
+        if result_path.exists():
+            result_path.unlink()
+
+        summary = run_sql_eval(
+            "experiments/sql/qwen35_0_8b__exp001_sql_sft.json",
+            model_variant="adapter",
+            eval_dataset="datasets/sql/smoke/sql_smoke_v1.jsonl",
+            result_label="c001",
+            predictor=lambda case: case.gold_sql,
+        )
+
+        self.assertEqual(summary.passed_count, 2)
+        self.assertTrue(result_path.exists())
+
     def test_run_sql_eval_with_repair_preserves_first_pass_and_final_scores(self) -> None:
         cases = load_sql_eval_cases("datasets/sql/smoke/sql_smoke_v1.jsonl")
 
@@ -1131,10 +1153,12 @@ class SQLPipelineTests(unittest.TestCase):
 
         train_messages = build_train_messages(train_examples[0])
         repair_messages = build_repair_messages(repair_examples[0])
+        eval_messages = build_eval_messages(train_examples[0], system_prompt="Custom system")
 
         self.assertEqual(train_messages[-1]["content"], "SELECT name FROM employees;")
         self.assertIn("Use table and column names exactly", train_messages[0]["content"])
         self.assertIn("quote the full identifier with backticks", train_messages[0]["content"])
+        self.assertEqual(eval_messages[0]["content"], "Custom system")
         self.assertIn("Previous SQL:", repair_messages[1]["content"])
         self.assertIn("no such column: missing", repair_messages[1]["content"])
 

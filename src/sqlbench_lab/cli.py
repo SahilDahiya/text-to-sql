@@ -141,6 +141,8 @@ def main(argv: list[str] | None = None) -> int:
     eval_sql.add_argument("--model", choices=["base", "adapter"], required=True, help="Model variant to evaluate")
     eval_sql.add_argument("--dataset", help="Override eval dataset JSONL path")
     eval_sql.add_argument("--max-new-tokens", type=int, default=128, help="Maximum generated SQL tokens")
+    eval_sql.add_argument("--system-prompt-file", help="Override eval system prompt from a text file")
+    eval_sql.add_argument("--result-label", help="Append a stable label to the eval result file")
     eval_sql.add_argument("--mlflow", action="store_true", help="Log the eval run to MLflow")
     eval_sql.add_argument("--mlflow-tracking-uri", help="Override the MLflow tracking URI")
     eval_sql.add_argument("--mlflow-experiment", help="Override the MLflow experiment name")
@@ -419,6 +421,8 @@ def _run_sql_command(args: argparse.Namespace) -> int:
             model_variant=args.model,
             eval_dataset=args.dataset,
             max_new_tokens=args.max_new_tokens,
+            system_prompt=_read_prompt_file(args.system_prompt_file),
+            result_label=args.result_label,
             log_mlflow=args.mlflow or None,
             mlflow_tracking_uri=args.mlflow_tracking_uri,
             mlflow_experiment=args.mlflow_experiment,
@@ -531,6 +535,18 @@ def _run_sql_command(args: argparse.Namespace) -> int:
             print(f"failure_counts: {failure_counts}")
         return 0
     raise ValueError("missing SQL command")
+
+
+def _read_prompt_file(path: str | None) -> str | None:
+    if path is None:
+        return None
+    from pathlib import Path
+
+    resolved = Path(path)
+    text = resolved.read_text(encoding="utf-8")
+    if not text.strip():
+        raise ValueError(f"system prompt file must not be empty: {resolved}")
+    return text.strip()
 
 
 if __name__ == "__main__":

@@ -326,6 +326,12 @@ HISTORY_ROWS: list[dict[str, str]] = [
         "signal": "Restaurant plus airline is prompt-dev; works_cycles plus public_review_platform is the fresh 50-case unseen gate. Baseline candidate c000_current_system is logged to MLflow.",
         "lesson": "Optimization over a known holdout is allowed only when it is labeled as dev, every candidate is tracked in MLflow, and selected prompts are followed by a fresh DB-disjoint evaluation.",
     },
+    {
+        "phase": "Exp032 manual candidates",
+        "focus": "Add prompt override evals and test two hand-written prompt candidates before DSPy.",
+        "signal": "c000 baseline scored 7/50 on prompt-dev and 7/50 on the fresh gate. c001_schema_grounded and c002_value_grounded each scored 6/50 on prompt-dev and were rejected.",
+        "lesson": "Longer instruction prompts did not fix transfer. Next prompt optimization should use failure feedback/search rather than manual instruction padding.",
+    },
 ]
 
 RUNBOOK_ROWS: list[dict[str, str]] = [
@@ -879,7 +885,7 @@ def _render_home(experiments: list[ExperimentRecord]) -> str:
             <ol class="tight">
               <li>Use Exp031 as the new local baseline for the metadata lane: 7/50 on restaurant plus airline.</li>
               <li>For DSPy MIPROv2/GEPA work, restaurant plus airline is prompt-dev; works_cycles plus public_review_platform is the fresh unseen gate.</li>
-              <li>Improve prompt instructions, profile-note selection, and schema linking before adding more raw rows or longer local prompts.</li>
+              <li>Manual prompt padding regressed prompt-dev to 6/50; use optimizer-guided search or data/schema-linking next.</li>
               <li>Candidate selection and repair remain separate lanes, not mixed into one-shot SFT scoring.</li>
               <li>Promote only stable one-shot behavior toward LiveSQLBench.</li>
             </ol>
@@ -1256,7 +1262,7 @@ def _render_agent_workflow() -> str:
         </section>
         <section class="panel full">
           <h2>Remembered Next Plan</h2>
-          <p>Exp031 compared Exp030 against the same fixed holdout after adding compact profile metadata to real BIRD rows. The result was 7/50, up from 5/50, with both seen guardrails preserved. Exp032 tests prompt optimization as an inference recipe lane. Restaurant plus airline is now prompt-dev; works_cycles plus public_review_platform is the fresh unseen gate. Track every optimizer candidate in MLflow, including rejected candidates, so the loop remains comparable.</p>
+          <p>Exp031 compared Exp030 against the same fixed holdout after adding compact profile metadata to real BIRD rows. The result was 7/50, up from 5/50, with both seen guardrails preserved. Exp032 tests prompt optimization as an inference recipe lane. Restaurant plus airline is now prompt-dev; works_cycles plus public_review_platform is the fresh unseen gate. Track every optimizer candidate in MLflow, including rejected candidates, so the loop remains comparable. The first two manual prompt candidates regressed to 6/50, so do not expand manual instruction padding.</p>
           <table class="key-table">
             <tr><th>Paper pattern</th><td>Profile columns, summarize useful value/shape metadata, then use schema linking before candidate selection.</td></tr>
             <tr><th>Repo now</th><td>Raw DDL for real BIRD rows, with hand-authored/profile notes only in regional_sales lab data.</td></tr>

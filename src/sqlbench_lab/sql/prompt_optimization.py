@@ -36,6 +36,7 @@ class SQLPromptCandidateSummary:
     source_manifest: str | None
     model_variant: str | None
     eval_result: str | None
+    eval_dataset_role: str | None
     eval_case_count: int | None
     eval_passed_count: int | None
     eval_pass_rate: float | None
@@ -104,9 +105,10 @@ def record_sql_prompt_candidate(
 
     resolved_eval_result = _resolve_workspace_path(eval_result) if eval_result is not None else None
     eval_payload = _load_eval_result(resolved_eval_result) if resolved_eval_result is not None else None
-    _validate_eval_result_dataset(
+    eval_dataset_role = _eval_result_dataset_role(
         eval_payload=eval_payload,
         prompt_dev_dataset=resolved_prompt_dev_dataset,
+        fresh_gate_dataset=resolved_fresh_gate_dataset,
     )
     resolved_analysis = _resolve_workspace_path(analysis) if analysis is not None else None
     if resolved_analysis is not None and not resolved_analysis.exists():
@@ -146,6 +148,7 @@ def record_sql_prompt_candidate(
             if resolved_eval_result is not None
             else None
         ),
+        eval_dataset_role=eval_dataset_role,
         eval_case_count=_optional_int(eval_payload, "case_count"),
         eval_passed_count=_optional_int(eval_payload, "passed_count"),
         eval_pass_rate=_optional_float(eval_payload, "pass_rate"),
@@ -180,19 +183,23 @@ def _load_eval_result(path: Path) -> dict[str, Any]:
     return payload
 
 
-def _validate_eval_result_dataset(
+def _eval_result_dataset_role(
     *,
     eval_payload: dict[str, Any] | None,
     prompt_dev_dataset: Path,
-) -> None:
+    fresh_gate_dataset: Path | None,
+) -> str | None:
     if eval_payload is None or eval_payload.get("eval_dataset") is None:
-        return
+        return None
     eval_dataset = _resolve_workspace_path(str(eval_payload["eval_dataset"]))
-    if eval_dataset != prompt_dev_dataset:
-        raise ValueError(
-            "eval_result dataset does not match prompt_dev_dataset: "
-            f"{eval_dataset} != {prompt_dev_dataset}"
-        )
+    if eval_dataset == prompt_dev_dataset:
+        return "prompt_dev"
+    if fresh_gate_dataset is not None and eval_dataset == fresh_gate_dataset:
+        return "fresh_gate"
+    raise ValueError(
+        "eval_result dataset must match prompt_dev_dataset or fresh_gate_dataset: "
+        f"{eval_dataset}"
+    )
 
 
 def _failure_counts(*, eval_payload: dict[str, Any] | None, analysis_path: Path | None) -> dict[str, int]:
