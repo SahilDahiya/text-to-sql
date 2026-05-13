@@ -350,6 +350,12 @@ HISTORY_ROWS: list[dict[str, str]] = [
         "signal": "One epoch trained 188 rows in 35.6 minutes with train_loss 0.2323. Prompt-dev improved to 10/50, but the fresh unseen gate stayed 7/50. Seen guardrails were 29/40 superstore and 28/40 regional-sales.",
         "lesson": "Reject Exp034 as a promoted checkpoint. Compact schema-linking helps the tuned holdout but does not transfer; the long-tail runtime also shows the pipeline needs token-length reporting and an explicit max-length policy before larger SFT runs.",
     },
+    {
+        "phase": "Blacksmith reset",
+        "focus": "Step back from tiny one-shot SFT tweaks after Exp034 failed to transfer.",
+        "signal": "Recent systems that move BIRD/Spider/LiveSQLBench use metadata retrieval, candidate pools, execution, selection, stronger bases, or agents; they are not just LoRA runs on a few hundred rows.",
+        "lesson": "Do blacksmith work next: build token-length instrumentation, then candidate-pool execution/selection and metadata retrieval before another goldsmith SFT variant.",
+    },
 ]
 
 RUNBOOK_ROWS: list[dict[str, str]] = [
@@ -489,8 +495,29 @@ RESEARCH_PAPER_ROWS: list[dict[str, str]] = [
         "paper": "CHESS",
         "source": "https://arxiv.org/abs/2405.16755",
         "theme": "Retriever, schema selector, candidate generator, iterative refinement, unit tester.",
-        "use": "Reference design for LiveSQLBench agent mode and for separating schema selection from SQL generation.",
-        "priority": "Future",
+        "use": "Blacksmith move: implement metadata retrieval plus adaptive schema pruning before trying another schema-linking SFT variant.",
+        "priority": "Now",
+    },
+    {
+        "paper": "The Death of Schema Linking?",
+        "source": "https://openreview.net/pdf?id=fglyh5pa7d",
+        "theme": "Ablates schema linking, augmentation, selection, and correction on BIRD.",
+        "use": "Stop expecting schema-linking alone to move the needle. Treat augmentation, candidate selection, and correction as the bigger system levers.",
+        "priority": "Now",
+    },
+    {
+        "paper": "DPC",
+        "source": "https://openreview.net/pdf/41f5d29ae18adc86a2ab7c9a7f109b6a6a41c3e2.pdf",
+        "theme": "Training-free candidate selection over multiple SQL candidates.",
+        "use": "Blacksmith move: generate N SQL candidates, execute/filter them, then select by result/logic consistency instead of trusting one generation.",
+        "priority": "Now",
+    },
+    {
+        "paper": "ContextualAI BIRD SQL pipeline",
+        "source": "https://github.com/ContextualAI/bird-sql",
+        "theme": "Local BIRD pipeline with candidate generation, SQL execution, reward scoring, and final selection.",
+        "use": "Use as a concrete local architecture pattern: candidate pool first, execution second, reward/selector third.",
+        "priority": "Now",
     },
     {
         "paper": "MAC-SQL",
@@ -517,8 +544,22 @@ RESEARCH_PAPER_ROWS: list[dict[str, str]] = [
         "paper": "XiYan-SQL",
         "source": "https://arxiv.org/abs/2411.08599",
         "theme": "Multi-generator ensemble, M-Schema, SFT plus ICL, refiner, selection model.",
-        "use": "Longer-term architecture for candidate diversity and selection; useful once base one-shot generator is stable.",
-        "priority": "Future",
+        "use": "Do not wait for a perfect one-shot generator. Use candidate diversity plus selection as a first-class architecture lane.",
+        "priority": "Near",
+    },
+    {
+        "paper": "OmniSQL",
+        "source": "https://arxiv.org/abs/2503.02240",
+        "theme": "Million-scale synthetic text-to-SQL data across synthetic databases, then open model SFT.",
+        "use": "Blacksmith training-data move: expand from hundreds of rows to broad synthetic DB/query coverage before more tiny LoRA tuning.",
+        "priority": "Near",
+    },
+    {
+        "paper": "BASE-SQL",
+        "source": "https://arxiv.org/abs/2502.10739",
+        "theme": "Open-source Qwen2.5-Coder-32B-Instruct baseline with a small multi-call generation recipe.",
+        "use": "Blacksmith model move: evaluate a stronger text-to-SQL/code model path before assuming Qwen3.5-0.8B can carry the task.",
+        "priority": "Near",
     },
     {
         "paper": "Qwen2.5-Coder Technical Report",
@@ -533,6 +574,39 @@ RESEARCH_PAPER_ROWS: list[dict[str, str]] = [
         "theme": "Benchmarks, prompting, fine-tuning, base models, future directions.",
         "use": "Use as the living literature map when adding new research rows to this page.",
         "priority": "Reference",
+    },
+]
+
+BLACKSMITH_ROWS: list[dict[str, str]] = [
+    {
+        "move": "Candidate Pool + Execution + Selection",
+        "why": "One-shot generation is a narrow bottleneck. If the model can produce the right SQL sometimes, pass@N plus execution filtering can recover wins without changing weights.",
+        "first_artifact": "Add eval mode that generates N candidates per case, executes each candidate, stores result signatures/errors, and reports pass@N versus selected@1.",
+        "gate": "Fresh unseen gate improves by at least +5/50 without regressing seen guardrails below the Exp031 baseline.",
+    },
+    {
+        "move": "Real Metadata Retrieval Layer",
+        "why": "BIRD and LiveSQLBench are database-understanding problems as much as SQL-token problems. Profile notes helped; schema-linking-only SFT did not transfer.",
+        "first_artifact": "Build a per-DB metadata index: table summaries, column stats, example values, value normalizers, FK/join candidates, and retrieve a compact context per question.",
+        "gate": "Fresh unseen gate improves with the same frozen adapter, proving context assembly moved the needle before another SFT run.",
+    },
+    {
+        "move": "Bigger/Better Base Model Check",
+        "why": "A 0.8B model trained on 188 rows is too small for the reasoning and schema noise in LiveSQLBench.",
+        "first_artifact": "Run the same eval harness against a stronger open model path, likely Qwen2.5-Coder 7B/14B or an existing text-to-SQL checkpoint, before more local LoRA work.",
+        "gate": "Base or adapter-free model clears the current 7/50 fresh gate by a meaningful margin.",
+    },
+    {
+        "move": "Data Scale, Not More Hand Rows",
+        "why": "Our rows are high-touch but too few. Recent SFT systems use broad generated coverage across many databases and query shapes.",
+        "first_artifact": "Generate or import a large synthetic DB-disjoint SQL curriculum with execution-validated SQL and balanced query complexity.",
+        "gate": "Hold out whole synthetic DBs plus BIRD train DBs; promote only if unseen DB accuracy rises, not just same-template accuracy.",
+    },
+    {
+        "move": "LiveSQLBench Agent Skeleton",
+        "why": "LiveSQLBench and Spider 2.0 are workflow/tool benchmarks, not just direct SQL-string benchmarks.",
+        "first_artifact": "Create a separate agent lane with inspect-schema, inspect-values, run-sql, revise-sql, and final-answer steps. Keep scoring separate from one-shot SFT.",
+        "gate": "Base-Lite local tasks improve under a fixed action budget and all tool calls are logged.",
     },
 ]
 
@@ -1054,6 +1128,17 @@ def _render_research() -> str:
         """
         for row in FRAMEWORK_ROWS
     )
+    blacksmith_rows = "\n".join(
+        f"""
+        <tr>
+          <td><strong>{_escape(row['move'])}</strong></td>
+          <td>{_escape(row['why'])}</td>
+          <td>{_escape(row['first_artifact'])}</td>
+          <td>{_escape(row['gate'])}</td>
+        </tr>
+        """
+        for row in BLACKSMITH_ROWS
+    )
     hygiene_rows = "\n".join(
         f"""
         <tr>
@@ -1068,17 +1153,24 @@ def _render_research() -> str:
         <section class="page-head compact">
           <p class="eyebrow">Research</p>
           <h1>Text-to-SQL literature and modern fine-tuning pipeline map.</h1>
-          <p class="lead">Last researched 2026-05-12. Each source is kept only if it changes a concrete SQLBench Lab design choice, experiment, or hygiene rule.</p>
+          <p class="lead">Last researched 2026-05-13. Each source is kept only if it changes a concrete SQLBench Lab design choice, experiment, or hygiene rule.</p>
         </section>
         <section class="grid two">
           <article class="panel">
             <h2>Immediate Read</h2>
-            <p>The literature points away from blind row scaling and toward database-grounded context: profiling metadata, schema linking, prompt optimization, candidate selection, execution feedback, and strict split hygiene. Exp031 implemented deterministic SQLite profile notes; Exp033 adds schema-linking notes as supervised SFT context. The active gap is making metadata and linking transfer to fresh unseen DBs without leaking gold SQL into eval.</p>
+            <p>Exp034 confirmed that small one-shot SFT changes are not enough. The next large moves are system-level: metadata retrieval, candidate pools, execution, selection, stronger base models, and a separate agent lane for LiveSQLBench.</p>
           </article>
           <article class="panel">
             <h2>Research Boundary</h2>
-            <p>Agent, repair, reranking, and preference/RL methods are useful future lanes, but they must not pollute the one-shot SFT metric. Promote them only after the direct generator has a stable local baseline and clean artifacts.</p>
+            <p>Keep one-shot SFT, candidate selection, repair, and agent workflows as separate measurement lanes. The strategic mistake to avoid is pretending a clean one-shot score is the whole product.</p>
           </article>
+        </section>
+        <section class="panel full">
+          <h2>Blacksmith Moves</h2>
+          <table class="dense-table">
+            <thead><tr><th>Move</th><th>Why</th><th>First Artifact</th><th>Promotion Gate</th></tr></thead>
+            <tbody>{blacksmith_rows}</tbody>
+          </table>
         </section>
         <section class="panel full">
           <h2>Text-to-SQL Research Map</h2>
@@ -1280,11 +1372,11 @@ def _render_agent_workflow() -> str:
         </section>
         <section class="panel full">
           <h2>Remembered Next Plan</h2>
-          <p>Exp031 compared Exp030 against the same fixed holdout after adding compact profile metadata to real BIRD rows. The result was 7/50, up from 5/50, with both seen guardrails preserved. Exp032 showed prompt-dev gains that did not transfer cleanly to the fresh gate. Exp033 therefore returns to training with explicit schema-linking notes: train rows use gold-SQL-derived supervision, while eval rows use question/schema/value-note-derived notes only.</p>
+          <p>Exp031 compared Exp030 against the same fixed holdout after adding compact profile metadata to real BIRD rows. Exp034 showed that compact schema-linking SFT can lift the tuned prompt-dev holdout to 10/50 but still fails to improve the fresh unseen gate. The next loop should stop treating one-shot LoRA as the only lever.</p>
           <table class="key-table">
-            <tr><th>Paper pattern</th><td>Profile columns, summarize useful value/shape metadata, then use schema linking before candidate selection.</td></tr>
-            <tr><th>Repo now</th><td>Raw DDL for real BIRD rows, with hand-authored/profile notes only in regional_sales lab data.</td></tr>
-            <tr><th>Next implementation</th><td>Train Exp033 with schema_linking_notes through the existing TRL/LoRA path, then compare prompt-dev, fresh-gate, and seen guardrail scores against Exp031.</td></tr>
+            <tr><th>Paper pattern</th><td>Profile columns, retrieve relevant metadata, generate multiple candidates, execute candidates, then select or repair.</td></tr>
+            <tr><th>Repo now</th><td>One-shot SFT is measurable but plateauing at 7/50 on the fresh unseen gate.</td></tr>
+            <tr><th>Next implementation</th><td>Add token-length reporting and explicit max-length policy, then build candidate-pool execution/selection as the first blacksmith system move.</td></tr>
           </table>
         </section>
         <section class="panel full">
