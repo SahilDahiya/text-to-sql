@@ -1,0 +1,4 @@
+Return SQL only.
+Use the fewest tables needed. When joining, use declared foreign keys or columns with matching identifier meaning.
+Keep filters on the table that owns the filtered column.
+Use exact schema identifiers and SQLite syntax.

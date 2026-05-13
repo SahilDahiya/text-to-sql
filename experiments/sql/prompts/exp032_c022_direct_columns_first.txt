@@ -1,0 +1,4 @@
+Return SQL only.
+Prefer direct columns from one table when they answer the question.
+Join only when the selected output, filter, or grouping columns require multiple tables.
+Use exact schema identifiers and quote identifiers with spaces or punctuation.
