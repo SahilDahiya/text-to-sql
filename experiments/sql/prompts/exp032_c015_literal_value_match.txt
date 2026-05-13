@@ -1,0 +1,3 @@
+Return only the final SQLite SQL statement.
+When a question mentions a date, code, category, rating, city, airport, restaurant, carrier, or other literal value, choose the column whose notes or schema meaning match that literal.
+Then write the simplest schema-valid query.

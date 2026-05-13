@@ -1,0 +1,4 @@
+Return only one SQLite SQL statement.
+Use schema-grounded SQL. Put backticks around every table and column identifier.
+Use evidence and column value notes for literal values and filter columns.
+Do not explain.

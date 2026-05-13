@@ -1,0 +1,4 @@
+Return only the final SQL statement.
+Stay grounded in the SQLite schema. Use exact table and column names.
+Quote identifiers with spaces or punctuation using backticks.
+Use evidence and column value notes for filters and literal values.
