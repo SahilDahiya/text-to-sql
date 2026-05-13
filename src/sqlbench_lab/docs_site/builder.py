@@ -344,6 +344,12 @@ HISTORY_ROWS: list[dict[str, str]] = [
         "signal": "Exp033 full notes were too slow on the RTX 2080 Ti. Exp034 caps schema-linking notes to two tables and six columns, keeps DB-disjoint holdouts, and starts with one epoch.",
         "lesson": "Training metadata must be useful and cheap enough to iterate. First prove compact schema-linking transfers on the fixed unseen gates, then decide whether longer notes or more epochs are worth the compute.",
     },
+    {
+        "phase": "Exp034 result",
+        "focus": "Evaluate compact schema-linking SFT as a one-shot training improvement.",
+        "signal": "One epoch trained 188 rows in 35.6 minutes with train_loss 0.2323. Prompt-dev improved to 10/50, but the fresh unseen gate stayed 7/50. Seen guardrails were 29/40 superstore and 28/40 regional-sales.",
+        "lesson": "Reject Exp034 as a promoted checkpoint. Compact schema-linking helps the tuned holdout but does not transfer; the long-tail runtime also shows the pipeline needs token-length reporting and an explicit max-length policy before larger SFT runs.",
+    },
 ]
 
 RUNBOOK_ROWS: list[dict[str, str]] = [
