@@ -11,6 +11,7 @@ from pathlib import Path
 from sqlbench_lab.sql import (
     analyze_sql_eval_result,
     assert_no_sql_dataset_leakage,
+    attach_sql_schema_linking,
     attach_sqlite_profile_metadata,
     audit_sql_dataset_leakage,
     build_eval_messages,
@@ -159,6 +160,65 @@ class SQLPipelineTests(unittest.TestCase):
             self.assertEqual(payload["schema_version"], "sql_prompt_candidate:v1")
             self.assertEqual(payload["candidate_id"], "c000")
             self.assertEqual(payload["eval_dataset_role"], "prompt_dev")
+
+    def test_attach_sql_schema_linking_adds_train_notes_from_gold_sql(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            input_path = root / "train.jsonl"
+            output_path = root / "train_linked.jsonl"
+            row = {
+                "schema_version": "sql_train_example:v1",
+                "row_id": "row_1",
+                "source_benchmark": "smoke",
+                "source_split": "smoke",
+                "task_id": "task_1",
+                "db_id": "tiny",
+                "db_path": None,
+                "dialect": "sqlite",
+                "question": "How many employees are in Engineering?",
+                "schema_text": (
+                    "CREATE TABLE employees(id INTEGER, name TEXT, department_id INTEGER)\n"
+                    "CREATE TABLE departments(id INTEGER, name TEXT)"
+                ),
+                "knowledge_text": None,
+                "column_value_notes": ["departments.name sample values: Engineering."],
+                "target_sql": (
+                    "SELECT COUNT(*) FROM employees "
+                    "JOIN departments ON departments.id = employees.department_id "
+                    "WHERE departments.name = 'Engineering'"
+                ),
+                "task_type": "select",
+                "provenance": {
+                    "created_by": "test",
+                    "teacher_model": None,
+                    "source_path": "inline",
+                },
+                "tags": ["smoke"],
+            }
+            input_path.write_text(json.dumps(row) + "\n", encoding="utf-8")
+
+            summary = attach_sql_schema_linking(
+                input_path=input_path,
+                output_path=output_path,
+                artifact="train",
+                mode="gold_sql",
+            )
+
+            payload = json.loads(output_path.read_text(encoding="utf-8"))
+            notes = payload["schema_linking_notes"]
+            self.assertEqual(summary.row_count, 1)
+            self.assertIn("Result shape: count.", notes)
+            self.assertTrue(any("employees" in note for note in notes))
+            self.assertTrue(any("departments.name" in note for note in notes))
+
+    def test_attach_sql_schema_linking_rejects_gold_sql_eval_mode(self) -> None:
+        with self.assertRaisesRegex(ValueError, "eval schema linking must not use gold_sql mode"):
+            attach_sql_schema_linking(
+                input_path="datasets/sql/smoke/sql_smoke_v1.jsonl",
+                output_path="/tmp/unused.jsonl",
+                artifact="eval",
+                mode="gold_sql",
+            )
 
     def test_import_benchmark_writes_train_db_path(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

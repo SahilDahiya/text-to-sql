@@ -40,6 +40,10 @@
       "type": "array",
       "items": {"type": "string", "minLength": 1}
     },
+    "schema_linking_notes": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1}
+    },
     "previous_sql": {"type": "string", "minLength": 1},
     "execution_error": {"type": "string", "minLength": 1},
     "target_sql": {"type": "string", "minLength": 1},

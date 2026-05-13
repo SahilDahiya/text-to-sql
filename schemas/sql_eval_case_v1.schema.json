@@ -42,6 +42,10 @@
       "type": "array",
       "items": {"type": "string", "minLength": 1}
     },
+    "schema_linking_notes": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1}
+    },
     "gold_sql": {"type": "string", "minLength": 1},
     "task_type": {"enum": ["select", "management", "unknown"]},
     "order_sensitive": {"type": "boolean"},

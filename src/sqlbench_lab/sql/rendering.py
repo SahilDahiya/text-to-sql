@@ -105,6 +105,8 @@ def _canonical_user_content(example: SQLEvalCase | SQLTrainExample | SQLRepairEx
         sections.append(f"Knowledge:\n{example.knowledge_text}")
     if example.column_value_notes:
         sections.append("Column value notes:\n" + "\n".join(f"- {note}" for note in example.column_value_notes))
+    if example.schema_linking_notes:
+        sections.append("Schema linking notes:\n" + "\n".join(f"- {note}" for note in example.schema_linking_notes))
     sections.append(f"Question:\n{example.question}")
     return "\n\n".join(sections)
 
@@ -122,6 +124,13 @@ def _premsql_user_content(example: SQLEvalCase | SQLTrainExample | SQLRepairExam
         if example.column_value_notes
         else ""
     )
+    schema_linking_notes = (
+        "# Schema Linking Notes:\n"
+        + "\n".join(f"- {note}" for note in example.schema_linking_notes)
+        + "\n\n"
+        if example.schema_linking_notes
+        else ""
+    )
     return (
         "# Follow these instruction:\n"
         "You will be given schemas of tables of a database. Your job is to write correct\n"
@@ -137,6 +146,7 @@ def _premsql_user_content(example: SQLEvalCase | SQLTrainExample | SQLRepairExam
         f"# Database and Table Schema:\n{example.schema_text}\n\n"
         f"{additional_knowledge}"
         f"{column_value_notes}"
+        f"{schema_linking_notes}"
         f"# Question: {example.question}\n\n"
         "# SQL:"
     )

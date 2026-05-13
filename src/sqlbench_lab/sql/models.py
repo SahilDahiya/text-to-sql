@@ -35,6 +35,7 @@ class SQLTrainExample:
     schema_text: str
     knowledge_text: str | None
     column_value_notes: tuple[str, ...]
+    schema_linking_notes: tuple[str, ...]
     target_sql: str
     task_type: str
     provenance: SQLProvenance
@@ -55,6 +56,7 @@ class SQLTrainExample:
             schema_text=str(payload["schema_text"]),
             knowledge_text=_optional_string(payload.get("knowledge_text")),
             column_value_notes=_string_tuple(payload.get("column_value_notes", [])),
+            schema_linking_notes=_string_tuple(payload.get("schema_linking_notes", [])),
             target_sql=str(payload["target_sql"]),
             task_type=str(payload["task_type"]),
             provenance=SQLProvenance.from_dict(payload["provenance"]),
@@ -75,6 +77,7 @@ class SQLRepairExample:
     schema_text: str
     knowledge_text: str | None
     column_value_notes: tuple[str, ...]
+    schema_linking_notes: tuple[str, ...]
     previous_sql: str
     execution_error: str
     target_sql: str
@@ -96,6 +99,7 @@ class SQLRepairExample:
             schema_text=str(payload["schema_text"]),
             knowledge_text=_optional_string(payload.get("knowledge_text")),
             column_value_notes=_string_tuple(payload.get("column_value_notes", [])),
+            schema_linking_notes=_string_tuple(payload.get("schema_linking_notes", [])),
             previous_sql=str(payload["previous_sql"]),
             execution_error=str(payload["execution_error"]),
             target_sql=str(payload["target_sql"]),
@@ -120,6 +124,7 @@ class SQLEvalCase:
     schema_text: str
     knowledge_text: str | None
     column_value_notes: tuple[str, ...]
+    schema_linking_notes: tuple[str, ...]
     gold_sql: str
     task_type: str
     order_sensitive: bool
@@ -142,6 +147,7 @@ class SQLEvalCase:
             schema_text=str(payload["schema_text"]),
             knowledge_text=_optional_string(payload.get("knowledge_text")),
             column_value_notes=_string_tuple(payload.get("column_value_notes", [])),
+            schema_linking_notes=_string_tuple(payload.get("schema_linking_notes", [])),
             gold_sql=str(payload["gold_sql"]),
             task_type=str(payload["task_type"]),
             order_sensitive=bool(payload["order_sensitive"]),

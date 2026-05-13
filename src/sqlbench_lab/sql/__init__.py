@@ -22,6 +22,7 @@ from .profile_metadata import SQLProfileMetadataSummary, attach_sqlite_profile_m
 from .prompt_optimization import SQLPromptCandidateSummary, record_sql_prompt_candidate
 from .repair_collection import SQLRepairCollectionSummary, collect_sql_repair_data
 from .rendering import build_eval_messages, build_repair_eval_messages, build_repair_messages, build_train_messages
+from .schema_linking import SQLSchemaLinkingSummary, attach_sql_schema_linking
 from .training import SQLSFTTrainingSummary, run_sql_sft, tokenize_sql_sft_messages
 
 __all__ = [
@@ -42,10 +43,12 @@ __all__ = [
     "SQLRepairCollectionSummary",
     "SQLSFTExperimentManifest",
     "SQLSFTTrainingSummary",
+    "SQLSchemaLinkingSummary",
     "SQLProfileMetadataSummary",
     "SQLPromptCandidateSummary",
     "SQLTrainExample",
     "attach_sqlite_profile_metadata",
+    "attach_sql_schema_linking",
     "build_eval_messages",
     "build_repair_eval_messages",
     "build_repair_messages",

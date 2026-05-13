@@ -7,6 +7,7 @@ import argparse
 from .sql import (
     analyze_sql_eval_result,
     assert_no_sql_dataset_leakage,
+    attach_sql_schema_linking,
     attach_sqlite_profile_metadata,
     collect_sql_repair_data,
     generate_bird_regional_sales_normalization_micro_lab,
@@ -226,6 +227,22 @@ def main(argv: list[str] | None = None) -> int:
         default=10000,
         help="Non-NULL sample row cap for large-table profile stats",
     )
+
+    schema_linking = sql_subparsers.add_parser(
+        "schema-linking",
+        help="Attach deterministic schema-linking notes to SQL train/eval JSONL",
+    )
+    schema_linking.add_argument("--input", required=True, help="Input SQL JSONL path")
+    schema_linking.add_argument("--output", required=True, help="Output SQL JSONL path")
+    schema_linking.add_argument("--artifact", choices=["train", "eval"], required=True)
+    schema_linking.add_argument(
+        "--mode",
+        choices=["gold_sql", "question"],
+        required=True,
+        help="gold_sql uses target SQL and is train-only; question uses non-gold prompt fields",
+    )
+    schema_linking.add_argument("--max-tables", type=int, default=6)
+    schema_linking.add_argument("--max-columns", type=int, default=16)
 
     collect_repair = sql_subparsers.add_parser("collect-repair-data", help="Collect repair JSONL from eval failures")
     collect_repair.add_argument("--result", required=True, help="Path to SQL eval result JSON")
@@ -511,6 +528,21 @@ def _run_sql_command(args: argparse.Namespace) -> int:
         print(
             "attached SQLite profile metadata "
             f"artifact={summary.artifact} rows={summary.row_count} dbs={summary.db_count} "
+            f"notes={summary.total_note_count} output={summary.output_path}"
+        )
+        return 0
+    if args.sql_command == "schema-linking":
+        summary = attach_sql_schema_linking(
+            input_path=args.input,
+            output_path=args.output,
+            artifact=args.artifact,
+            mode=args.mode,
+            max_tables=args.max_tables,
+            max_columns=args.max_columns,
+        )
+        print(
+            "attached SQL schema-linking notes "
+            f"artifact={summary.artifact} mode={summary.mode} rows={summary.row_count} "
             f"notes={summary.total_note_count} output={summary.output_path}"
         )
         return 0

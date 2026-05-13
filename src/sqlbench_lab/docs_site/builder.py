@@ -332,6 +332,12 @@ HISTORY_ROWS: list[dict[str, str]] = [
         "signal": "c000 baseline scored 7/50 on prompt-dev and 7/50 on the fresh gate. c001_schema_grounded and c002_value_grounded each scored 6/50 on prompt-dev and were rejected.",
         "lesson": "Longer instruction prompts did not fix transfer. Next prompt optimization should use failure feedback/search rather than manual instruction padding.",
     },
+    {
+        "phase": "Exp033 setup",
+        "focus": "Return to training with explicit schema-linking supervision instead of more prompt-only search.",
+        "signal": "Added schema_linking_notes to the data contract. Train rows use gold-SQL-derived result-shape/table/column notes; eval rows use question/schema/value-note-derived notes to avoid gold leakage.",
+        "lesson": "DSPy-style optimization belongs upstream of SFT as data/program supervision. The trainer remains TRL/LoRA; the new experiment tests whether richer supervised inputs transfer better than prompt padding.",
+    },
 ]
 
 RUNBOOK_ROWS: list[dict[str, str]] = [
@@ -885,7 +891,7 @@ def _render_home(experiments: list[ExperimentRecord]) -> str:
             <ol class="tight">
               <li>Use Exp031 as the new local baseline for the metadata lane: 7/50 on restaurant plus airline.</li>
               <li>For DSPy MIPROv2/GEPA work, restaurant plus airline is prompt-dev; works_cycles plus public_review_platform is the fresh unseen gate.</li>
-              <li>Manual prompt padding regressed prompt-dev to 6/50; use optimizer-guided search or data/schema-linking next.</li>
+              <li>Exp033 moves back to training with schema-linking notes instead of more prompt-only search.</li>
               <li>Candidate selection and repair remain separate lanes, not mixed into one-shot SFT scoring.</li>
               <li>Promote only stable one-shot behavior toward LiveSQLBench.</li>
             </ol>
@@ -1055,7 +1061,7 @@ def _render_research() -> str:
         <section class="grid two">
           <article class="panel">
             <h2>Immediate Read</h2>
-            <p>The literature points away from blind row scaling and toward database-grounded context: profiling metadata, schema linking, prompt optimization, candidate selection, execution feedback, and strict split hygiene. Exp031 implemented the first paper-aligned step with deterministic SQLite profile notes and produced a small unseen-DB gain. The next gap is optimizing the one-shot prompt and metadata format without confusing prompt-dev gains for fresh unseen-DB generalization.</p>
+            <p>The literature points away from blind row scaling and toward database-grounded context: profiling metadata, schema linking, prompt optimization, candidate selection, execution feedback, and strict split hygiene. Exp031 implemented deterministic SQLite profile notes; Exp033 adds schema-linking notes as supervised SFT context. The active gap is making metadata and linking transfer to fresh unseen DBs without leaking gold SQL into eval.</p>
           </article>
           <article class="panel">
             <h2>Research Boundary</h2>
@@ -1262,11 +1268,11 @@ def _render_agent_workflow() -> str:
         </section>
         <section class="panel full">
           <h2>Remembered Next Plan</h2>
-          <p>Exp031 compared Exp030 against the same fixed holdout after adding compact profile metadata to real BIRD rows. The result was 7/50, up from 5/50, with both seen guardrails preserved. Exp032 tests prompt optimization as an inference recipe lane. Restaurant plus airline is now prompt-dev; works_cycles plus public_review_platform is the fresh unseen gate. Track every optimizer candidate in MLflow, including rejected candidates, so the loop remains comparable. The first two manual prompt candidates regressed to 6/50, so do not expand manual instruction padding.</p>
+          <p>Exp031 compared Exp030 against the same fixed holdout after adding compact profile metadata to real BIRD rows. The result was 7/50, up from 5/50, with both seen guardrails preserved. Exp032 showed prompt-dev gains that did not transfer cleanly to the fresh gate. Exp033 therefore returns to training with explicit schema-linking notes: train rows use gold-SQL-derived supervision, while eval rows use question/schema/value-note-derived notes only.</p>
           <table class="key-table">
             <tr><th>Paper pattern</th><td>Profile columns, summarize useful value/shape metadata, then use schema linking before candidate selection.</td></tr>
             <tr><th>Repo now</th><td>Raw DDL for real BIRD rows, with hand-authored/profile notes only in regional_sales lab data.</td></tr>
-            <tr><th>Next implementation</th><td>Run a prompt-optimization lane first: MIPROv2 zero-shot or GEPA rich-feedback on prompt-dev, log each candidate to MLflow, then freeze the prompt and score a fresh DB-disjoint holdout.</td></tr>
+            <tr><th>Next implementation</th><td>Train Exp033 with schema_linking_notes through the existing TRL/LoRA path, then compare prompt-dev, fresh-gate, and seen guardrail scores against Exp031.</td></tr>
           </table>
         </section>
         <section class="panel full">
