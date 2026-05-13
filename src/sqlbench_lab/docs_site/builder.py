@@ -353,8 +353,8 @@ HISTORY_ROWS: list[dict[str, str]] = [
     {
         "phase": "Blacksmith reset",
         "focus": "Step back from tiny one-shot SFT tweaks after Exp034 failed to transfer.",
-        "signal": "Recent systems that move BIRD/Spider/LiveSQLBench use metadata retrieval, candidate pools, execution, selection, stronger bases, or agents; they are not just LoRA runs on a few hundred rows.",
-        "lesson": "Do blacksmith work next: build token-length instrumentation, then candidate-pool execution/selection and metadata retrieval before another goldsmith SFT variant.",
+        "signal": "Recent systems that move BIRD/Spider/LiveSQLBench use candidate pools, execution, selection, broad data, metadata retrieval, or agents; they are not just LoRA runs on a few hundred rows.",
+        "lesson": "Keep the small-model constraint. Do blacksmith work next: token-length instrumentation, candidate-pool execution/selection, and larger small-model training data before another goldsmith SFT variant.",
     },
 ]
 
@@ -495,8 +495,8 @@ RESEARCH_PAPER_ROWS: list[dict[str, str]] = [
         "paper": "CHESS",
         "source": "https://arxiv.org/abs/2405.16755",
         "theme": "Retriever, schema selector, candidate generator, iterative refinement, unit tester.",
-        "use": "Blacksmith move: implement metadata retrieval plus adaptive schema pruning before trying another schema-linking SFT variant.",
-        "priority": "Now",
+        "use": "Use as a later reference for selective metadata retrieval. Do not repeat static metadata stuffing; require an ablation that proves retrieved context helps a frozen small model.",
+        "priority": "Near",
     },
     {
         "paper": "The Death of Schema Linking?",
@@ -558,8 +558,8 @@ RESEARCH_PAPER_ROWS: list[dict[str, str]] = [
         "paper": "BASE-SQL",
         "source": "https://arxiv.org/abs/2502.10739",
         "theme": "Open-source Qwen2.5-Coder-32B-Instruct baseline with a small multi-call generation recipe.",
-        "use": "Blacksmith model move: evaluate a stronger text-to-SQL/code model path before assuming Qwen3.5-0.8B can carry the task.",
-        "priority": "Near",
+        "use": "Reference only. Do not make larger models the product path; small-model capability is the value proposition.",
+        "priority": "Reference",
     },
     {
         "paper": "Qwen2.5-Coder Technical Report",
@@ -586,15 +586,9 @@ BLACKSMITH_ROWS: list[dict[str, str]] = [
     },
     {
         "move": "Real Metadata Retrieval Layer",
-        "why": "BIRD and LiveSQLBench are database-understanding problems as much as SQL-token problems. Profile notes helped; schema-linking-only SFT did not transfer.",
-        "first_artifact": "Build a per-DB metadata index: table summaries, column stats, example values, value normalizers, FK/join candidates, and retrieve a compact context per question.",
-        "gate": "Fresh unseen gate improves with the same frozen adapter, proving context assembly moved the needle before another SFT run.",
-    },
-    {
-        "move": "Bigger/Better Base Model Check",
-        "why": "A 0.8B model trained on 188 rows is too small for the reasoning and schema noise in LiveSQLBench.",
-        "first_artifact": "Run the same eval harness against a stronger open model path, likely Qwen2.5-Coder 7B/14B or an existing text-to-SQL checkpoint, before more local LoRA work.",
-        "gate": "Base or adapter-free model clears the current 7/50 fresh gate by a meaningful margin.",
+        "why": "Static prompt metadata did not transfer, so retrieval is not trusted by default. It only matters if it selects less but better context than raw schema/profile stuffing.",
+        "first_artifact": "After candidate-pool eval exists, add an ablation that compares raw prompt, static notes, and retrieved context on the same frozen adapter.",
+        "gate": "Promote only if retrieved context improves fresh unseen selected@1 without increasing token budget or weakening seen guardrails.",
     },
     {
         "move": "Data Scale, Not More Hand Rows",
@@ -604,9 +598,15 @@ BLACKSMITH_ROWS: list[dict[str, str]] = [
     },
     {
         "move": "LiveSQLBench Agent Skeleton",
-        "why": "LiveSQLBench and Spider 2.0 are workflow/tool benchmarks, not just direct SQL-string benchmarks.",
-        "first_artifact": "Create a separate agent lane with inspect-schema, inspect-values, run-sql, revise-sql, and final-answer steps. Keep scoring separate from one-shot SFT.",
-        "gate": "Base-Lite local tasks improve under a fixed action budget and all tool calls are logged.",
+        "why": "LiveSQLBench is the end goal, but agent engineering should start after the small direct model has a stable plateau and candidate selection is measured.",
+        "first_artifact": "Define the stop rule for fine-tuning first; then create inspect-schema, inspect-values, run-sql, revise-sql, and final-answer actions as a separate lane.",
+        "gate": "Move to agent engineering when two consecutive small-model SFT/data experiments fail to improve fresh unseen selected@1 by at least +3/50, or candidate pass@N is much higher than selected@1.",
+    },
+    {
+        "move": "Fine-Tuning Stop Rule",
+        "why": "Without a stop rule, we will keep doing clean but low-leverage LoRA runs.",
+        "first_artifact": "Track one-shot@1, candidate pass@N, selected@1, seen guardrails, token budget, and train rows for each experiment.",
+        "gate": "Stop pure SFT when one-shot@1 plateaus, when pass@N shows the answer is already in the candidate pool, or when added data improves seen DBs but not fresh unseen DBs.",
     },
 ]
 
@@ -1158,7 +1158,7 @@ def _render_research() -> str:
         <section class="grid two">
           <article class="panel">
             <h2>Immediate Read</h2>
-            <p>Exp034 confirmed that small one-shot SFT changes are not enough. The next large moves are system-level: metadata retrieval, candidate pools, execution, selection, stronger base models, and a separate agent lane for LiveSQLBench.</p>
+            <p>Exp034 confirmed that small one-shot SFT changes are not enough. The product constraint remains a small model, so the next large moves are candidate pools, execution, selection, broader small-model data, and explicit stop rules for switching into agent engineering.</p>
           </article>
           <article class="panel">
             <h2>Research Boundary</h2>
