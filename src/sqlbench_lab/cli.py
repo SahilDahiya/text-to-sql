@@ -20,6 +20,8 @@ from .sql import (
     load_sql_sft_manifest,
     load_sql_train_examples,
     record_sql_prompt_candidate,
+    report_sql_prompt_lengths,
+    run_sql_candidate_pool_eval,
     run_sql_eval,
     run_sql_eval_with_repair,
     run_sql_sft,
@@ -147,6 +149,30 @@ def main(argv: list[str] | None = None) -> int:
     eval_sql.add_argument("--mlflow", action="store_true", help="Log the eval run to MLflow")
     eval_sql.add_argument("--mlflow-tracking-uri", help="Override the MLflow tracking URI")
     eval_sql.add_argument("--mlflow-experiment", help="Override the MLflow experiment name")
+
+    eval_candidates = sql_subparsers.add_parser(
+        "eval-candidates",
+        help="Run SQL candidate-pool evaluation from a manifest",
+    )
+    eval_candidates.add_argument("--manifest", required=True, help="Path to SQL SFT manifest JSON")
+    eval_candidates.add_argument("--model", choices=["base", "adapter"], required=True, help="Model variant to evaluate")
+    eval_candidates.add_argument("--dataset", help="Override eval dataset JSONL path")
+    eval_candidates.add_argument("--candidates", type=int, default=5, help="Candidates to generate per case")
+    eval_candidates.add_argument("--max-new-tokens", type=int, default=128, help="Maximum generated SQL tokens")
+    eval_candidates.add_argument("--temperature", type=float, default=0.7, help="Sampling temperature for candidate generation")
+    eval_candidates.add_argument("--top-p", type=float, default=0.95, help="Nucleus sampling top-p for candidate generation")
+    eval_candidates.add_argument("--system-prompt-file", help="Override eval system prompt from a text file")
+    eval_candidates.add_argument("--result-label", help="Append a stable label to the candidate eval result file")
+    eval_candidates.add_argument("--mlflow", action="store_true", help="Log the candidate-pool eval run to MLflow")
+    eval_candidates.add_argument("--mlflow-tracking-uri", help="Override the MLflow tracking URI")
+    eval_candidates.add_argument("--mlflow-experiment", help="Override the MLflow experiment name")
+
+    token_report = sql_subparsers.add_parser("token-report", help="Report SQL prompt token lengths")
+    token_report.add_argument("--manifest", required=True, help="Path to SQL SFT manifest JSON")
+    token_report.add_argument("--dataset", help="Override eval dataset JSONL path")
+    token_report.add_argument("--output", help="Output token report JSON path")
+    token_report.add_argument("--no-train", action="store_true", help="Skip manifest train datasets")
+    token_report.add_argument("--no-eval", action="store_true", help="Skip eval dataset")
 
     eval_repair = sql_subparsers.add_parser("eval-repair", help="Run SQL eval with execution-guided repair retries")
     eval_repair.add_argument("--manifest", required=True, help="Path to SQL SFT manifest JSON")
@@ -450,6 +476,50 @@ def _run_sql_command(args: argparse.Namespace) -> int:
             f"passed={summary.passed_count}/{summary.case_count} "
             f"pass_rate={summary.pass_rate:.4f}"
         )
+        return 0
+    if args.sql_command == "eval-candidates":
+        summary = run_sql_candidate_pool_eval(
+            args.manifest,
+            model_variant=args.model,
+            eval_dataset=args.dataset,
+            candidate_count=args.candidates,
+            max_new_tokens=args.max_new_tokens,
+            temperature=args.temperature,
+            top_p=args.top_p,
+            system_prompt=_read_prompt_file(args.system_prompt_file),
+            result_label=args.result_label,
+            log_mlflow=args.mlflow or None,
+            mlflow_tracking_uri=args.mlflow_tracking_uri,
+            mlflow_experiment=args.mlflow_experiment,
+        )
+        print(
+            "completed SQL candidate-pool eval "
+            f"{summary.experiment_id} model={summary.model_variant} "
+            f"first={summary.first_passed_count}/{summary.case_count} "
+            f"pass_at_{summary.candidate_count}={summary.pass_at_n_count}/{summary.case_count} "
+            f"selected={summary.selected_passed_count}/{summary.case_count}"
+        )
+        return 0
+    if args.sql_command == "token-report":
+        summary = report_sql_prompt_lengths(
+            args.manifest,
+            eval_dataset=args.dataset,
+            include_train=not args.no_train,
+            include_eval=not args.no_eval,
+            output_path=args.output,
+        )
+        print(
+            "reported SQL prompt token lengths "
+            f"{summary.experiment_id} datasets={len(summary.dataset_reports)}"
+        )
+        for report in summary.dataset_reports:
+            print(
+                f"{report.artifact} {report.dataset_path} rows={report.row_count} "
+                f"p50={report.p50_tokens} p90={report.p90_tokens} "
+                f"p95={report.p95_tokens} max={report.max_tokens}"
+            )
+        if summary.result_path:
+            print(f"output={summary.result_path}")
         return 0
     if args.sql_command == "eval-repair":
         summary = run_sql_eval_with_repair(

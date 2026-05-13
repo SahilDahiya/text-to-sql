@@ -61,6 +61,8 @@ class DocsSiteTests(unittest.TestCase):
         self.assertIn("Training Hygiene Rules", research_html)
         self.assertIn("Commands are documented", runbook_html)
         self.assertIn("Optimize prompt candidate", runbook_html)
+        self.assertIn("Report token lengths", runbook_html)
+        self.assertIn("Evaluate candidate pool", runbook_html)
         self.assertIn("Every MIPROv2/GEPA candidate has MLflow tags", runbook_html)
         self.assertIn("optimizer</span>", observability_html)
         self.assertIn("prompt_dev_dataset", observability_html)

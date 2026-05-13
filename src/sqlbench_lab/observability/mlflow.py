@@ -202,6 +202,88 @@ def log_sql_eval_run(
         mlflow.log_artifact(str(result_path), artifact_path="eval")
 
 
+def log_sql_candidate_pool_eval_run(
+    *,
+    manifest: Any,
+    manifest_path: Path,
+    summary: Any,
+    result_path: Path,
+    tracking_uri: str | None = None,
+    experiment_name: str | None = None,
+) -> None:
+    """Log one SQL candidate-pool eval run to MLflow."""
+
+    try:
+        import mlflow
+    except ImportError as exc:
+        raise ImportError(
+            "MLflow logging requires the observability dependency group. "
+            "Run with `uv run --group training --group observability ...`."
+        ) from exc
+
+    mlflow.set_tracking_uri(_resolve_tracking_uri(tracking_uri))
+    mlflow.set_experiment(
+        experiment_name
+        or os.environ.get(MLFLOW_EXPERIMENT_ENV)
+        or DEFAULT_MLFLOW_EXPERIMENT
+    )
+    dataset_name = _dataset_name(summary.eval_dataset)
+    run_name = f"{_experiment_label(manifest.experiment_id)}/candidate_pool/{dataset_name}/{summary.model_variant}"
+    with mlflow.start_run(run_name=run_name):
+        mlflow.set_tags(
+            {
+                "sqlbench.experiment_id": manifest.experiment_id,
+                "sqlbench.run_kind": "candidate_pool_eval",
+                "sqlbench.dataset_name": dataset_name,
+                "sqlbench.dataset_family": _dataset_family(dataset_name),
+                "sqlbench.model_variant": summary.model_variant,
+                "sqlbench.stage": manifest.training_method.stage,
+                "sqlbench.base_model": manifest.student.base_model,
+                "sqlbench.adapter_name": manifest.student.adapter_name,
+                "sqlbench.selector": summary.selector,
+                "sqlbench.git_commit": _git_commit(),
+            }
+        )
+        mlflow.log_params(
+            {
+                "student.model_family": manifest.student.model_family,
+                "student.base_model": manifest.student.base_model,
+                "student.adapter_name": manifest.student.adapter_name,
+                "eval.dataset": summary.eval_dataset,
+                "eval.dataset_name": dataset_name,
+                "eval.case_count": summary.case_count,
+                "eval.candidate_count": summary.candidate_count,
+                "eval.model_variant": summary.model_variant,
+                "eval.adapter_dir": summary.adapter_dir or "",
+                "eval.selector": summary.selector,
+                "mlflow.run_name": run_name,
+            }
+        )
+        mlflow.log_metrics(
+            {
+                "eval.first_pass_rate": float(summary.first_pass_rate),
+                "eval.pass_at_n_rate": float(summary.pass_at_n_rate),
+                "eval.selected_pass_rate": float(summary.selected_pass_rate),
+                "eval.first_passed_count": float(summary.first_passed_count),
+                "eval.pass_at_n_count": float(summary.pass_at_n_count),
+                "eval.selected_passed_count": float(summary.selected_passed_count),
+                "eval.case_count": float(summary.case_count),
+                "eval.candidate_count": float(summary.candidate_count),
+            }
+        )
+        for record in summary.records:
+            mlflow.log_metric(
+                f"eval.case.{_safe_key(record.case_id)}.pass_at_n",
+                1.0 if record.any_candidate_passed else 0.0,
+            )
+            mlflow.log_metric(
+                f"eval.case.{_safe_key(record.case_id)}.selected_passed",
+                1.0 if record.selected_candidate_passed else 0.0,
+            )
+        mlflow.log_artifact(str(manifest_path))
+        mlflow.log_artifact(str(result_path), artifact_path="eval")
+
+
 def log_sql_prompt_candidate_run(
     *,
     summary: Any,

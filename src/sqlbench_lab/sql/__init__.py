@@ -10,7 +10,13 @@ from .bird_lab import (
     generate_bird_superstore_schema_lab,
 )
 from .eval_analysis import SQLEvalAnalysisSummary, SQLEvalFailureAnalysis, analyze_sql_eval_result
-from .eval_runner import SQLEvalRunSummary, extract_generated_sql, run_sql_eval, run_sql_eval_with_repair
+from .eval_runner import (
+    SQLEvalRunSummary,
+    extract_generated_sql,
+    run_sql_candidate_pool_eval,
+    run_sql_eval,
+    run_sql_eval_with_repair,
+)
 from .eval_types import SQLCaseEvalRecord, SQLRepairAttemptRecord, SQLRepairEvalCaseRecord, SQLRepairEvalRunSummary
 from .evaluator import SQLEvaluationResult, evaluate_sqlite_case
 from .fixtures import build_sqlite_fixture
@@ -23,6 +29,7 @@ from .prompt_optimization import SQLPromptCandidateSummary, record_sql_prompt_ca
 from .repair_collection import SQLRepairCollectionSummary, collect_sql_repair_data
 from .rendering import build_eval_messages, build_repair_eval_messages, build_repair_messages, build_train_messages
 from .schema_linking import SQLSchemaLinkingSummary, attach_sql_schema_linking
+from .token_report import SQLTokenLengthReport, report_sql_prompt_lengths
 from .training import SQLSFTTrainingSummary, run_sql_sft, tokenize_sql_sft_messages
 
 __all__ = [
@@ -44,6 +51,7 @@ __all__ = [
     "SQLSFTExperimentManifest",
     "SQLSFTTrainingSummary",
     "SQLSchemaLinkingSummary",
+    "SQLTokenLengthReport",
     "SQLProfileMetadataSummary",
     "SQLPromptCandidateSummary",
     "SQLTrainExample",
@@ -70,6 +78,8 @@ __all__ = [
     "load_sql_sft_manifest",
     "load_sql_train_examples",
     "record_sql_prompt_candidate",
+    "report_sql_prompt_lengths",
+    "run_sql_candidate_pool_eval",
     "run_sql_eval",
     "run_sql_eval_with_repair",
     "run_sql_sft",

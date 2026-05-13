@@ -4,12 +4,16 @@ from __future__ import annotations
 
 import json
 import re
+import hashlib
 from dataclasses import asdict
 from pathlib import Path
 from typing import Callable
 
 from .eval_analysis import classify_sql_eval_failure, sql_eval_failure_observation
 from .eval_types import (
+    SQLCandidateEvalRecord,
+    SQLCandidatePoolCaseRecord,
+    SQLCandidatePoolEvalRunSummary,
     SQLCaseEvalRecord,
     SQLEvalRunSummary,
     SQLRepairAttemptRecord,
@@ -33,6 +37,7 @@ from .training import (
 
 SQL_MODEL_VARIANTS = {"base", "adapter"}
 SQLRepairPredictor = Callable[[SQLEvalCase, str, str], str]
+SQLCandidatePoolPredictor = Callable[[SQLEvalCase], list[str]]
 
 
 def run_sql_eval(
@@ -91,6 +96,101 @@ def run_sql_eval(
     )
     _write_eval_summary(result_path, summary)
     _maybe_log_mlflow_eval(
+        manifest=manifest,
+        manifest_path=_resolve_manifest_path(manifest_path),
+        summary=summary,
+        result_path=result_path,
+        explicit=log_mlflow,
+        tracking_uri=mlflow_tracking_uri,
+        experiment_name=mlflow_experiment,
+    )
+    return summary
+
+
+def run_sql_candidate_pool_eval(
+    manifest_path: str | Path,
+    *,
+    model_variant: str,
+    eval_dataset: str | Path | None = None,
+    candidate_count: int = 5,
+    max_new_tokens: int = 128,
+    temperature: float = 0.7,
+    top_p: float = 0.95,
+    system_prompt: str | None = None,
+    result_label: str | None = None,
+    predictor: SQLCandidatePoolPredictor | None = None,
+    log_mlflow: bool | None = None,
+    mlflow_tracking_uri: str | None = None,
+    mlflow_experiment: str | None = None,
+) -> SQLCandidatePoolEvalRunSummary:
+    """Run SQL eval with N generated candidates per case and non-gold selection."""
+
+    if model_variant not in SQL_MODEL_VARIANTS:
+        raise ValueError(f"model_variant must be one of {sorted(SQL_MODEL_VARIANTS)}")
+    if candidate_count < 1:
+        raise ValueError("candidate_count must be at least 1")
+    if temperature < 0:
+        raise ValueError("temperature must be >= 0")
+    if not 0 < top_p <= 1:
+        raise ValueError("top_p must be > 0 and <= 1")
+
+    manifest = load_sql_sft_manifest(manifest_path)
+    eval_dataset_path = str(eval_dataset) if eval_dataset is not None else manifest.eval_plan.smoke_dataset
+    cases = load_sql_eval_cases(eval_dataset_path)
+    if not cases:
+        raise ValueError("SQL candidate-pool eval requires at least one eval case")
+
+    result_path = _candidate_pool_eval_result_path(
+        manifest,
+        model_variant,
+        eval_dataset_path=eval_dataset_path,
+        result_label=result_label,
+    )
+    result_path.parent.mkdir(parents=True, exist_ok=True)
+    adapter_dir = manifest.resolve_workspace_path(manifest.output_paths.adapter_dir)
+    predict_candidates = predictor or _build_hf_candidate_pool_predictor(
+        manifest=manifest,
+        model_variant=model_variant,
+        adapter_dir=adapter_dir,
+        candidate_count=candidate_count,
+        max_new_tokens=max_new_tokens,
+        temperature=temperature,
+        top_p=top_p,
+        system_prompt=system_prompt,
+    )
+
+    records = [
+        _evaluate_candidate_pool_case(
+            case,
+            model_variant=model_variant,
+            candidate_count=candidate_count,
+            predict_candidates=predict_candidates,
+        )
+        for case in cases
+    ]
+    first_passed_count = sum(1 for record in records if record.first_candidate_passed)
+    pass_at_n_count = sum(1 for record in records if record.any_candidate_passed)
+    selected_passed_count = sum(1 for record in records if record.selected_candidate_passed)
+    summary = SQLCandidatePoolEvalRunSummary(
+        experiment_id=manifest.experiment_id,
+        base_model=manifest.student.base_model,
+        model_variant=model_variant,
+        adapter_dir=str(adapter_dir) if model_variant == "adapter" else None,
+        eval_dataset=eval_dataset_path,
+        result_path=str(result_path),
+        case_count=len(records),
+        candidate_count=candidate_count,
+        first_passed_count=first_passed_count,
+        pass_at_n_count=pass_at_n_count,
+        selected_passed_count=selected_passed_count,
+        first_pass_rate=first_passed_count / len(records),
+        pass_at_n_rate=pass_at_n_count / len(records),
+        selected_pass_rate=selected_passed_count / len(records),
+        selector="valid_nonempty_shortest",
+        records=records,
+    )
+    _write_candidate_pool_eval_summary(result_path, summary)
+    _maybe_log_mlflow_candidate_pool_eval(
         manifest=manifest,
         manifest_path=_resolve_manifest_path(manifest_path),
         summary=summary,
@@ -273,6 +373,70 @@ def _build_hf_message_predictor(
     return predict
 
 
+def _build_hf_candidate_pool_predictor(
+    *,
+    manifest: SQLSFTExperimentManifest,
+    model_variant: str,
+    adapter_dir: Path,
+    candidate_count: int,
+    max_new_tokens: int,
+    temperature: float,
+    top_p: float,
+    system_prompt: str | None,
+) -> SQLCandidatePoolPredictor:
+    torch, transformers, peft = _import_training_stack()
+    tokenizer_like = _load_tokenizer_like(transformers, manifest.student.base_model)
+    _ensure_pad_token(tokenizer_like)
+    tokenizer = _inner_tokenizer(tokenizer_like)
+    model = _load_trainable_model(
+        transformers,
+        manifest.student.base_model,
+        torch_module=torch,
+        attn_implementation=manifest.trainer.attn_implementation,
+    )
+    if model_variant == "adapter":
+        if not adapter_dir.exists():
+            raise ValueError(f"adapter_dir does not exist: {adapter_dir}")
+        model = peft.PeftModel.from_pretrained(model, adapter_dir)
+    model.eval()
+    if hasattr(model, "cuda") and torch.cuda.is_available():
+        model = model.cuda()
+
+    def predict(case: SQLEvalCase) -> list[str]:
+        messages = build_eval_messages(
+            case,
+            prompt_style=manifest.prompt.style,
+            system_prompt=system_prompt or SQL_SYSTEM_PROMPT,
+        )
+        prompt = render_sql_sft_prompt([*messages, {"role": "assistant", "content": ""}])
+        encoded = tokenizer(prompt, return_tensors="pt", add_special_tokens=False)
+        encoded = {
+            key: value.to(model.device) if hasattr(value, "to") else value
+            for key, value in encoded.items()
+        }
+        generation_kwargs = {
+            "max_new_tokens": max_new_tokens,
+            "num_return_sequences": candidate_count,
+            "pad_token_id": getattr(tokenizer, "pad_token_id", None),
+            "eos_token_id": getattr(tokenizer, "eos_token_id", None),
+        }
+        if candidate_count == 1 or temperature == 0:
+            generation_kwargs["do_sample"] = False
+        else:
+            generation_kwargs["do_sample"] = True
+            generation_kwargs["temperature"] = temperature
+            generation_kwargs["top_p"] = top_p
+        with torch.no_grad():
+            output_ids = model.generate(**encoded, **generation_kwargs)
+        input_length = int(encoded["input_ids"].shape[-1])
+        return [
+            extract_generated_sql(tokenizer.decode(row[input_length:], skip_special_tokens=True))
+            for row in output_ids
+        ]
+
+    return predict
+
+
 def _resolve_repair_predictors(
     *,
     manifest: SQLSFTExperimentManifest,
@@ -327,6 +491,71 @@ def _evaluate_case(
         predicted_rows=result.predicted_rows,
         gold_rows=result.gold_rows,
     )
+
+
+def _evaluate_candidate_pool_case(
+    case: SQLEvalCase,
+    *,
+    model_variant: str,
+    candidate_count: int,
+    predict_candidates: SQLCandidatePoolPredictor,
+) -> SQLCandidatePoolCaseRecord:
+    predicted_sqls = predict_candidates(case)
+    if len(predicted_sqls) != candidate_count:
+        raise ValueError(
+            f"candidate predictor returned {len(predicted_sqls)} candidates; expected {candidate_count}"
+        )
+
+    candidate_records: list[SQLCandidateEvalRecord] = []
+    gold_rows: list[tuple[object, ...]] = []
+    gold_error: str | None = None
+    for index, predicted_sql in enumerate(predicted_sqls, start=1):
+        result = evaluate_sqlite_case(case, predicted_sql=predicted_sql)
+        if index == 1:
+            gold_rows = result.gold_rows
+            gold_error = result.gold_error
+        candidate_records.append(
+            SQLCandidateEvalRecord(
+                candidate_index=index,
+                predicted_sql=predicted_sql,
+                passed=result.passed,
+                prediction_error=result.prediction_error,
+                predicted_rows=result.predicted_rows,
+                result_signature=_result_signature(result.predicted_rows, result.prediction_error),
+            )
+        )
+    selected_candidate = _select_candidate(candidate_records)
+    return SQLCandidatePoolCaseRecord(
+        case_id=case.case_id,
+        task_id=case.task_id,
+        model_variant=model_variant,
+        selected_candidate_index=selected_candidate.candidate_index if selected_candidate else None,
+        first_candidate_passed=candidate_records[0].passed,
+        any_candidate_passed=any(candidate.passed for candidate in candidate_records),
+        selected_candidate_passed=selected_candidate.passed if selected_candidate else False,
+        gold_error=gold_error,
+        gold_rows=gold_rows,
+        candidates=candidate_records,
+    )
+
+
+def _select_candidate(candidates: list[SQLCandidateEvalRecord]) -> SQLCandidateEvalRecord | None:
+    valid_candidates = [candidate for candidate in candidates if candidate.prediction_error is None]
+    if not valid_candidates:
+        return candidates[0] if candidates else None
+    non_empty_candidates = [candidate for candidate in valid_candidates if candidate.predicted_rows]
+    selection_pool = non_empty_candidates or valid_candidates
+    return min(selection_pool, key=lambda candidate: (len(candidate.predicted_sql), candidate.candidate_index))
+
+
+def _result_signature(rows: list[tuple[object, ...]], error: str | None) -> str:
+    payload = json.dumps(
+        {"error": error, "rows": rows},
+        sort_keys=True,
+        ensure_ascii=True,
+        default=str,
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
 
 
 def _evaluate_case_with_repair(
@@ -435,6 +664,18 @@ def _repair_eval_result_path(
     return _workspace_results_root() / manifest.experiment_id / f"repair__{model_variant}__{dataset_stem}.json"
 
 
+def _candidate_pool_eval_result_path(
+    manifest: SQLSFTExperimentManifest,
+    model_variant: str,
+    *,
+    eval_dataset_path: str | Path,
+    result_label: str | None,
+) -> Path:
+    dataset_stem = Path(eval_dataset_path).stem
+    label = f"__{_safe_result_label(result_label)}" if result_label else ""
+    return _workspace_results_root() / manifest.experiment_id / f"candidates__{model_variant}__{dataset_stem}{label}.json"
+
+
 def _workspace_results_root() -> Path:
     from sqlbench_lab.paths import WORKSPACE_ROOT
 
@@ -449,6 +690,10 @@ def _safe_result_label(value: str) -> str:
 
 
 def _write_eval_summary(path: Path, summary: SQLEvalRunSummary) -> None:
+    path.write_text(json.dumps(asdict(summary), indent=2, ensure_ascii=True) + "\n", encoding="utf-8")
+
+
+def _write_candidate_pool_eval_summary(path: Path, summary: SQLCandidatePoolEvalRunSummary) -> None:
     path.write_text(json.dumps(asdict(summary), indent=2, ensure_ascii=True) + "\n", encoding="utf-8")
 
 
@@ -471,6 +716,30 @@ def _maybe_log_mlflow_eval(
     if not mlflow_enabled(explicit):
         return
     log_sql_eval_run(
+        manifest=manifest,
+        manifest_path=manifest_path,
+        summary=summary,
+        result_path=result_path,
+        tracking_uri=tracking_uri,
+        experiment_name=experiment_name,
+    )
+
+
+def _maybe_log_mlflow_candidate_pool_eval(
+    *,
+    manifest: SQLSFTExperimentManifest,
+    manifest_path: Path,
+    summary: SQLCandidatePoolEvalRunSummary,
+    result_path: Path,
+    explicit: bool | None,
+    tracking_uri: str | None,
+    experiment_name: str | None,
+) -> None:
+    from sqlbench_lab.observability import log_sql_candidate_pool_eval_run, mlflow_enabled
+
+    if not mlflow_enabled(explicit):
+        return
+    log_sql_candidate_pool_eval_run(
         manifest=manifest,
         manifest_path=manifest_path,
         summary=summary,

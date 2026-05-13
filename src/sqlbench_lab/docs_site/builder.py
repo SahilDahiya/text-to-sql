@@ -408,6 +408,18 @@ RUNBOOK_ROWS: list[dict[str, str]] = [
         "gate": "Result-equivalence score recorded as local, not official.",
     },
     {
+        "task": "Report token lengths",
+        "command": "uv run --group training python -m sqlbench_lab.cli sql token-report --manifest experiments/sql/<experiment>.json --dataset datasets/sql/eval/<eval>.jsonl --output artifacts/sql/<experiment>/token_report.json",
+        "output": "Prompt token p50/p90/p95/max",
+        "gate": "Long-tail rows are known before training or candidate generation.",
+    },
+    {
+        "task": "Evaluate candidate pool",
+        "command": "uv run --group training --group observability python -m sqlbench_lab.cli sql eval-candidates --manifest experiments/sql/<experiment>.json --model adapter --dataset datasets/sql/eval/<eval>.jsonl --candidates 5 --result-label <label> --mlflow",
+        "output": "results/sql/<experiment>/candidates__*.json",
+        "gate": "Compare first@1, pass@N, and selected@1 before deciding whether generation or selection is the bottleneck.",
+    },
+    {
         "task": "Analyze failures",
         "command": "uv run python -m sqlbench_lab.cli sql analyze-eval --result results/sql/<experiment>/adapter__<eval>.json",
         "output": "Sibling .analysis.json",

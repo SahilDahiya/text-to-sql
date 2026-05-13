@@ -3,6 +3,7 @@
 from .mlflow import (
     DEFAULT_MLFLOW_EXPERIMENT,
     launch_mlflow_ui,
+    log_sql_candidate_pool_eval_run,
     log_sql_eval_run,
     log_sql_prompt_candidate_run,
     log_sql_sft_run,
@@ -13,6 +14,7 @@ from .mlflow import (
 __all__ = [
     "DEFAULT_MLFLOW_EXPERIMENT",
     "launch_mlflow_ui",
+    "log_sql_candidate_pool_eval_run",
     "log_sql_eval_run",
     "log_sql_prompt_candidate_run",
     "log_sql_sft_run",

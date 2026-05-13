@@ -32,6 +32,8 @@ from sqlbench_lab.sql import (
     load_sql_sft_manifest,
     load_sql_train_examples,
     record_sql_prompt_candidate,
+    report_sql_prompt_lengths,
+    run_sql_candidate_pool_eval,
     run_sql_eval,
     run_sql_eval_with_repair,
     run_sql_sft,
@@ -841,6 +843,58 @@ class SQLPipelineTests(unittest.TestCase):
         )
 
         self.assertEqual(summary.passed_count, 2)
+        self.assertTrue(result_path.exists())
+
+    def test_report_sql_prompt_lengths_writes_dataset_statistics(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            output_path = Path(tmp_dir) / "token_report.json"
+
+            summary = report_sql_prompt_lengths(
+                "experiments/sql/qwen35_0_8b__exp001_sql_sft.json",
+                output_path=output_path,
+                tokenizer_like=_FakeSQLTokenizer(),
+            )
+
+            self.assertTrue(output_path.exists())
+            self.assertEqual(summary.experiment_id, "qwen35_0_8b__exp001_sql_sft")
+            self.assertEqual(len(summary.dataset_reports), 2)
+            self.assertEqual(summary.dataset_reports[0].artifact, "train")
+            self.assertEqual(summary.dataset_reports[0].row_count, 5)
+            self.assertGreaterEqual(
+                summary.dataset_reports[0].max_tokens,
+                summary.dataset_reports[0].p95_tokens,
+            )
+
+    def test_run_sql_candidate_pool_eval_reports_pass_at_n_and_selection(self) -> None:
+        result_path = (
+            WORKSPACE_ROOT
+            / "results/sql/qwen35_0_8b__exp001_sql_sft/"
+            "candidates__adapter__sql_smoke_v1__unit_pool.json"
+        )
+        if result_path.exists():
+            result_path.unlink()
+
+        def candidate_predictor(case):
+            if case.case_id.endswith("001"):
+                return ["SELECT missing FROM employees;", case.gold_sql, "SELECT name FROM employees WHERE 0;"]
+            return [case.gold_sql, "SELECT missing FROM departments;", "SELECT name FROM employees WHERE 0;"]
+
+        summary = run_sql_candidate_pool_eval(
+            "experiments/sql/qwen35_0_8b__exp001_sql_sft.json",
+            model_variant="adapter",
+            eval_dataset="datasets/sql/smoke/sql_smoke_v1.jsonl",
+            candidate_count=3,
+            result_label="unit_pool",
+            predictor=candidate_predictor,
+        )
+
+        self.assertEqual(summary.case_count, 2)
+        self.assertEqual(summary.first_passed_count, 1)
+        self.assertEqual(summary.pass_at_n_count, 2)
+        self.assertEqual(summary.selected_passed_count, 2)
+        self.assertEqual(summary.records[0].selected_candidate_index, 2)
+        self.assertEqual(summary.records[0].candidates[0].prediction_error, "no such column: missing")
+        self.assertTrue(summary.records[0].candidates[1].result_signature)
         self.assertTrue(result_path.exists())
 
     def test_run_sql_eval_with_repair_preserves_first_pass_and_final_scores(self) -> None:
