@@ -135,6 +135,13 @@ PIPELINE_STAGES: list[dict[str, str]] = [
         "risk": "Adding broad data when one missing skill is blocking.",
     },
     {
+        "stage": "Prompt Optimization",
+        "job": "Iterate MIPROv2/GEPA prompt candidates on prompt-dev while logging every candidate to MLflow.",
+        "artifact": "results/sql/<experiment>/prompt_candidates/*.json",
+        "command": "uv run --group observability python -m sqlbench_lab.cli sql optimize-prompt ... --mlflow",
+        "risk": "Selecting a prompt by memory or screenshots instead of comparable tracked evidence.",
+    },
+    {
         "stage": "Observability",
         "job": "Track train/eval metrics, manifests, artifacts, and tags in MLflow.",
         "artifact": "mlruns/, MLflow UI",
@@ -317,7 +324,7 @@ HISTORY_ROWS: list[dict[str, str]] = [
         "phase": "Exp032 plan",
         "focus": "Use DSPy prompt optimization as a separate inference recipe lane before another SFT run.",
         "signal": "Restaurant plus airline may be used as a prompt-dev surface if the final gate moves to a fresh unused DB pair.",
-        "lesson": "Optimization over a known holdout is allowed only when it is labeled as dev and immediately followed by a fresh DB-disjoint evaluation.",
+        "lesson": "Optimization over a known holdout is allowed only when it is labeled as dev, every candidate is tracked in MLflow, and selected prompts are followed by a fresh DB-disjoint evaluation.",
     },
 ]
 
@@ -375,6 +382,12 @@ RUNBOOK_ROWS: list[dict[str, str]] = [
         "command": "uv run python -m sqlbench_lab.cli sql analyze-eval --result results/sql/<experiment>/adapter__<eval>.json",
         "output": "Sibling .analysis.json",
         "gate": "Next intervention follows failure type, not guesswork.",
+    },
+    {
+        "task": "Optimize prompt candidate",
+        "command": "uv run --group observability python -m sqlbench_lab.cli sql optimize-prompt --experiment-id <experiment> --candidate-id <candidate> --prompt-dev-dataset datasets/sql/eval/<prompt-dev>.jsonl --mlflow",
+        "output": "results/sql/<experiment>/prompt_candidates/<candidate>.json",
+        "gate": "Every MIPROv2/GEPA candidate has MLflow tags before selection.",
     },
     {
         "task": "Open MLflow",
@@ -1189,7 +1202,7 @@ def _render_observability(experiments: list[ExperimentRecord]) -> str:
             <h2>Dashboard</h2>
             <p>Launch the local dashboard:</p>
             <pre><code>uv run python -m sqlbench_lab.cli observe ui</code></pre>
-            <p>Training and eval commands can log with <code>--mlflow</code>. Keep run names tied to manifest experiment IDs.</p>
+            <p>Training, eval, and prompt-optimization commands must log with <code>--mlflow</code>. Keep run names tied to manifest experiment IDs, and give every optimizer candidate a stable candidate ID.</p>
           </article>
           <article class="panel">
             <h2>Latest Artifact Trail</h2>
@@ -1207,6 +1220,7 @@ def _render_observability(experiments: list[ExperimentRecord]) -> str:
             <span>experiment_id</span><span>base_model</span><span>adapter_name</span><span>trainer_backend</span>
             <span>prompt_style</span><span>train_dataset</span><span>eval_dataset</span><span>packing</span>
             <span>lora_r</span><span>learning_rate</span><span>seen_db_policy</span><span>unseen_db_policy</span>
+            <span>optimizer</span><span>candidate_id</span><span>prompt_dev_dataset</span><span>fresh_gate_dataset</span>
           </div>
         </section>
     """
@@ -1242,11 +1256,11 @@ def _render_agent_workflow() -> str:
         </section>
         <section class="panel full">
           <h2>Remembered Next Plan</h2>
-          <p>Exp031 compared Exp030 against the same fixed holdout after adding compact profile metadata to real BIRD rows. The result was 7/50, up from 5/50, with both seen guardrails preserved. Exp032 should test prompt optimization as an inference recipe lane. If restaurant plus airline are used for MIPROv2 or GEPA feedback, they are no longer the fresh unseen gate; choose a new unused BIRD DB pair for final measurement.</p>
+          <p>Exp031 compared Exp030 against the same fixed holdout after adding compact profile metadata to real BIRD rows. The result was 7/50, up from 5/50, with both seen guardrails preserved. Exp032 should test prompt optimization as an inference recipe lane. If restaurant plus airline are used for MIPROv2 or GEPA feedback, they are no longer the fresh unseen gate; choose a new unused BIRD DB pair for final measurement. Track every optimizer candidate in MLflow, including rejected candidates, so the loop remains comparable.</p>
           <table class="key-table">
             <tr><th>Paper pattern</th><td>Profile columns, summarize useful value/shape metadata, then use schema linking before candidate selection.</td></tr>
             <tr><th>Repo now</th><td>Raw DDL for real BIRD rows, with hand-authored/profile notes only in regional_sales lab data.</td></tr>
-            <tr><th>Next implementation</th><td>Run a prompt-optimization lane first: MIPROv2 zero-shot or GEPA rich-feedback on prompt-dev, then freeze the prompt and score a fresh DB-disjoint holdout.</td></tr>
+            <tr><th>Next implementation</th><td>Run a prompt-optimization lane first: MIPROv2 zero-shot or GEPA rich-feedback on prompt-dev, log each candidate to MLflow, then freeze the prompt and score a fresh DB-disjoint holdout.</td></tr>
           </table>
         </section>
         <section class="panel full">
@@ -1257,6 +1271,7 @@ def _render_agent_workflow() -> str:
             <li>Leakage audit run where relevant.</li>
             <li>SFT summary exists.</li>
             <li>Adapter eval results and analysis exist.</li>
+            <li>Prompt optimization candidates are logged individually when Exp032-style loops are used.</li>
             <li>MLflow run contains key tags and artifact paths.</li>
             <li>Linear comment records the lesson, not just the metric.</li>
           </ol>

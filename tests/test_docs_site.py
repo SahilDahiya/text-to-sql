@@ -21,6 +21,7 @@ class DocsSiteTests(unittest.TestCase):
             learnings_html = (output_dir / "learnings.html").read_text(encoding="utf-8")
             research_html = (output_dir / "research.html").read_text(encoding="utf-8")
             runbook_html = (output_dir / "runbook.html").read_text(encoding="utf-8")
+            observability_html = (output_dir / "observability.html").read_text(encoding="utf-8")
             documentation_html = (output_dir / "documentation.html").read_text(encoding="utf-8")
             experiment_html = (
                 output_dir
@@ -43,6 +44,7 @@ class DocsSiteTests(unittest.TestCase):
         self.assertIn("Exp030", learnings_html)
         self.assertIn("Exp031", learnings_html)
         self.assertIn("Exp032 plan", learnings_html)
+        self.assertIn("every candidate is tracked in MLflow", learnings_html)
         self.assertIn("Expansion alone is not enough", learnings_html)
         self.assertIn("Text-to-SQL Research Map", research_html)
         self.assertIn("Automatic Metadata Extraction", research_html)
@@ -51,6 +53,10 @@ class DocsSiteTests(unittest.TestCase):
         self.assertIn("Modern Fine-Tuning Pipeline", research_html)
         self.assertIn("Training Hygiene Rules", research_html)
         self.assertIn("Commands are documented", runbook_html)
+        self.assertIn("Optimize prompt candidate", runbook_html)
+        self.assertIn("Every MIPROv2/GEPA candidate has MLflow tags", runbook_html)
+        self.assertIn("optimizer</span>", observability_html)
+        self.assertIn("prompt_dev_dataset", observability_html)
         self.assertIn("Do not add markdown docs", documentation_html)
         self.assertIn("Train Inputs", experiment_html)
         self.assertIn("Eval Results", experiment_html)
