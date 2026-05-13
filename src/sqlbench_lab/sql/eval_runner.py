@@ -416,23 +416,27 @@ def _build_hf_candidate_pool_predictor(
         }
         generation_kwargs = {
             "max_new_tokens": max_new_tokens,
-            "num_return_sequences": candidate_count,
             "pad_token_id": getattr(tokenizer, "pad_token_id", None),
             "eos_token_id": getattr(tokenizer, "eos_token_id", None),
         }
-        if candidate_count == 1 or temperature == 0:
-            generation_kwargs["do_sample"] = False
-        else:
-            generation_kwargs["do_sample"] = True
-            generation_kwargs["temperature"] = temperature
-            generation_kwargs["top_p"] = top_p
-        with torch.no_grad():
-            output_ids = model.generate(**encoded, **generation_kwargs)
         input_length = int(encoded["input_ids"].shape[-1])
-        return [
-            extract_generated_sql(tokenizer.decode(row[input_length:], skip_special_tokens=True))
-            for row in output_ids
-        ]
+        candidates: list[str] = []
+        with torch.no_grad():
+            for candidate_index in range(candidate_count):
+                candidate_generation_kwargs = dict(generation_kwargs)
+                if candidate_index == 0 or temperature == 0:
+                    candidate_generation_kwargs["do_sample"] = False
+                else:
+                    candidate_generation_kwargs["do_sample"] = True
+                    candidate_generation_kwargs["temperature"] = temperature
+                    candidate_generation_kwargs["top_p"] = top_p
+                output_ids = model.generate(**encoded, **candidate_generation_kwargs)
+                candidates.append(
+                    extract_generated_sql(tokenizer.decode(output_ids[0][input_length:], skip_special_tokens=True))
+                )
+                if hasattr(torch, "cuda") and torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+        return candidates
 
     return predict
 
