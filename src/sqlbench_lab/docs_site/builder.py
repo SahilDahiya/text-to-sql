@@ -338,6 +338,12 @@ HISTORY_ROWS: list[dict[str, str]] = [
         "signal": "Added schema_linking_notes to the data contract. Train rows use gold-SQL-derived result-shape/table/column notes; eval rows use question/schema/value-note-derived notes to avoid gold leakage.",
         "lesson": "DSPy-style optimization belongs upstream of SFT as data/program supervision. The trainer remains TRL/LoRA; the new experiment tests whether richer supervised inputs transfer better than prompt padding.",
     },
+    {
+        "phase": "Exp034 setup",
+        "focus": "Run the schema-linking SFT hypothesis with a compact context budget that can finish locally.",
+        "signal": "Exp033 full notes were too slow on the RTX 2080 Ti. Exp034 caps schema-linking notes to two tables and six columns, keeps DB-disjoint holdouts, and starts with one epoch.",
+        "lesson": "Training metadata must be useful and cheap enough to iterate. First prove compact schema-linking transfers on the fixed unseen gates, then decide whether longer notes or more epochs are worth the compute.",
+    },
 ]
 
 RUNBOOK_ROWS: list[dict[str, str]] = [
