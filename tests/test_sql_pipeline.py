@@ -29,6 +29,7 @@ from sqlbench_lab.sql import (
     load_sql_repair_examples,
     load_sql_sft_manifest,
     load_sql_train_examples,
+    record_sql_prompt_candidate,
     run_sql_eval,
     run_sql_eval_with_repair,
     run_sql_sft,
@@ -76,6 +77,85 @@ class SQLPipelineTests(unittest.TestCase):
         self.assertEqual(rows[0].dialect, "sqlite")
         self.assertIsNone(rows[0].db_path)
         self.assertEqual(rows[0].target_sql.split()[0], "SELECT")
+
+    def test_record_sql_prompt_candidate_writes_artifact_with_failure_counts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            eval_dataset = root / "prompt_dev.jsonl"
+            eval_dataset.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "sql_eval_case:v1",
+                        "case_id": "case_1",
+                        "source_benchmark": "smoke",
+                        "source_split": "smoke",
+                        "task_id": "task_1",
+                        "fixture_id": "smoke:tiny",
+                        "db_id": "tiny",
+                        "db_path": None,
+                        "dialect": "sqlite",
+                        "question": "How many rows?",
+                        "schema_text": "CREATE TABLE items(id INTEGER)",
+                        "knowledge_text": None,
+                        "column_value_notes": [],
+                        "gold_sql": "SELECT COUNT(*) FROM items",
+                        "task_type": "select",
+                        "order_sensitive": False,
+                        "numeric_tolerance": 0.000001,
+                        "tags": ["smoke"],
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            prompt_file = root / "candidate_prompt.txt"
+            prompt_file.write_text("Return SQLite only.\n", encoding="utf-8")
+            eval_result = root / "result.json"
+            eval_result.write_text(
+                json.dumps(
+                    {
+                        "experiment_id": "exp_test",
+                        "model_variant": "adapter",
+                        "eval_dataset": str(eval_dataset),
+                        "case_count": 1,
+                        "passed_count": 0,
+                        "pass_rate": 0.0,
+                        "records": [
+                            {
+                                "case_id": "case_1",
+                                "task_id": "task_1",
+                                "model_variant": "adapter",
+                                "predicted_sql": "SELECT missing FROM items",
+                                "passed": False,
+                                "prediction_error": "no such column: missing",
+                                "gold_error": None,
+                                "predicted_rows": [],
+                                "gold_rows": [[1]],
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            output_path = root / "candidate.json"
+
+            summary = record_sql_prompt_candidate(
+                experiment_id="exp032_test",
+                optimizer="mipro_v2",
+                candidate_id="c000",
+                prompt_file=prompt_file,
+                prompt_dev_dataset=eval_dataset,
+                model_variant="adapter",
+                eval_result=eval_result,
+                output_path=output_path,
+            )
+
+            self.assertEqual(summary.prompt_dev_case_count, 1)
+            self.assertEqual(summary.eval_pass_rate, 0.0)
+            self.assertEqual(summary.failure_counts, {"prediction_schema_error": 1})
+            payload = json.loads(output_path.read_text(encoding="utf-8"))
+            self.assertEqual(payload["schema_version"], "sql_prompt_candidate:v1")
+            self.assertEqual(payload["candidate_id"], "c000")
 
     def test_import_benchmark_writes_train_db_path(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

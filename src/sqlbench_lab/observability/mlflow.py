@@ -202,6 +202,98 @@ def log_sql_eval_run(
         mlflow.log_artifact(str(result_path), artifact_path="eval")
 
 
+def log_sql_prompt_candidate_run(
+    *,
+    summary: Any,
+    candidate_path: Path,
+    prompt_file: Path,
+    eval_result: Path | None = None,
+    analysis: Path | None = None,
+    tracking_uri: str | None = None,
+    experiment_name: str | None = None,
+) -> None:
+    """Log one prompt-optimization candidate to MLflow."""
+
+    try:
+        import mlflow
+    except ImportError as exc:
+        raise ImportError(
+            "MLflow logging requires the observability dependency group. "
+            "Run with `uv run --group observability ...`."
+        ) from exc
+
+    mlflow.set_tracking_uri(_resolve_tracking_uri(tracking_uri))
+    mlflow.set_experiment(
+        experiment_name
+        or os.environ.get(MLFLOW_EXPERIMENT_ENV)
+        or DEFAULT_MLFLOW_EXPERIMENT
+    )
+    run_name = (
+        f"{_experiment_label(summary.experiment_id)}/prompt/"
+        f"{_safe_key(summary.optimizer)}/{_safe_key(summary.candidate_id)}"
+    )
+    with mlflow.start_run(run_name=run_name):
+        mlflow.set_tags(
+            {
+                "sqlbench.experiment_id": summary.experiment_id,
+                "sqlbench.run_kind": "prompt_candidate",
+                "sqlbench.optimizer": summary.optimizer,
+                "sqlbench.candidate_id": summary.candidate_id,
+                "sqlbench.prompt_dev_dataset": _dataset_name(summary.prompt_dev_dataset),
+                "sqlbench.fresh_gate_dataset": (
+                    _dataset_name(summary.fresh_gate_dataset)
+                    if summary.fresh_gate_dataset
+                    else ""
+                ),
+                "sqlbench.decision": summary.decision,
+                "sqlbench.model_variant": summary.model_variant or "",
+                "sqlbench.git_commit": _git_commit(),
+            }
+        )
+        mlflow.log_params(
+            {
+                "prompt.candidate_id": summary.candidate_id,
+                "prompt.optimizer": summary.optimizer,
+                "prompt.decision": summary.decision,
+                "prompt.file": summary.prompt_file,
+                "prompt.sha256": summary.prompt_sha256,
+                "prompt.char_count": summary.prompt_char_count,
+                "prompt_dev.dataset": summary.prompt_dev_dataset,
+                "prompt_dev.case_count": summary.prompt_dev_case_count,
+                "fresh_gate.dataset": summary.fresh_gate_dataset or "",
+                "fresh_gate.case_count": summary.fresh_gate_case_count or "",
+                "source.manifest": summary.source_manifest or "",
+                "eval.result": summary.eval_result or "",
+                "mlflow.run_name": run_name,
+            }
+        )
+        metrics = {
+            "prompt.char_count": float(summary.prompt_char_count),
+            "prompt_dev.case_count": float(summary.prompt_dev_case_count),
+        }
+        if summary.fresh_gate_case_count is not None:
+            metrics["fresh_gate.case_count"] = float(summary.fresh_gate_case_count)
+        if summary.eval_case_count is not None:
+            metrics["eval.case_count"] = float(summary.eval_case_count)
+        if summary.eval_passed_count is not None:
+            metrics["eval.passed_count"] = float(summary.eval_passed_count)
+        if summary.eval_pass_rate is not None:
+            metrics["eval.pass_rate"] = float(summary.eval_pass_rate)
+        metrics.update(
+            {
+                f"eval.failure.{_safe_key(failure_type)}": float(count)
+                for failure_type, count in summary.failure_counts.items()
+            }
+        )
+        mlflow.log_metrics(metrics)
+        mlflow.log_artifact(str(candidate_path), artifact_path="prompt_candidate")
+        mlflow.log_artifact(str(prompt_file), artifact_path="prompt_candidate")
+        if eval_result is not None:
+            mlflow.log_artifact(str(eval_result), artifact_path="eval")
+        if analysis is not None:
+            mlflow.log_artifact(str(analysis), artifact_path="eval")
+
+
 def _resolve_tracking_uri(tracking_uri: str | None) -> str:
     if tracking_uri:
         return tracking_uri

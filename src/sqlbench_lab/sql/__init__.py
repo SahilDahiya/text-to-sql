@@ -19,6 +19,7 @@ from .loaders import load_sql_eval_cases, load_sql_repair_examples, load_sql_tra
 from .manifest import SQLSFTExperimentManifest, load_sql_sft_manifest
 from .models import SQLEvalCase, SQLRepairExample, SQLTrainExample
 from .profile_metadata import SQLProfileMetadataSummary, attach_sqlite_profile_metadata
+from .prompt_optimization import SQLPromptCandidateSummary, record_sql_prompt_candidate
 from .repair_collection import SQLRepairCollectionSummary, collect_sql_repair_data
 from .rendering import build_eval_messages, build_repair_eval_messages, build_repair_messages, build_train_messages
 from .training import SQLSFTTrainingSummary, run_sql_sft, tokenize_sql_sft_messages
@@ -42,6 +43,7 @@ __all__ = [
     "SQLSFTExperimentManifest",
     "SQLSFTTrainingSummary",
     "SQLProfileMetadataSummary",
+    "SQLPromptCandidateSummary",
     "SQLTrainExample",
     "attach_sqlite_profile_metadata",
     "build_eval_messages",
@@ -64,6 +66,7 @@ __all__ = [
     "load_sql_repair_examples",
     "load_sql_sft_manifest",
     "load_sql_train_examples",
+    "record_sql_prompt_candidate",
     "run_sql_eval",
     "run_sql_eval_with_repair",
     "run_sql_sft",

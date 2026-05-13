@@ -18,6 +18,7 @@ from .sql import (
     load_sql_repair_examples,
     load_sql_sft_manifest,
     load_sql_train_examples,
+    record_sql_prompt_candidate,
     run_sql_eval,
     run_sql_eval_with_repair,
     run_sql_sft,
@@ -160,6 +161,37 @@ def main(argv: list[str] | None = None) -> int:
     analyze_eval = sql_subparsers.add_parser("analyze-eval", help="Analyze a SQL eval result JSON")
     analyze_eval.add_argument("--result", required=True, help="Path to SQL eval result JSON")
     analyze_eval.add_argument("--output", help="Output analysis JSON path")
+
+    optimize_prompt = sql_subparsers.add_parser(
+        "optimize-prompt",
+        help="Record one prompt optimization candidate with optional MLflow tracking",
+    )
+    optimize_prompt.add_argument("--experiment-id", required=True, help="Prompt optimization experiment ID")
+    optimize_prompt.add_argument(
+        "--optimizer",
+        choices=["mipro_v2", "gepa", "manual"],
+        required=True,
+        help="Optimizer that produced this prompt candidate",
+    )
+    optimize_prompt.add_argument("--candidate-id", required=True, help="Stable candidate ID")
+    optimize_prompt.add_argument("--prompt-file", required=True, help="Prompt text file for this candidate")
+    optimize_prompt.add_argument("--prompt-dev-dataset", required=True, help="Prompt-dev eval dataset JSONL")
+    optimize_prompt.add_argument("--fresh-gate-dataset", help="Fresh unseen eval gate JSONL, when scored")
+    optimize_prompt.add_argument("--source-manifest", help="Source SFT manifest for the base adapter/model")
+    optimize_prompt.add_argument("--model-variant", choices=["base", "adapter"], help="Model variant used")
+    optimize_prompt.add_argument("--eval-result", help="Eval result JSON for this candidate, when available")
+    optimize_prompt.add_argument("--analysis", help="Eval analysis JSON for this candidate, when available")
+    optimize_prompt.add_argument(
+        "--decision",
+        choices=["pending", "selected", "rejected"],
+        default="pending",
+        help="Candidate decision after comparison",
+    )
+    optimize_prompt.add_argument("--notes", help="Short candidate notes")
+    optimize_prompt.add_argument("--output", help="Override prompt candidate artifact JSON path")
+    optimize_prompt.add_argument("--mlflow", action="store_true", help="Log the candidate to MLflow")
+    optimize_prompt.add_argument("--mlflow-tracking-uri", help="Override the MLflow tracking URI")
+    optimize_prompt.add_argument("--mlflow-experiment", help="Override the MLflow experiment name")
 
     profile_metadata = sql_subparsers.add_parser(
         "profile-metadata",
@@ -429,6 +461,38 @@ def _run_sql_command(args: argparse.Namespace) -> int:
         )
         if failure_counts:
             print(f"failure_counts: {failure_counts}")
+        return 0
+    if args.sql_command == "optimize-prompt":
+        summary = record_sql_prompt_candidate(
+            experiment_id=args.experiment_id,
+            optimizer=args.optimizer,
+            candidate_id=args.candidate_id,
+            prompt_file=args.prompt_file,
+            prompt_dev_dataset=args.prompt_dev_dataset,
+            fresh_gate_dataset=args.fresh_gate_dataset,
+            source_manifest=args.source_manifest,
+            model_variant=args.model_variant,
+            eval_result=args.eval_result,
+            analysis=args.analysis,
+            decision=args.decision,
+            notes=args.notes,
+            output_path=args.output,
+            log_mlflow=args.mlflow or None,
+            mlflow_tracking_uri=args.mlflow_tracking_uri,
+            mlflow_experiment=args.mlflow_experiment,
+        )
+        metric = (
+            "not_scored"
+            if summary.eval_pass_rate is None
+            else f"{summary.eval_passed_count}/{summary.eval_case_count} ({summary.eval_pass_rate:.4f})"
+        )
+        print(
+            "recorded SQL prompt candidate "
+            f"{summary.experiment_id} optimizer={summary.optimizer} "
+            f"candidate={summary.candidate_id} decision={summary.decision} "
+            f"prompt_dev_cases={summary.prompt_dev_case_count} metric={metric} "
+            f"output={summary.output_path}"
+        )
         return 0
     if args.sql_command == "profile-metadata":
         summary = attach_sqlite_profile_metadata(
