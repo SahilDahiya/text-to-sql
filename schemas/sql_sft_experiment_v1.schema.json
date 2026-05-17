@@ -21,8 +21,12 @@
       "additionalProperties": false,
       "required": ["model_family", "base_model", "adapter_name"],
       "properties": {
-        "model_family": {"const": "qwen35"},
-        "base_model": {"const": "Qwen/Qwen3.5-0.8B-Base"},
+        "model_family": {"type": "string", "minLength": 1},
+        "base_model": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+        },
         "adapter_name": {"type": "string", "minLength": 1}
       }
     },
@@ -88,7 +92,11 @@
         "max_length": {"type": ["integer", "null"], "minimum": 1},
         "bf16": {"type": ["boolean", "null"]},
         "tf32": {"type": ["boolean", "null"]},
-        "gradient_checkpointing": {"type": "boolean"}
+        "gradient_checkpointing": {"type": "boolean"},
+        "save_strategy": {"enum": ["no", "steps", "epoch"]},
+        "save_steps": {"type": ["integer", "null"], "minimum": 1},
+        "save_total_limit": {"type": ["integer", "null"], "minimum": 1},
+        "auto_resume_from_checkpoint": {"type": "boolean"}
       }
     },
     "lora": {

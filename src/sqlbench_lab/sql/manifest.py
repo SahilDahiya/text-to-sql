@@ -53,6 +53,10 @@ class SQLTrainerConfig:
     bf16: bool | None
     tf32: bool | None
     gradient_checkpointing: bool
+    save_strategy: str
+    save_steps: int | None
+    save_total_limit: int | None
+    auto_resume_from_checkpoint: bool
 
 
 @dataclass(frozen=True)
@@ -140,6 +144,10 @@ def _default_trainer_payload() -> dict[str, Any]:
         "bf16": None,
         "tf32": None,
         "gradient_checkpointing": False,
+        "save_strategy": "no",
+        "save_steps": None,
+        "save_total_limit": None,
+        "auto_resume_from_checkpoint": False,
     }
 
 
@@ -163,6 +171,10 @@ def _load_trainer_config(payload: dict[str, Any]) -> SQLTrainerConfig:
         bf16=_optional_bool(merged["bf16"]),
         tf32=_optional_bool(merged["tf32"]),
         gradient_checkpointing=bool(merged["gradient_checkpointing"]),
+        save_strategy=str(merged["save_strategy"]),
+        save_steps=_optional_int(merged["save_steps"]),
+        save_total_limit=_optional_int(merged["save_total_limit"]),
+        auto_resume_from_checkpoint=bool(merged["auto_resume_from_checkpoint"]),
     )
 
 

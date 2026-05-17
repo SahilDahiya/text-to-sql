@@ -22,6 +22,7 @@ from sqlbench_lab.sql import (
     collect_sql_repair_data,
     evaluate_sqlite_case,
     extract_generated_sql,
+    filter_sql_train_by_token_budget,
     generate_bird_regional_sales_normalization_micro_lab,
     generate_bird_regional_sales_schema_lab,
     generate_bird_regional_sales_unit_price_contrast_lab,
@@ -41,6 +42,8 @@ from sqlbench_lab.sql import (
 )
 from sqlbench_lab.sql.benchmark_import import _select_raw_rows
 from sqlbench_lab.sql.benchmark_import import _filter_raw_rows_by_db_id
+from sqlbench_lab.sql.benchmark_import import _exclude_raw_rows_by_db_id
+from sqlbench_lab.sql.eval_runner import _render_generation_prompt
 
 
 WORKSPACE_ROOT = Path(__file__).resolve().parents[1]
@@ -63,6 +66,24 @@ class _FakeSQLTokenizer:
 
     def __call__(self, text: str, *, add_special_tokens: bool) -> dict[str, list[int]]:
         return {"input_ids": [1000 + index for index, _ in enumerate(text)]}
+
+
+class _FakeChatTemplateTokenizer:
+    chat_template = "fake"
+
+    def apply_chat_template(
+        self,
+        messages: list[dict[str, str]],
+        *,
+        tokenize: bool,
+        add_generation_prompt: bool,
+    ) -> str:
+        if tokenize:
+            raise AssertionError("generation prompt rendering should request text")
+        rendered = "|".join(f"{message['role']}:{message['content']}" for message in messages)
+        if add_generation_prompt:
+            rendered += "|assistant:"
+        return rendered
 
 
 class SQLPipelineTests(unittest.TestCase):
@@ -620,6 +641,27 @@ class SQLPipelineTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "no benchmark rows found"):
             _filter_raw_rows_by_db_id(raw_rows, db_ids=("missing_db",))
 
+    def test_exclude_raw_rows_by_db_id_removes_unseen_holdout_dbs(self) -> None:
+        raw_rows = [
+            {"db_id": "restaurant", "question": "r1"},
+            {"db_id": "airline", "question": "a1"},
+            {"db_id": "sales", "question": "s1"},
+            {"db_id": "bike_share_1", "question": "b1"},
+        ]
+
+        remaining = _exclude_raw_rows_by_db_id(
+            raw_rows,
+            exclude_db_ids=("restaurant", "airline"),
+        )
+
+        self.assertEqual([row["question"] for row in remaining], ["s1", "b1"])
+
+    def test_exclude_raw_rows_by_db_id_rejects_empty_remaining_set(self) -> None:
+        raw_rows = [{"db_id": "restaurant", "question": "r1"}]
+
+        with self.assertRaisesRegex(ValueError, "exclusion removed every benchmark row"):
+            _exclude_raw_rows_by_db_id(raw_rows, exclude_db_ids=("restaurant",))
+
     def test_import_benchmark_preserves_source_task_ids_after_db_filter(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             cache_root = Path(tmp_dir) / "cache"
@@ -662,6 +704,43 @@ class SQLPipelineTests(unittest.TestCase):
         self.assertEqual(rows[0].row_id, "bird_train_00002")
         self.assertEqual(rows[0].task_id, "bird_train_00002")
 
+    def test_filter_sql_train_by_token_budget_keeps_rows_with_rendered_prompt_under_budget(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            input_path = Path(tmp_dir) / "train.jsonl"
+            output_path = Path(tmp_dir) / "train_filtered.jsonl"
+            rows = [
+                _train_row(
+                    row_id="short",
+                    task_id="short",
+                    db_id="db",
+                    question="List names.",
+                    target_sql="SELECT name FROM people",
+                ),
+                _train_row(
+                    row_id="long",
+                    task_id="long",
+                    db_id="db",
+                    question="List names. " * 200,
+                    target_sql="SELECT name FROM people",
+                ),
+            ]
+            input_path.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+
+            summary = filter_sql_train_by_token_budget(
+                input_path=input_path,
+                output_path=output_path,
+                base_model="fake",
+                prompt_style="canonical_chat",
+                max_tokens=500,
+                tokenizer_like=_FakeSQLTokenizer(),
+            )
+            filtered = load_sql_train_examples(output_path)
+
+        self.assertEqual(summary.input_row_count, 2)
+        self.assertEqual(summary.kept_row_count, 1)
+        self.assertEqual(summary.rejected_row_count, 1)
+        self.assertEqual(filtered[0].row_id, "short")
+
     def test_load_sql_sft_manifest_validates_seed_experiment(self) -> None:
         manifest = load_sql_sft_manifest("experiments/sql/qwen35_0_8b__exp001_sql_sft.json")
 
@@ -676,10 +755,22 @@ class SQLPipelineTests(unittest.TestCase):
         self.assertIsNone(manifest.trainer.bf16)
         self.assertIsNone(manifest.trainer.tf32)
         self.assertFalse(manifest.trainer.gradient_checkpointing)
+        self.assertEqual(manifest.trainer.save_strategy, "no")
+        self.assertIsNone(manifest.trainer.save_steps)
+        self.assertIsNone(manifest.trainer.save_total_limit)
+        self.assertFalse(manifest.trainer.auto_resume_from_checkpoint)
         self.assertEqual(
             manifest.train_inputs.train_datasets,
             ("datasets/sql/train/qwen35_0_8b_direct_sql_seed_v1.jsonl",),
         )
+
+    def test_load_sql_sft_manifest_allows_qwen_coder_model_family(self) -> None:
+        manifest = load_sql_sft_manifest(
+            "experiments/sql/qwen25_coder_1_5b__exp037_trl_bird_full_no_unseen_gates.json"
+        )
+
+        self.assertEqual(manifest.student.model_family, "qwen25-coder")
+        self.assertEqual(manifest.student.base_model, "Qwen/Qwen2.5-Coder-1.5B")
 
     def test_load_sql_sft_manifest_reads_trl_backend(self) -> None:
         manifest = load_sql_sft_manifest(
@@ -709,6 +800,16 @@ class SQLPipelineTests(unittest.TestCase):
         )
 
         self.assertEqual(manifest.trainer.attn_implementation, "kernels-community/flash-attn2")
+
+    def test_load_sql_sft_manifest_reads_checkpoint_options(self) -> None:
+        manifest = load_sql_sft_manifest(
+            "experiments/sql/qwen35_0_8b__exp036_trl_bird_full_no_unseen_gates.json"
+        )
+
+        self.assertEqual(manifest.trainer.save_strategy, "steps")
+        self.assertEqual(manifest.trainer.save_steps, 100)
+        self.assertEqual(manifest.trainer.save_total_limit, 2)
+        self.assertTrue(manifest.trainer.auto_resume_from_checkpoint)
 
     def test_load_sql_sft_manifest_defaults_prompt_style(self) -> None:
         manifest = load_sql_sft_manifest("experiments/sql/qwen35_0_8b__exp001_sql_sft.json")
@@ -1185,6 +1286,38 @@ class SQLPipelineTests(unittest.TestCase):
         generated = "```sql\nSELECT name FROM employees;\n```\nextra"
 
         self.assertEqual(extract_generated_sql(generated), "SELECT name FROM employees;")
+
+    def test_base_eval_uses_native_chat_template_when_available(self) -> None:
+        messages = [
+            {"role": "system", "content": "Return SQL only."},
+            {"role": "user", "content": "Question"},
+            {"role": "assistant", "content": ""},
+        ]
+
+        rendered = _render_generation_prompt(
+            _FakeChatTemplateTokenizer(),
+            messages,
+            model_variant="base",
+        )
+
+        self.assertEqual(rendered, "system:Return SQL only.|user:Question|assistant:")
+
+    def test_adapter_eval_keeps_repo_sft_prompt_even_with_chat_template(self) -> None:
+        messages = [
+            {"role": "system", "content": "Return SQL only."},
+            {"role": "user", "content": "Question"},
+            {"role": "assistant", "content": ""},
+        ]
+
+        rendered = _render_generation_prompt(
+            _FakeChatTemplateTokenizer(),
+            messages,
+            model_variant="adapter",
+        )
+
+        self.assertIn("<|system|>", rendered)
+        self.assertIn("<|user|>", rendered)
+        self.assertTrue(rendered.rstrip().endswith("<|assistant|>"))
 
     def test_sqlite_fixture_builder_creates_company_small_database(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

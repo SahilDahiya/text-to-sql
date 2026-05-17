@@ -351,7 +351,11 @@ def _build_hf_message_predictor(
         model = model.cuda()
 
     def predict(messages: list[dict[str, str]]) -> str:
-        prompt = render_sql_sft_prompt([*messages, {"role": "assistant", "content": ""}])
+        prompt = _render_generation_prompt(
+            tokenizer,
+            [*messages, {"role": "assistant", "content": ""}],
+            model_variant=model_variant,
+        )
         encoded = tokenizer(prompt, return_tensors="pt", add_special_tokens=False)
         encoded = {
             key: value.to(model.device) if hasattr(value, "to") else value
@@ -408,7 +412,11 @@ def _build_hf_candidate_pool_predictor(
             prompt_style=manifest.prompt.style,
             system_prompt=system_prompt or SQL_SYSTEM_PROMPT,
         )
-        prompt = render_sql_sft_prompt([*messages, {"role": "assistant", "content": ""}])
+        prompt = _render_generation_prompt(
+            tokenizer,
+            [*messages, {"role": "assistant", "content": ""}],
+            model_variant=model_variant,
+        )
         encoded = tokenizer(prompt, return_tensors="pt", add_special_tokens=False)
         encoded = {
             key: value.to(model.device) if hasattr(value, "to") else value
@@ -439,6 +447,23 @@ def _build_hf_candidate_pool_predictor(
         return candidates
 
     return predict
+
+
+def _render_generation_prompt(
+    tokenizer: object,
+    messages: list[dict[str, str]],
+    *,
+    model_variant: str,
+) -> str:
+    if model_variant == "base" and getattr(tokenizer, "chat_template", None):
+        return str(
+            tokenizer.apply_chat_template(
+                messages[:-1],
+                tokenize=False,
+                add_generation_prompt=True,
+            )
+        )
+    return render_sql_sft_prompt(messages)
 
 
 def _resolve_repair_predictors(

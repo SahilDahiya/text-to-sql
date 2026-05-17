@@ -38,6 +38,7 @@ def import_sql_benchmark(
     limit: int | None = None,
     selection: str = "first",
     db_ids: tuple[str, ...] = (),
+    exclude_db_ids: tuple[str, ...] = (),
     cache_root: str | Path | None = None,
     force_download: bool = False,
 ) -> SQLBenchmarkImportSummary:
@@ -60,6 +61,7 @@ def import_sql_benchmark(
     raw_rows, dataset_root, db_folder_name, json_path = _load_raw_rows(benchmark, source_root, split)
     indexed_rows = list(enumerate(raw_rows, start=1))
     filtered_rows = _filter_indexed_raw_rows_by_db_id(indexed_rows, db_ids=db_ids)
+    filtered_rows = _exclude_indexed_raw_rows_by_db_id(filtered_rows, exclude_db_ids=exclude_db_ids)
     selected_rows = _select_indexed_raw_rows(filtered_rows, limit=limit, selection=selection)
     rows = [
         _convert_raw_row(
@@ -99,6 +101,20 @@ def _filter_raw_rows_by_db_id(
     return [row for _, row in _filter_indexed_raw_rows_by_db_id(list(enumerate(raw_rows, start=1)), db_ids=db_ids)]
 
 
+def _exclude_raw_rows_by_db_id(
+    raw_rows: list[dict[str, Any]],
+    *,
+    exclude_db_ids: tuple[str, ...],
+) -> list[dict[str, Any]]:
+    return [
+        row
+        for _, row in _exclude_indexed_raw_rows_by_db_id(
+            list(enumerate(raw_rows, start=1)),
+            exclude_db_ids=exclude_db_ids,
+        )
+    ]
+
+
 def _filter_indexed_raw_rows_by_db_id(
     indexed_rows: list[tuple[int, dict[str, Any]]],
     *,
@@ -113,6 +129,22 @@ def _filter_indexed_raw_rows_by_db_id(
     if not filtered:
         raise ValueError(f"no benchmark rows found for db_id filter: {', '.join(sorted(normalized))}")
     return filtered
+
+
+def _exclude_indexed_raw_rows_by_db_id(
+    indexed_rows: list[tuple[int, dict[str, Any]]],
+    *,
+    exclude_db_ids: tuple[str, ...],
+) -> list[tuple[int, dict[str, Any]]]:
+    normalized = {db_id.strip() for db_id in exclude_db_ids if db_id.strip()}
+    if not normalized:
+        return indexed_rows
+    remaining = [item for item in indexed_rows if str(item[1]["db_id"]) not in normalized]
+    if not remaining:
+        raise ValueError(
+            f"db_id exclusion removed every benchmark row: {', '.join(sorted(normalized))}"
+        )
+    return remaining
 
 
 def _select_raw_rows(

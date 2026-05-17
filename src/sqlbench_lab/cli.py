@@ -10,6 +10,7 @@ from .sql import (
     attach_sql_schema_linking,
     attach_sqlite_profile_metadata,
     collect_sql_repair_data,
+    filter_sql_train_by_token_budget,
     generate_bird_regional_sales_normalization_micro_lab,
     generate_bird_regional_sales_schema_lab,
     generate_bird_regional_sales_unit_price_contrast_lab,
@@ -83,6 +84,12 @@ def main(argv: list[str] | None = None) -> int:
         action="append",
         dest="db_ids",
         help="Restrict import to specific db_id values; repeat for multiple DBs",
+    )
+    import_benchmark.add_argument(
+        "--exclude-db-id",
+        action="append",
+        dest="exclude_db_ids",
+        help="Exclude specific db_id values from import; repeat for unseen-DB holdouts",
     )
 
     audit_leakage = sql_subparsers.add_parser("audit-leakage", help="Audit SQL train/eval dataset leakage")
@@ -173,6 +180,16 @@ def main(argv: list[str] | None = None) -> int:
     token_report.add_argument("--output", help="Output token report JSON path")
     token_report.add_argument("--no-train", action="store_true", help="Skip manifest train datasets")
     token_report.add_argument("--no-eval", action="store_true", help="Skip eval dataset")
+
+    token_filter = sql_subparsers.add_parser(
+        "filter-train-by-token-budget",
+        help="Write SQL train rows whose rendered SFT prompt fits a token budget",
+    )
+    token_filter.add_argument("--input", required=True, help="Input SQL train JSONL path")
+    token_filter.add_argument("--output", required=True, help="Output SQL train JSONL path")
+    token_filter.add_argument("--base-model", required=True, help="Tokenizer/model name")
+    token_filter.add_argument("--prompt-style", default="canonical_chat", help="SQL prompt style")
+    token_filter.add_argument("--max-tokens", type=int, required=True, help="Maximum rendered prompt tokens")
 
     eval_repair = sql_subparsers.add_parser("eval-repair", help="Run SQL eval with execution-guided repair retries")
     eval_repair.add_argument("--manifest", required=True, help="Path to SQL SFT manifest JSON")
@@ -375,6 +392,7 @@ def _run_sql_command(args: argparse.Namespace) -> int:
             limit=args.limit,
             selection=args.selection,
             db_ids=tuple(args.db_ids or ()),
+            exclude_db_ids=tuple(args.exclude_db_ids or ()),
             cache_root=args.cache_root,
             force_download=args.force_download,
         )
@@ -520,6 +538,22 @@ def _run_sql_command(args: argparse.Namespace) -> int:
             )
         if summary.result_path:
             print(f"output={summary.result_path}")
+        return 0
+    if args.sql_command == "filter-train-by-token-budget":
+        summary = filter_sql_train_by_token_budget(
+            input_path=args.input,
+            output_path=args.output,
+            base_model=args.base_model,
+            prompt_style=args.prompt_style,
+            max_tokens=args.max_tokens,
+        )
+        print(
+            "filtered SQL train dataset by token budget "
+            f"input_rows={summary.input_row_count} kept={summary.kept_row_count} "
+            f"rejected={summary.rejected_row_count} max_tokens={summary.max_tokens} "
+            f"max_kept={summary.max_kept_tokens} min_rejected={summary.min_rejected_tokens} "
+            f"output={summary.output_path}"
+        )
         return 0
     if args.sql_command == "eval-repair":
         summary = run_sql_eval_with_repair(

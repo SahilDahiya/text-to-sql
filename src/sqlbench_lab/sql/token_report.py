@@ -35,6 +35,20 @@ class SQLTokenLengthReport:
     dataset_reports: list[SQLTokenLengthDatasetReport]
 
 
+@dataclass(frozen=True)
+class SQLTrainTokenBudgetFilterSummary:
+    input_path: str
+    output_path: str
+    base_model: str
+    prompt_style: str
+    max_tokens: int
+    input_row_count: int
+    kept_row_count: int
+    rejected_row_count: int
+    max_kept_tokens: int | None
+    min_rejected_tokens: int | None
+
+
 def report_sql_prompt_lengths(
     manifest_path: str | Path,
     *,
@@ -82,6 +96,60 @@ def report_sql_prompt_lengths(
         resolved_output.parent.mkdir(parents=True, exist_ok=True)
         resolved_output.write_text(json.dumps(asdict(report), indent=2, ensure_ascii=True) + "\n", encoding="utf-8")
     return report
+
+
+def filter_sql_train_by_token_budget(
+    *,
+    input_path: str | Path,
+    output_path: str | Path,
+    base_model: str,
+    prompt_style: str,
+    max_tokens: int,
+    tokenizer_like: Any | None = None,
+) -> SQLTrainTokenBudgetFilterSummary:
+    """Write train rows whose fully rendered prompt fits within a token budget."""
+
+    if max_tokens < 1:
+        raise ValueError("max_tokens must be at least 1")
+    tokenizer = _resolve_tokenizer(base_model, tokenizer_like=tokenizer_like)
+    rows = load_sql_train_examples(input_path)
+    kept: list[Any] = []
+    kept_lengths: list[int] = []
+    rejected_lengths: list[int] = []
+    for row in rows:
+        length = _token_count(
+            tokenizer,
+            render_sql_sft_prompt(build_train_messages(row, prompt_style=prompt_style)),
+        )
+        if length <= max_tokens:
+            kept.append(row)
+            kept_lengths.append(length)
+        else:
+            rejected_lengths.append(length)
+    if not kept:
+        raise ValueError(f"token budget rejected every train row: max_tokens={max_tokens}")
+
+    resolved_output = _resolve_output_path(output_path)
+    if resolved_output is None:
+        raise ValueError("output_path is required")
+    resolved_output.parent.mkdir(parents=True, exist_ok=True)
+    with resolved_output.open("w", encoding="utf-8") as handle:
+        for row in kept:
+            handle.write(json.dumps(asdict(row), ensure_ascii=True) + "\n")
+
+    resolved_input = _resolve_output_path(input_path)
+    return SQLTrainTokenBudgetFilterSummary(
+        input_path=str(resolved_input) if resolved_input is not None else str(input_path),
+        output_path=str(resolved_output),
+        base_model=base_model,
+        prompt_style=prompt_style,
+        max_tokens=max_tokens,
+        input_row_count=len(rows),
+        kept_row_count=len(kept),
+        rejected_row_count=len(rejected_lengths),
+        max_kept_tokens=max(kept_lengths) if kept_lengths else None,
+        min_rejected_tokens=min(rejected_lengths) if rejected_lengths else None,
+    )
 
 
 def _resolve_tokenizer(base_model: str, *, tokenizer_like: Any | None) -> Any:

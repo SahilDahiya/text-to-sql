@@ -356,6 +356,18 @@ HISTORY_ROWS: list[dict[str, str]] = [
         "signal": "Recent systems that move BIRD/Spider/LiveSQLBench use candidate pools, execution, selection, broad data, metadata retrieval, or agents; they are not just LoRA runs on a few hundred rows.",
         "lesson": "Keep the small-model constraint. Do blacksmith work next: token-length instrumentation, candidate-pool execution/selection, and larger small-model training data before another goldsmith SFT variant.",
     },
+    {
+        "phase": "Exp036 setup",
+        "focus": "Try the broad-data blacksmith move while staying model-path only.",
+        "signal": "Imported 8,364 BIRD train rows after excluding restaurant, airline, works_cycles, and public_review_platform. Profile metadata and compact train-only schema linking were attached. Token report showed raw p50 1,642 and max 193,754, so the train file was filtered to 3,536 rows that fit 1,536 rendered tokens. The first long run died before writing a checkpoint, so Exp036 now saves every 100 steps with auto-resume enabled.",
+        "lesson": "Broad data must still obey DB-level holdout, token-budget hygiene, and checkpoint hygiene. Exp036 tests scale plus metadata without repair, agent loops, or hidden benchmark data.",
+    },
+    {
+        "phase": "Exp037 and Exp038 setup",
+        "focus": "Test whether Qwen2.5-Coder changes the one-shot unseen-DB ceiling without changing the data boundary.",
+        "signal": "Exp037 uses Qwen2.5-Coder-1.5B and Exp038 uses Qwen2.5-Coder-3B. Both keep the Exp036 train file, DB-level holdouts, LoRA target modules, 1,536-token budget, and eval gates fixed.",
+        "lesson": "Model-family comparisons must change one thing at a time. First measure Exp036 as the Qwen3.5-0.8B baseline, then promote Qwen2.5-Coder only if the same prompt-dev and fresh unseen gates move.",
+    },
 ]
 
 RUNBOOK_ROWS: list[dict[str, str]] = [
@@ -399,7 +411,7 @@ RUNBOOK_ROWS: list[dict[str, str]] = [
         "task": "Train adapter",
         "command": "uv run --group training --group observability python -m sqlbench_lab.cli sql run-sft --manifest experiments/sql/<experiment>.json --mlflow",
         "output": "artifacts/sql/<experiment>/train_summary.json",
-        "gate": "Manifest validated and MLflow run logged.",
+        "gate": "Manifest validated, MLflow run logged, and long runs use checkpoint saves.",
     },
     {
         "task": "Evaluate adapter",
@@ -412,6 +424,12 @@ RUNBOOK_ROWS: list[dict[str, str]] = [
         "command": "uv run --group training python -m sqlbench_lab.cli sql token-report --manifest experiments/sql/<experiment>.json --dataset datasets/sql/eval/<eval>.jsonl --output artifacts/sql/<experiment>/token_report.json",
         "output": "Prompt token p50/p90/p95/max",
         "gate": "Long-tail rows are known before training or candidate generation.",
+    },
+    {
+        "task": "Filter train token budget",
+        "command": "uv run --group training python -m sqlbench_lab.cli sql filter-train-by-token-budget --input datasets/sql/train/<train>.jsonl --output datasets/sql/train/<train>_token1536.jsonl --base-model Qwen/Qwen3.5-0.8B-Base --prompt-style canonical_chat --max-tokens 1536",
+        "output": "Budget-clean train JSONL",
+        "gate": "No silent trainer truncation becomes the actual experiment.",
     },
     {
         "task": "Evaluate candidate pool",
@@ -987,10 +1005,12 @@ def _render_home(experiments: list[ExperimentRecord]) -> str:
           <article class="panel">
             <h2>Next Useful Move</h2>
             <ol class="tight">
-              <li>Use Exp031 as the new local baseline for the metadata lane: 7/50 on restaurant plus airline.</li>
-              <li>For DSPy MIPROv2/GEPA work, restaurant plus airline is prompt-dev; works_cycles plus public_review_platform is the fresh unseen gate.</li>
-              <li>Exp033 moves back to training with schema-linking notes instead of more prompt-only search.</li>
-              <li>Candidate selection and repair remain separate lanes, not mixed into one-shot SFT scoring.</li>
+              <li>Run Exp036 as the broad-data model-path blacksmith move: BIRD train minus both unseen gates, profile notes, compact train-only schema linking, and token-budget filtering.</li>
+              <li>Then run Exp037 with Qwen2.5-Coder-1.5B on the exact same data and gates.</li>
+              <li>Try Exp038 with Qwen2.5-Coder-3B only after the 1.5B run proves the model-family move is worth the extra memory.</li>
+              <li>Keep restaurant plus airline as prompt-dev; keep works_cycles plus public_review_platform as the fresh unseen gate.</li>
+              <li>Compare Exp036, Exp037, and Exp038 one-shot against Exp031 and Exp034 before any candidate-pool work.</li>
+              <li>Do not mix repair or agent loops into the current score.</li>
               <li>Promote only stable one-shot behavior toward LiveSQLBench.</li>
             </ol>
           </article>
@@ -1170,11 +1190,11 @@ def _render_research() -> str:
         <section class="grid two">
           <article class="panel">
             <h2>Immediate Read</h2>
-            <p>Exp034 confirmed that small one-shot SFT changes are not enough. The product constraint remains a small model, so the next large moves are candidate pools, execution, selection, broader small-model data, and explicit stop rules for switching into agent engineering.</p>
+            <p>Exp034 confirmed that small one-shot SFT changes are not enough. The active model-path blacksmith sequence is Exp036 then Exp037: first measure broad BIRD training coverage on Qwen3.5-0.8B, then keep the same data boundary and switch only to Qwen2.5-Coder-1.5B.</p>
           </article>
           <article class="panel">
             <h2>Research Boundary</h2>
-            <p>Keep one-shot SFT, candidate selection, repair, and agent workflows as separate measurement lanes. The strategic mistake to avoid is pretending a clean one-shot score is the whole product.</p>
+            <p>Current scope is one-shot model quality. Candidate selection, repair, and agent workflows remain separate lanes and are not part of the active Exp036 measurement boundary.</p>
           </article>
         </section>
         <section class="panel full">
@@ -1384,11 +1404,11 @@ def _render_agent_workflow() -> str:
         </section>
         <section class="panel full">
           <h2>Remembered Next Plan</h2>
-          <p>Exp031 compared Exp030 against the same fixed holdout after adding compact profile metadata to real BIRD rows. Exp034 showed that compact schema-linking SFT can lift the tuned prompt-dev holdout to 10/50 but still fails to improve the fresh unseen gate. The next loop should stop treating one-shot LoRA as the only lever.</p>
+          <p>Exp031 compared Exp030 against the same fixed holdout after adding compact profile metadata to real BIRD rows. Exp034 showed that compact schema-linking SFT can lift the tuned prompt-dev holdout to 10/50 but still fails to improve the fresh unseen gate. Exp036 is the broad-data Qwen3.5-0.8B baseline; Exp037 and Exp038 keep the same data contract and test whether Qwen2.5-Coder provides the missing code prior.</p>
           <table class="key-table">
             <tr><th>Paper pattern</th><td>Profile columns, retrieve relevant metadata, generate multiple candidates, execute candidates, then select or repair.</td></tr>
             <tr><th>Repo now</th><td>One-shot SFT is measurable but plateauing at 7/50 on the fresh unseen gate.</td></tr>
-            <tr><th>Next implementation</th><td>Add token-length reporting and explicit max-length policy, then build candidate-pool execution/selection as the first blacksmith system move.</td></tr>
+            <tr><th>Next implementation</th><td>Train and evaluate Exp036 first. Then run Exp037 on the same train/eval boundary; Exp038 follows only if the 1.5B coder model improves the fresh unseen gate.</td></tr>
           </table>
         </section>
         <section class="panel full">

@@ -167,24 +167,29 @@ def _train_with_transformers_trainer(
         for messages in rendered_messages
     ]
     model = peft.get_peft_model(model, _peft_lora_config(peft, lora_config))
-    training_args = transformers.TrainingArguments(
-        output_dir=str(adapter_dir),
-        num_train_epochs=training_config["num_train_epochs"],
-        per_device_train_batch_size=training_config["per_device_train_batch_size"],
-        gradient_accumulation_steps=training_config["gradient_accumulation_steps"],
-        learning_rate=training_config["learning_rate"],
-        logging_steps=training_config["logging_steps"],
-        save_strategy="no",
-        report_to=[],
-        remove_unused_columns=False,
-    )
+    training_args_kwargs = {
+        "output_dir": str(adapter_dir),
+        "num_train_epochs": training_config["num_train_epochs"],
+        "per_device_train_batch_size": training_config["per_device_train_batch_size"],
+        "gradient_accumulation_steps": training_config["gradient_accumulation_steps"],
+        "learning_rate": training_config["learning_rate"],
+        "logging_steps": training_config["logging_steps"],
+        "save_strategy": training_config["save_strategy"],
+        "report_to": [],
+        "remove_unused_columns": False,
+    }
+    if training_config["save_steps"] is not None:
+        training_args_kwargs["save_steps"] = training_config["save_steps"]
+    if training_config["save_total_limit"] is not None:
+        training_args_kwargs["save_total_limit"] = training_config["save_total_limit"]
+    training_args = transformers.TrainingArguments(**training_args_kwargs)
     trainer = transformers.Trainer(
         model=model,
         args=training_args,
         train_dataset=_SQLSFTDataset(encoded_examples),
         data_collator=_SQLSFTDataCollator(pad_token_id=_pad_token_id(tokenizer), torch_module=torch_module),
     )
-    train_output = trainer.train()
+    train_output = trainer.train(resume_from_checkpoint=_resume_checkpoint(adapter_dir, training_config))
     return model, train_output
 
 
@@ -209,7 +214,7 @@ def _train_with_trl_sft_trainer(
         "gradient_accumulation_steps": training_config["gradient_accumulation_steps"],
         "learning_rate": training_config["learning_rate"],
         "logging_steps": training_config["logging_steps"],
-        "save_strategy": "no",
+        "save_strategy": training_config["save_strategy"],
         "report_to": [],
         "packing": training_config["packing"],
         "packing_strategy": training_config["packing_strategy"],
@@ -222,6 +227,10 @@ def _train_with_trl_sft_trainer(
         sft_config_kwargs["bf16"] = training_config["bf16"]
     if training_config["tf32"] is not None:
         sft_config_kwargs["tf32"] = training_config["tf32"]
+    if training_config["save_steps"] is not None:
+        sft_config_kwargs["save_steps"] = training_config["save_steps"]
+    if training_config["save_total_limit"] is not None:
+        sft_config_kwargs["save_total_limit"] = training_config["save_total_limit"]
     training_args = trl.SFTConfig(**sft_config_kwargs)
     trainer = trl.SFTTrainer(
         model=model,
@@ -230,8 +239,25 @@ def _train_with_trl_sft_trainer(
         processing_class=_inner_tokenizer(tokenizer),
         peft_config=_peft_lora_config(peft, lora_config),
     )
-    train_output = trainer.train()
+    train_output = trainer.train(resume_from_checkpoint=_resume_checkpoint(adapter_dir, training_config))
     return trainer.model, train_output
+
+
+def _resume_checkpoint(adapter_dir: Path, training_config: dict[str, Any]) -> str | None:
+    if not training_config["auto_resume_from_checkpoint"]:
+        return None
+    checkpoints = []
+    for path in adapter_dir.glob("checkpoint-*"):
+        if not path.is_dir():
+            continue
+        try:
+            step = int(path.name.rsplit("-", maxsplit=1)[-1])
+        except ValueError:
+            continue
+        checkpoints.append((step, path))
+    if not checkpoints:
+        return None
+    return str(max(checkpoints)[1])
 
 
 def _trl_prompt_completion_rows(
@@ -311,6 +337,10 @@ def _training_config(manifest: SQLSFTExperimentManifest) -> dict[str, Any]:
         "bf16": manifest.trainer.bf16,
         "tf32": manifest.trainer.tf32,
         "gradient_checkpointing": manifest.trainer.gradient_checkpointing,
+        "save_strategy": manifest.trainer.save_strategy,
+        "save_steps": manifest.trainer.save_steps,
+        "save_total_limit": manifest.trainer.save_total_limit,
+        "auto_resume_from_checkpoint": manifest.trainer.auto_resume_from_checkpoint,
         "prompt_style": manifest.prompt.style,
     }
 

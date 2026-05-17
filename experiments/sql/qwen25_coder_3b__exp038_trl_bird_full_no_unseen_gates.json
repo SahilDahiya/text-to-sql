@@ -1,0 +1,67 @@
+{
+  "schema_version": "sql_sft_experiment:v1",
+  "experiment_id": "qwen25_coder_3b__exp038_trl_bird_full_no_unseen_gates",
+  "student": {
+    "model_family": "qwen25-coder",
+    "base_model": "Qwen/Qwen2.5-Coder-3B",
+    "adapter_name": "qwen25_coder_3b_trl_bird_full_no_unseen_gates_exp038"
+  },
+  "training_method": {
+    "method": "lora_sft",
+    "loss_target": "assistant_sql_only",
+    "stage": "direct_sql_sft",
+    "notes": "Larger small-model blacksmith comparison after Exp037. Keep the Exp036 broad BIRD no-unseen-gates train file, metadata, compact schema linking, token budget, LoRA target modules, and DB-disjoint eval gates fixed. Change only the base model to Qwen2.5-Coder-3B to test whether extra small-model capacity improves one-shot unseen-DB text-to-SQL. Run locally only if memory fits; otherwise this is the first candidate for QLoRA or cloud GPU. This is a local one-shot SFT experiment, not an official benchmark score."
+  },
+  "prompt": {
+    "style": "canonical_chat"
+  },
+  "train_inputs": {
+    "train_datasets": [
+      "datasets/sql/train/bird_train_no_unseen_gates_full_v1_profile_notes_schema_linked_gold_compact_token1536_v1.jsonl"
+    ],
+    "validation_datasets": []
+  },
+  "trainer": {
+    "backend": "trl_sft_trainer",
+    "num_train_epochs": 1.0,
+    "per_device_train_batch_size": 1,
+    "gradient_accumulation_steps": 1,
+    "learning_rate": 0.0002,
+    "logging_steps": 50,
+    "packing": false,
+    "packing_strategy": "bfd",
+    "max_length": 1536,
+    "bf16": null,
+    "tf32": null,
+    "gradient_checkpointing": true,
+    "save_strategy": "steps",
+    "save_steps": 100,
+    "save_total_limit": 2,
+    "auto_resume_from_checkpoint": true
+  },
+  "lora": {
+    "r": 16,
+    "lora_alpha": 32,
+    "lora_dropout": 0.05,
+    "target_modules": [
+      "q_proj",
+      "k_proj",
+      "v_proj",
+      "o_proj",
+      "gate_proj",
+      "up_proj",
+      "down_proj"
+    ]
+  },
+  "eval_plan": {
+    "smoke_dataset": "datasets/sql/smoke/sql_smoke_v1.jsonl",
+    "baseline_results": "results/sql/qwen25_coder_3b__exp038_trl_bird_full_no_unseen_gates/baseline_smoke.json",
+    "post_train_results": "results/sql/qwen25_coder_3b__exp038_trl_bird_full_no_unseen_gates/post_train_smoke.json"
+  },
+  "output_paths": {
+    "experiment_root": "artifacts/sql/qwen25_coder_3b__exp038_trl_bird_full_no_unseen_gates",
+    "adapter_dir": "artifacts/sql/qwen25_coder_3b__exp038_trl_bird_full_no_unseen_gates/adapter",
+    "train_summary_json": "artifacts/sql/qwen25_coder_3b__exp038_trl_bird_full_no_unseen_gates/train_summary.json",
+    "eval_summary_json": "artifacts/sql/qwen25_coder_3b__exp038_trl_bird_full_no_unseen_gates/eval_summary.json"
+  }
+}
