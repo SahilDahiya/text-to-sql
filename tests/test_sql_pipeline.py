@@ -44,6 +44,7 @@ from sqlbench_lab.sql.benchmark_import import _select_raw_rows
 from sqlbench_lab.sql.benchmark_import import _filter_raw_rows_by_db_id
 from sqlbench_lab.sql.benchmark_import import _exclude_raw_rows_by_db_id
 from sqlbench_lab.sql.eval_runner import _render_generation_prompt
+from sqlbench_lab.sql.training import _load_initial_trainable_adapter
 
 
 WORKSPACE_ROOT = Path(__file__).resolve().parents[1]
@@ -86,6 +87,19 @@ class _FakeChatTemplateTokenizer:
         return rendered
 
 
+class _FakePeftModel:
+    calls: list[tuple[object, Path, bool]] = []
+
+    @classmethod
+    def from_pretrained(cls, model: object, adapter_dir: Path, *, is_trainable: bool) -> dict[str, object]:
+        cls.calls.append((model, adapter_dir, is_trainable))
+        return {"model": model, "adapter_dir": adapter_dir, "is_trainable": is_trainable}
+
+
+class _FakePeft:
+    PeftModel = _FakePeftModel
+
+
 class SQLPipelineTests(unittest.TestCase):
     def test_load_sql_eval_cases_reads_smoke_dataset(self) -> None:
         cases = load_sql_eval_cases("datasets/sql/smoke/sql_smoke_v1.jsonl")
@@ -102,6 +116,57 @@ class SQLPipelineTests(unittest.TestCase):
         self.assertEqual(rows[0].dialect, "sqlite")
         self.assertIsNone(rows[0].db_path)
         self.assertEqual(rows[0].target_sql.split()[0], "SELECT")
+
+    def test_storefront_train_v2_is_comprehensive_and_heldout_clean(self) -> None:
+        train_path = "datasets/sql/train/storefront_sales_lab_train_v2.jsonl"
+        dev_path = "datasets/sql/eval/storefront_sales_lab_dev_v1.jsonl"
+        eval_path = "datasets/sql/eval/storefront_sales_lab_eval_v1.jsonl"
+
+        rows = load_sql_train_examples(train_path)
+        summary = audit_sql_dataset_leakage(
+            train_paths=[train_path],
+            eval_paths=[dev_path, eval_path],
+            require_db_disjoint=False,
+        )
+
+        self.assertEqual(len(rows), 97)
+        self.assertTrue(summary.passed)
+        self.assertGreaterEqual(sum("targeted_v2" in row.tags for row in rows), 50)
+        self.assertTrue(any({"column_ownership", "join_path"} <= set(row.tags) for row in rows))
+        self.assertTrue(any({"anti_join", "products"} <= set(row.tags) for row in rows))
+        self.assertTrue(any({"ratio", "returns"} <= set(row.tags) for row in rows))
+        self.assertTrue(any({"shipment", "date_math"} <= set(row.tags) for row in rows))
+        self.assertTrue(any({"support", "join_path"} <= set(row.tags) for row in rows))
+        for row in rows:
+            self.assertIsNotNone(row.db_path)
+            with sqlite3.connect(WORKSPACE_ROOT / row.db_path) as connection:
+                connection.execute(row.target_sql).fetchall()
+
+    def test_storefront_train_v3_targets_failure_families_without_heldout_leakage(self) -> None:
+        train_path = "datasets/sql/train/storefront_sales_lab_train_v3.jsonl"
+        dev_path = "datasets/sql/eval/storefront_sales_lab_dev_v1.jsonl"
+        eval_path = "datasets/sql/eval/storefront_sales_lab_eval_v1.jsonl"
+
+        rows = load_sql_train_examples(train_path)
+        summary = audit_sql_dataset_leakage(
+            train_paths=[train_path],
+            eval_paths=[dev_path, eval_path],
+            require_db_disjoint=False,
+        )
+
+        self.assertEqual(len(rows), 130)
+        self.assertTrue(summary.passed)
+        self.assertEqual(sum("targeted_v3" in row.tags for row in rows), 33)
+        self.assertTrue(any({"targeted_v3", "grouped_ranking"} <= set(row.tags) for row in rows))
+        self.assertTrue(any({"targeted_v3", "ratio_denominator"} <= set(row.tags) for row in rows))
+        self.assertTrue(any({"targeted_v3", "anti_join_list"} <= set(row.tags) for row in rows))
+        self.assertTrue(any({"targeted_v3", "global_having"} <= set(row.tags) for row in rows))
+        self.assertTrue(any({"targeted_v3", "shipment_return_join"} <= set(row.tags) for row in rows))
+        self.assertTrue(any({"targeted_v3", "alias_ownership"} <= set(row.tags) for row in rows))
+        for row in rows:
+            self.assertIsNotNone(row.db_path)
+            with sqlite3.connect(WORKSPACE_ROOT / row.db_path) as connection:
+                connection.execute(row.target_sql).fetchall()
 
     def test_record_sql_prompt_candidate_writes_artifact_with_failure_counts(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -815,6 +880,88 @@ class SQLPipelineTests(unittest.TestCase):
         manifest = load_sql_sft_manifest("experiments/sql/qwen35_0_8b__exp001_sql_sft.json")
 
         self.assertEqual(manifest.prompt.style, "canonical_chat")
+
+    def test_load_sql_sft_manifest_reads_initial_adapter_dir(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            manifest_path = Path(tmp_dir) / "warm_start_manifest.json"
+            payload = {
+                "schema_version": "sql_sft_experiment:v1",
+                "experiment_id": "warm_start_test",
+                "student": {
+                    "model_family": "qwen35",
+                    "base_model": "Qwen/Qwen3.5-0.8B-Base",
+                    "adapter_name": "warm_start_test_adapter",
+                    "initial_adapter_dir": "artifacts/sql/source/adapter",
+                },
+                "training_method": {
+                    "method": "lora_sft",
+                    "loss_target": "assistant_sql_only",
+                    "stage": "direct_sql_sft",
+                    "notes": None,
+                },
+                "train_inputs": {
+                    "train_datasets": ["datasets/sql/train/qwen35_0_8b_direct_sql_seed_v1.jsonl"],
+                    "validation_datasets": [],
+                },
+                "trainer": {
+                    "backend": "trl_sft_trainer",
+                    "num_train_epochs": 1.0,
+                    "per_device_train_batch_size": 1,
+                    "gradient_accumulation_steps": 1,
+                    "learning_rate": 0.0002,
+                    "logging_steps": 1,
+                },
+                "lora": {
+                    "r": 8,
+                    "lora_alpha": 16,
+                    "lora_dropout": 0.05,
+                    "bias": "lora_only",
+                    "target_modules": ["q_proj"],
+                },
+                "eval_plan": {
+                    "smoke_dataset": "datasets/sql/smoke/sql_smoke_v1.jsonl",
+                    "baseline_results": "results/sql/warm_start_test/base.json",
+                    "post_train_results": "results/sql/warm_start_test/adapter.json",
+                },
+                "output_paths": {
+                    "experiment_root": "artifacts/sql/warm_start_test",
+                    "adapter_dir": "artifacts/sql/warm_start_test/adapter",
+                    "train_summary_json": "artifacts/sql/warm_start_test/train_summary.json",
+                    "eval_summary_json": "artifacts/sql/warm_start_test/eval_summary.json",
+                },
+            }
+            manifest_path.write_text(json.dumps(payload), encoding="utf-8")
+
+            manifest = load_sql_sft_manifest(manifest_path)
+
+        self.assertEqual(manifest.student.initial_adapter_dir, "artifacts/sql/source/adapter")
+        self.assertEqual(manifest.lora.bias, "lora_only")
+
+    def test_load_initial_trainable_adapter_requires_peft_files_and_trainable_load(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            adapter_dir = Path(tmp_dir) / "adapter"
+            adapter_dir.mkdir()
+            (adapter_dir / "adapter_config.json").write_text("{}", encoding="utf-8")
+            (adapter_dir / "adapter_model.safetensors").write_bytes(b"fake")
+            model = object()
+            _FakePeftModel.calls.clear()
+
+            loaded_model, loaded = _load_initial_trainable_adapter(_FakePeft, model, adapter_dir)
+
+        self.assertTrue(loaded)
+        self.assertTrue(loaded_model["is_trainable"])
+        self.assertEqual(_FakePeftModel.calls[0][0], model)
+        self.assertEqual(_FakePeftModel.calls[0][1], adapter_dir)
+        self.assertTrue(_FakePeftModel.calls[0][2])
+
+    def test_load_initial_trainable_adapter_fails_for_incomplete_adapter_dir(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            adapter_dir = Path(tmp_dir) / "adapter"
+            adapter_dir.mkdir()
+            (adapter_dir / "adapter_config.json").write_text("{}", encoding="utf-8")
+
+            with self.assertRaisesRegex(ValueError, "adapter_model.safetensors"):
+                _load_initial_trainable_adapter(_FakePeft, object(), adapter_dir)
 
     def test_run_sql_sft_dry_run_writes_training_summary(self) -> None:
         summary_path = WORKSPACE_ROOT / "artifacts/sql/qwen35_0_8b__exp001_sql_sft/train_summary.json"

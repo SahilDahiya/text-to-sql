@@ -108,6 +108,7 @@ def log_sql_sft_run(
                 "student.model_family": manifest.student.model_family,
                 "student.base_model": manifest.student.base_model,
                 "student.adapter_name": manifest.student.adapter_name,
+                "student.initial_adapter_dir": manifest.student.initial_adapter_dir or "",
                 "train.rows_total": summary.train_row_count,
                 "eval.smoke_cases": smoke_eval_case_count,
                 "output.adapter_dir": summary.adapter_dir,

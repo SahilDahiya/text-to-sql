@@ -17,6 +17,7 @@ class SQLStudentConfig:
     model_family: str
     base_model: str
     adapter_name: str
+    initial_adapter_dir: str | None = None
 
 
 @dataclass(frozen=True)
@@ -64,6 +65,7 @@ class SQLLoRAConfig:
     r: int
     lora_alpha: int
     lora_dropout: float
+    bias: str
     target_modules: tuple[str, ...]
 
 
@@ -201,6 +203,7 @@ def _default_lora_payload() -> dict[str, Any]:
         "r": 8,
         "lora_alpha": 16,
         "lora_dropout": 0.05,
+        "bias": "none",
         "target_modules": [
             "q_proj",
             "k_proj",
@@ -218,6 +221,7 @@ def _load_lora_config(payload: dict[str, Any]) -> SQLLoRAConfig:
         r=int(payload["r"]),
         lora_alpha=int(payload["lora_alpha"]),
         lora_dropout=float(payload["lora_dropout"]),
+        bias=str(payload.get("bias", "none")),
         target_modules=tuple(str(item) for item in payload["target_modules"]),
     )
 

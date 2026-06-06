@@ -91,6 +91,11 @@ def run_sql_sft(
         torch_module=torch,
         attn_implementation=manifest.trainer.attn_implementation,
     )
+    model, initial_adapter_loaded = _load_initial_trainable_adapter(
+        peft,
+        model,
+        _initial_adapter_dir(manifest),
+    )
 
     if manifest.trainer.backend == TRANSFORMERS_TRAINER_BACKEND:
         model, train_output = _train_with_transformers_trainer(
@@ -103,6 +108,7 @@ def run_sql_sft(
             adapter_dir=adapter_dir,
             training_config=training_config,
             lora_config=lora_config,
+            initial_adapter_loaded=initial_adapter_loaded,
         )
     elif manifest.trainer.backend == TRL_SFT_TRAINER_BACKEND:
         model, train_output = _train_with_trl_sft_trainer(
@@ -113,6 +119,7 @@ def run_sql_sft(
             adapter_dir=adapter_dir,
             training_config=training_config,
             lora_config=lora_config,
+            initial_adapter_loaded=initial_adapter_loaded,
         )
     else:
         raise ValueError(f"unsupported SQL SFT trainer backend: {manifest.trainer.backend}")
@@ -161,12 +168,14 @@ def _train_with_transformers_trainer(
     adapter_dir: Path,
     training_config: dict[str, Any],
     lora_config: dict[str, Any],
+    initial_adapter_loaded: bool,
 ) -> tuple[Any, Any]:
     encoded_examples = [
         tokenize_sql_sft_messages(tokenizer=tokenizer, messages=messages)
         for messages in rendered_messages
     ]
-    model = peft.get_peft_model(model, _peft_lora_config(peft, lora_config))
+    if not initial_adapter_loaded:
+        model = peft.get_peft_model(model, _peft_lora_config(peft, lora_config))
     training_args_kwargs = {
         "output_dir": str(adapter_dir),
         "num_train_epochs": training_config["num_train_epochs"],
@@ -202,6 +211,7 @@ def _train_with_trl_sft_trainer(
     adapter_dir: Path,
     training_config: dict[str, Any],
     lora_config: dict[str, Any],
+    initial_adapter_loaded: bool,
 ) -> tuple[Any, Any]:
     datasets, trl = _import_trl_stack()
     train_dataset = datasets.Dataset.from_list(
@@ -232,13 +242,15 @@ def _train_with_trl_sft_trainer(
     if training_config["save_total_limit"] is not None:
         sft_config_kwargs["save_total_limit"] = training_config["save_total_limit"]
     training_args = trl.SFTConfig(**sft_config_kwargs)
-    trainer = trl.SFTTrainer(
-        model=model,
-        args=training_args,
-        train_dataset=train_dataset,
-        processing_class=_inner_tokenizer(tokenizer),
-        peft_config=_peft_lora_config(peft, lora_config),
-    )
+    trainer_kwargs = {
+        "model": model,
+        "args": training_args,
+        "train_dataset": train_dataset,
+        "processing_class": _inner_tokenizer(tokenizer),
+    }
+    if not initial_adapter_loaded:
+        trainer_kwargs["peft_config"] = _peft_lora_config(peft, lora_config)
+    trainer = trl.SFTTrainer(**trainer_kwargs)
     train_output = trainer.train(resume_from_checkpoint=_resume_checkpoint(adapter_dir, training_config))
     return trainer.model, train_output
 
@@ -342,6 +354,7 @@ def _training_config(manifest: SQLSFTExperimentManifest) -> dict[str, Any]:
         "save_total_limit": manifest.trainer.save_total_limit,
         "auto_resume_from_checkpoint": manifest.trainer.auto_resume_from_checkpoint,
         "prompt_style": manifest.prompt.style,
+        "initial_adapter_dir": manifest.student.initial_adapter_dir,
     }
 
 
@@ -350,6 +363,7 @@ def _lora_config(manifest: SQLSFTExperimentManifest) -> dict[str, Any]:
         "r": manifest.lora.r,
         "lora_alpha": manifest.lora.lora_alpha,
         "lora_dropout": manifest.lora.lora_dropout,
+        "bias": manifest.lora.bias,
         "target_modules": list(manifest.lora.target_modules),
     }
 
@@ -360,8 +374,37 @@ def _peft_lora_config(peft: Any, lora_config: dict[str, Any]) -> Any:
         r=lora_config["r"],
         lora_alpha=lora_config["lora_alpha"],
         lora_dropout=lora_config["lora_dropout"],
+        bias=lora_config["bias"],
         target_modules=lora_config["target_modules"],
     )
+
+
+def _initial_adapter_dir(manifest: SQLSFTExperimentManifest) -> Path | None:
+    if manifest.student.initial_adapter_dir is None:
+        return None
+    return manifest.resolve_workspace_path(manifest.student.initial_adapter_dir)
+
+
+def _load_initial_trainable_adapter(
+    peft: Any,
+    model: Any,
+    adapter_dir: Path | None,
+) -> tuple[Any, bool]:
+    if adapter_dir is None:
+        return model, False
+    if not adapter_dir.exists():
+        raise ValueError(f"initial_adapter_dir does not exist: {adapter_dir}")
+    missing_files = [
+        filename
+        for filename in ("adapter_config.json", "adapter_model.safetensors")
+        if not (adapter_dir / filename).exists()
+    ]
+    if missing_files:
+        raise ValueError(
+            "initial_adapter_dir is missing required PEFT adapter file(s): "
+            + ", ".join(missing_files)
+        )
+    return peft.PeftModel.from_pretrained(model, adapter_dir, is_trainable=True), True
 
 
 def _training_metrics(train_output: Any) -> dict[str, float]:

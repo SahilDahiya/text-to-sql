@@ -1,0 +1,68 @@
+{
+  "schema_version": "sql_sft_experiment:v1",
+  "experiment_id": "qwen35_0_8b__exp041_storefront_v2_from_exp031_sql_adapter",
+  "student": {
+    "model_family": "qwen35",
+    "base_model": "Qwen/Qwen3.5-0.8B-Base",
+    "adapter_name": "qwen35_0_8b_storefront_v2_from_exp031_sql_adapter_exp041",
+    "initial_adapter_dir": "artifacts/sql/qwen35_0_8b__exp031_trl_profile_metadata/adapter"
+  },
+  "training_method": {
+    "method": "lora_sft",
+    "loss_target": "assistant_sql_only",
+    "stage": "direct_sql_sft",
+    "notes": "Warm-start single-DB storefront lab using train_v2. Continues from the completed Exp031 Qwen3.5-0.8B SQL/profile-metadata adapter, then specializes on a broader storefront train split for one epoch to reduce same-DB overfit pressure. Train_v2 keeps the held-out dev/eval files frozen and adds targeted non-heldout examples for table/column ownership, multi-hop joins, anti-joins, HAVING, ratios, shipments, returns, and support tickets. Dev is the quick gate; storefront eval is the held-out same-DB transfer check. This is a local training-science lab, not a benchmark score."
+  },
+  "prompt": {
+    "style": "canonical_chat"
+  },
+  "train_inputs": {
+    "train_datasets": [
+      "datasets/sql/train/storefront_sales_lab_train_v2.jsonl"
+    ],
+    "validation_datasets": []
+  },
+  "trainer": {
+    "backend": "trl_sft_trainer",
+    "num_train_epochs": 1.0,
+    "per_device_train_batch_size": 1,
+    "gradient_accumulation_steps": 1,
+    "learning_rate": 0.0002,
+    "logging_steps": 10,
+    "packing": false,
+    "packing_strategy": "bfd",
+    "max_length": 1536,
+    "bf16": null,
+    "tf32": null,
+    "gradient_checkpointing": false,
+    "save_strategy": "no",
+    "save_steps": null,
+    "save_total_limit": null,
+    "auto_resume_from_checkpoint": false
+  },
+  "lora": {
+    "r": 8,
+    "lora_alpha": 16,
+    "lora_dropout": 0.05,
+    "target_modules": [
+      "q_proj",
+      "k_proj",
+      "v_proj",
+      "o_proj",
+      "gate_proj",
+      "up_proj",
+      "down_proj"
+    ]
+  },
+  "eval_plan": {
+    "smoke_dataset": "datasets/sql/eval/storefront_sales_lab_dev_v1.jsonl",
+    "baseline_results": "results/sql/qwen35_0_8b__exp041_storefront_v2_from_exp031_sql_adapter/base_dev.json",
+    "post_train_results": "results/sql/qwen35_0_8b__exp041_storefront_v2_from_exp031_sql_adapter/adapter_dev.json"
+  },
+  "output_paths": {
+    "experiment_root": "artifacts/sql/qwen35_0_8b__exp041_storefront_v2_from_exp031_sql_adapter",
+    "adapter_dir": "artifacts/sql/qwen35_0_8b__exp041_storefront_v2_from_exp031_sql_adapter/adapter",
+    "train_summary_json": "artifacts/sql/qwen35_0_8b__exp041_storefront_v2_from_exp031_sql_adapter/train_summary.json",
+    "eval_summary_json": "artifacts/sql/qwen35_0_8b__exp041_storefront_v2_from_exp031_sql_adapter/eval_summary.json"
+  }
+}

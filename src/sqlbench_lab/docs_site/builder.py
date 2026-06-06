@@ -47,6 +47,7 @@ class ExperimentRecord:
     manifest_path: str
     base_model: str
     adapter_name: str
+    initial_adapter_dir: str | None
     method: str
     prompt_style: str
     stage: str
@@ -367,6 +368,36 @@ HISTORY_ROWS: list[dict[str, str]] = [
         "focus": "Test whether Qwen2.5-Coder changes the one-shot unseen-DB ceiling without changing the data boundary.",
         "signal": "Exp037 uses Qwen2.5-Coder-1.5B and Exp038 uses Qwen2.5-Coder-3B. Both keep the Exp036 train file, DB-level holdouts, LoRA target modules, 1,536-token budget, and eval gates fixed.",
         "lesson": "Model-family comparisons must change one thing at a time. First measure Exp036 as the Qwen3.5-0.8B baseline, then promote Qwen2.5-Coder only if the same prompt-dev and fresh unseen gates move.",
+    },
+    {
+        "phase": "Exp039-040",
+        "focus": "Build a controlled storefront single-DB lab and compare base-model SFT with a SQL-adapter warm start.",
+        "signal": "Base SFT improved dev but failed most held-out eval cases. Warm-starting from the Exp031 SQL/profile adapter reached 11/12 dev and 4/12 eval, with remaining failures dominated by table ownership and join-path errors.",
+        "lesson": "A prior SQL adapter helps, but a tiny single-DB train split can overfit dev-shaped tasks. The next storefront run should expand train coverage around failure classes while keeping dev/eval frozen.",
+    },
+    {
+        "phase": "Exp041",
+        "focus": "Create storefront train_v2 without touching held-out dev/eval, then run a one-epoch warm-start SFT.",
+        "signal": "Train_v2 expands from 40 to 97 rows with targeted examples for column ownership, multi-hop joins, anti-joins, HAVING, ratios, shipments, returns, and support tickets. Leakage and SQL execution checks passed, but the one-epoch adapter regressed to 6/12 dev and 3/12 held-out eval.",
+        "lesson": "Clean comprehensive data is necessary but not sufficient. One epoch reduced overfit pressure but underfit the storefront mapping; reject this checkpoint and tune the schedule or continue from the stronger Exp040 storefront adapter before claiming improvement.",
+    },
+    {
+        "phase": "Exp042",
+        "focus": "Continue from the stronger Exp040 storefront adapter on train_v2 with a lower learning rate.",
+        "signal": "The correction run trained 97 rows for one epoch at 1e-4 LR and preserved most dev behavior at 10/12, but frozen held-out eval fell to 3/12. Eval failures remained alias/table ownership heavy: six schema errors plus three result mismatches.",
+        "lesson": "Continuation SFT on more same-DB examples still did not teach robust alias ownership. Stop adding same-representation rows as the primary move; the next artifact should add explicit schema-linking or execution-checked candidate selection.",
+    },
+    {
+        "phase": "Exp043-046",
+        "focus": "Tune LoRA adapter shape on the frozen storefront train_v2/dev/eval setup.",
+        "signal": "The r8/alpha16 baseline reached 9/12 dev and 4/12 held-out eval. Moving to r16/alpha32 reached 11/12 dev and 5/12 eval. Raising dropout to 0.10 kept dev at 11/12 and improved held-out eval to 6/12.",
+        "lesson": "LoRA capacity and dropout matter for this one DB, and Exp046 is the best storefront adapter so far. The remaining failures are still alias/table ownership, anti-join syntax, and missing HAVING behavior, so the next improvement should target those composition families or add execution-checked selection.",
+    },
+    {
+        "phase": "Exp048",
+        "focus": "Improve the storefront train data without training on frozen dev/eval answers.",
+        "signal": "Train_v3 keeps the 97 train_v2 rows and adds 33 execution-checked near-neighbor rows for grouped ranking, item-row return ratios, anti-join lists, global HAVING, shipment-return joins, and explicit alias ownership. With the Exp046 r16/alpha32/dropout0.10/bias-none recipe fixed, Exp048 reached 10/12 dev and 10/12 frozen held-out eval; Exp046 was 11/12 dev and 6/12 held-out eval.",
+        "lesson": "Targeted composition-family data can improve same-DB held-out behavior without copying held-out answers. Promote Exp048 over Exp046 for this one-DB lab, but keep investigating the remaining alias ownership miss on returns.return_id and the unresolved-ticket overfilter that invented issue_type = 'support'.",
     },
 ]
 
@@ -916,6 +947,7 @@ def _load_experiment(path: Path) -> ExperimentRecord:
         manifest_path=_repo_path(path),
         base_model=_string(student.get("base_model"), "unknown"),
         adapter_name=_string(student.get("adapter_name"), "unknown"),
+        initial_adapter_dir=_optional_repo_path(student.get("initial_adapter_dir")),
         method=_string(training_method.get("method"), "unknown"),
         prompt_style=_string(prompt.get("style"), "unknown"),
         stage=_string(training_method.get("stage"), "unknown"),
@@ -1060,7 +1092,11 @@ def _render_pipeline() -> str:
 
 
 def _render_training(experiments: list[ExperimentRecord]) -> str:
-    rows = "\n".join(_experiment_summary_row(exp) for exp in experiments[-12:])
+    ledger_experiments = list(experiments[-16:])
+    anchor = next((exp for exp in experiments if "exp028" in exp.experiment_id), None)
+    if anchor is not None and anchor not in ledger_experiments:
+        ledger_experiments = [anchor, *ledger_experiments]
+    rows = "\n".join(_experiment_summary_row(exp) for exp in ledger_experiments)
     body = f"""
         <section class="page-head compact">
           <p class="eyebrow">Training</p>
@@ -1552,6 +1588,7 @@ def _render_experiment(experiment: ExperimentRecord) -> str:
             <table class="key-table">
               <tr><th>Base</th><td>{_escape(experiment.base_model)}</td></tr>
               <tr><th>Adapter</th><td>{_escape(experiment.adapter_name)}</td></tr>
+              <tr><th>Initial adapter</th><td><code>{_escape(experiment.initial_adapter_dir or 'none')}</code></td></tr>
               <tr><th>Method</th><td>{_escape(experiment.method)}</td></tr>
               <tr><th>Stage</th><td>{_escape(experiment.stage)}</td></tr>
               <tr><th>Prompt</th><td>{_escape(experiment.prompt_style)}</td></tr>
@@ -2076,6 +2113,15 @@ def _repo_path(path: Path) -> str:
         return str(path.relative_to(WORKSPACE_ROOT))
     except ValueError:
         return str(path)
+
+
+def _optional_repo_path(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    path = Path(value)
+    if not path.is_absolute():
+        return value
+    return _repo_path(path)
 
 
 def _escape(value: object) -> str:
