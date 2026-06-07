@@ -34,6 +34,9 @@ from sqlbench_lab.sql import (
     load_sql_train_examples,
     record_sql_prompt_candidate,
     report_sql_prompt_lengths,
+    build_openai_completion_predictor,
+    build_vllm_serve_command,
+    run_openai_completion_load_test,
     run_sql_candidate_pool_eval,
     run_sql_eval,
     run_sql_eval_with_repair,
@@ -1092,6 +1095,195 @@ class SQLPipelineTests(unittest.TestCase):
 
         self.assertEqual(summary.passed_count, 2)
         self.assertTrue(result_path.exists())
+
+    def test_openai_completion_predictor_preserves_repo_sft_prompt(self) -> None:
+        cases = load_sql_eval_cases("datasets/sql/smoke/sql_smoke_v1.jsonl")
+        calls: list[dict[str, object]] = []
+
+        def transport(url, headers, payload, timeout_seconds):
+            calls.append(
+                {
+                    "url": url,
+                    "headers": headers,
+                    "payload": payload,
+                    "timeout_seconds": timeout_seconds,
+                }
+            )
+            self.assertIn("<|system|>", payload["prompt"])
+            self.assertIn("Question:", payload["prompt"])
+            return {"choices": [{"text": "```sql\nSELECT employees.name FROM employees;\n```"}]}
+
+        predictor = build_openai_completion_predictor(
+            "experiments/sql/qwen35_0_8b__exp001_sql_sft.json",
+            model_variant="adapter",
+            base_url="http://127.0.0.1:8000/",
+            model="storefront-sql",
+            max_new_tokens=64,
+            timeout_seconds=7.5,
+            api_key="secret",
+            transport=transport,
+        )
+
+        predicted_sql = predictor(cases[0])
+
+        self.assertEqual(predicted_sql, "SELECT employees.name FROM employees;")
+        self.assertEqual(calls[0]["url"], "http://127.0.0.1:8000/v1/completions")
+        self.assertEqual(calls[0]["headers"]["Authorization"], "Bearer secret")
+        self.assertEqual(calls[0]["payload"]["model"], "storefront-sql")
+        self.assertEqual(calls[0]["payload"]["max_tokens"], 64)
+        self.assertEqual(calls[0]["timeout_seconds"], 7.5)
+
+    def test_run_sql_eval_can_score_openai_completion_endpoint(self) -> None:
+        result_path = (
+            WORKSPACE_ROOT
+            / "results/sql/qwen35_0_8b__exp001_sql_sft/adapter__sql_smoke_v1__remote_unit.json"
+        )
+        if result_path.exists():
+            result_path.unlink()
+
+        def transport(url, headers, payload, timeout_seconds):
+            if "Engineering department" in payload["prompt"]:
+                text = (
+                    "SELECT employees.name FROM employees JOIN departments "
+                    "ON employees.department_id = departments.id "
+                    "WHERE departments.name = 'Engineering';"
+                )
+            else:
+                text = (
+                    "SELECT departments.name, AVG(employees.salary) AS average_salary "
+                    "FROM departments JOIN employees ON employees.department_id = departments.id "
+                    "GROUP BY departments.name;"
+                )
+            return {"choices": [{"text": text}]}
+
+        predictor = build_openai_completion_predictor(
+            "experiments/sql/qwen35_0_8b__exp001_sql_sft.json",
+            model_variant="adapter",
+            base_url="http://127.0.0.1:8000",
+            model="sql-lora",
+            transport=transport,
+        )
+        summary = run_sql_eval(
+            "experiments/sql/qwen35_0_8b__exp001_sql_sft.json",
+            model_variant="adapter",
+            eval_dataset="datasets/sql/smoke/sql_smoke_v1.jsonl",
+            result_label="remote_unit",
+            predictor=predictor,
+        )
+
+        self.assertEqual(summary.passed_count, 2)
+        self.assertTrue(result_path.exists())
+
+    def test_build_vllm_serve_command_includes_lora_adapter(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            adapter_dir = root / "adapter"
+            adapter_dir.mkdir()
+            manifest_path = root / "manifest.json"
+            manifest_path.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "sql_sft_experiment:v1",
+                        "experiment_id": "serve_test",
+                        "student": {
+                            "model_family": "qwen35",
+                            "base_model": "Qwen/Qwen3.5-0.8B-Base",
+                            "adapter_name": "serve_test_adapter",
+                        },
+                        "training_method": {
+                            "method": "lora_sft",
+                            "loss_target": "assistant_sql_only",
+                            "stage": "direct_sql_sft",
+                            "notes": None,
+                        },
+                        "prompt": {"style": "canonical_chat"},
+                        "train_inputs": {
+                            "train_datasets": ["datasets/sql/train/qwen35_0_8b_direct_sql_seed_v1.jsonl"],
+                            "validation_datasets": [],
+                        },
+                        "trainer": {
+                            "backend": "trl_sft_trainer",
+                            "num_train_epochs": 1.0,
+                            "per_device_train_batch_size": 1,
+                            "gradient_accumulation_steps": 1,
+                            "learning_rate": 0.0002,
+                            "logging_steps": 1,
+                        },
+                        "lora": {
+                            "r": 16,
+                            "lora_alpha": 32,
+                            "lora_dropout": 0.1,
+                            "bias": "none",
+                            "target_modules": ["q_proj", "v_proj"],
+                        },
+                        "eval_plan": {
+                            "smoke_dataset": "datasets/sql/smoke/sql_smoke_v1.jsonl",
+                            "baseline_results": "results/sql/serve_test/base.json",
+                            "post_train_results": "results/sql/serve_test/adapter.json",
+                        },
+                        "output_paths": {
+                            "experiment_root": str(root),
+                            "adapter_dir": str(adapter_dir),
+                            "train_summary_json": str(root / "train_summary.json"),
+                            "eval_summary_json": str(root / "eval_summary.json"),
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            command = build_vllm_serve_command(
+                manifest_path,
+                model_variant="adapter",
+                max_model_len=1536,
+                gpu_memory_utilization=0.75,
+                enforce_eager=True,
+                flashinfer_autotune=False,
+                attention_backend="TRITON_ATTN",
+                served_model_name="storefront-sql",
+                lora_name="storefront-sql",
+            )
+
+        self.assertIn("--language-model-only", command.command)
+        self.assertIn("--enable-lora", command.command)
+        self.assertIn("--max-lora-rank", command.command)
+        self.assertIn("--gpu-memory-utilization", command.command)
+        self.assertIn("0.75", command.command)
+        self.assertIn("--enforce-eager", command.command)
+        self.assertIn("--no-enable-flashinfer-autotune", command.command)
+        self.assertIn("--attention-backend", command.command)
+        self.assertIn("TRITON_ATTN", command.command)
+        self.assertIn("16", command.command)
+        self.assertTrue(any(part.startswith("storefront-sql=") for part in command.command))
+        self.assertIn("--served-model-name", command.command)
+
+    def test_openai_completion_load_test_writes_latency_summary(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            output_path = Path(tmp_dir) / "load.json"
+
+            def transport(url, headers, payload, timeout_seconds):
+                return {"choices": [{"text": "SELECT 1;"}]}
+
+            summary = run_openai_completion_load_test(
+                "experiments/sql/qwen35_0_8b__exp001_sql_sft.json",
+                model_variant="adapter",
+                eval_dataset="datasets/sql/smoke/sql_smoke_v1.jsonl",
+                base_url="http://127.0.0.1:8000",
+                model="sql-lora",
+                request_count=3,
+                concurrency=2,
+                max_new_tokens=8,
+                output_path=output_path,
+                transport=transport,
+            )
+
+            self.assertEqual(summary.request_count, 3)
+            self.assertEqual(summary.concurrency, 2)
+            self.assertEqual(summary.success_count, 3)
+            self.assertIsNotNone(summary.p50_latency_seconds)
+            self.assertTrue(output_path.exists())
+            payload = json.loads(output_path.read_text(encoding="utf-8"))
+            self.assertEqual(payload["openai_model"], "sql-lora")
 
     def test_report_sql_prompt_lengths_writes_dataset_statistics(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

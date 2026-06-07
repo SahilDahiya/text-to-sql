@@ -399,6 +399,75 @@ HISTORY_ROWS: list[dict[str, str]] = [
         "signal": "Train_v3 keeps the 97 train_v2 rows and adds 33 execution-checked near-neighbor rows for grouped ranking, item-row return ratios, anti-join lists, global HAVING, shipment-return joins, and explicit alias ownership. With the Exp046 r16/alpha32/dropout0.10/bias-none recipe fixed, Exp048 reached 10/12 dev and 10/12 frozen held-out eval; Exp046 was 11/12 dev and 6/12 held-out eval.",
         "lesson": "Targeted composition-family data can improve same-DB held-out behavior without copying held-out answers. Promote Exp048 over Exp046 for this one-DB lab, but keep investigating the remaining alias ownership miss on returns.return_id and the unresolved-ticket overfilter that invented issue_type = 'support'.",
     },
+    {
+        "phase": "Exp048 vLLM serving",
+        "focus": "Serve the promoted storefront adapter through an OpenAI-compatible vLLM endpoint.",
+        "signal": "vLLM 0.22.1 can start locally on the WSL RTX 2080 Ti with gpu_memory_utilization=0.75, eager mode, FlashInfer sampler disabled, FlashInfer autotune disabled, and TRITON_ATTN. The frozen held-out endpoint eval completed but scored 9/12, below the local HF 10/12. Stress probes with max_new_tokens=128 succeeded through c160: c8 was 32/32 at 0.5826 rps with p95 18.3s, c64 was 64/64 at 1.8890 rps with p95 32.7s, and c160 was 160/160 at 2.3994 rps with p95 63.4s.",
+        "lesson": "Serving is mechanically wired but not promoted. The extra vLLM miss is a deterministic alias ownership slip in eval_002, while eval_003 and eval_006 match the local HF failures. Treat vLLM backend parity as an eval gate, not a deployment afterthought. For this local GPU, admitted concurrency is not the same as useful interactive concurrency; use c8-c16 for interactive probes and c64+ only for batch/background work.",
+    },
+]
+
+SERVING_STRESS_ROWS: list[dict[str, str]] = [
+    {"concurrency": "1", "requests": "4", "success": "4/4", "rps": "0.0784", "p50": "14.41s", "p95": "16.98s", "max": "16.98s"},
+    {"concurrency": "2", "requests": "8", "success": "8/8", "rps": "0.1756", "p50": "11.43s", "p95": "15.05s", "max": "15.05s"},
+    {"concurrency": "4", "requests": "16", "success": "16/16", "rps": "0.3003", "p50": "12.36s", "p95": "17.69s", "max": "18.71s"},
+    {"concurrency": "8", "requests": "32", "success": "32/32", "rps": "0.5826", "p50": "11.42s", "p95": "18.33s", "max": "19.36s"},
+    {"concurrency": "16", "requests": "32", "success": "32/32", "rps": "0.6612", "p50": "21.12s", "p95": "34.93s", "max": "36.08s"},
+    {"concurrency": "32", "requests": "32", "success": "32/32", "rps": "1.4934", "p50": "14.76s", "p95": "20.50s", "max": "21.25s"},
+    {"concurrency": "64", "requests": "64", "success": "64/64", "rps": "1.8890", "p50": "24.36s", "p95": "32.70s", "max": "33.81s"},
+    {"concurrency": "128", "requests": "128", "success": "128/128", "rps": "2.2966", "p50": "43.22s", "p95": "53.25s", "max": "55.16s"},
+    {"concurrency": "160", "requests": "160", "success": "160/160", "rps": "2.3994", "p50": "53.90s", "p95": "63.44s", "max": "65.91s"},
+]
+
+GPT51_COST_ROWS: list[dict[str, str]] = [
+    {
+        "scenario": "Lean SQL",
+        "tokens": "800 input + 300 output/reasoning",
+        "cost_10k_week": "$40",
+        "cost_10k_month": "$173",
+        "cost_100k_week": "$400",
+        "cost_100k_month": "$1,732",
+    },
+    {
+        "scenario": "Typical SQL",
+        "tokens": "1,500 input + 600 output/reasoning",
+        "cost_10k_week": "$78.75",
+        "cost_10k_month": "$341",
+        "cost_100k_week": "$787.50",
+        "cost_100k_month": "$3,410",
+    },
+    {
+        "scenario": "Heavy schema/reasoning",
+        "tokens": "3,000 input + 1,000 output/reasoning",
+        "cost_10k_week": "$137.50",
+        "cost_10k_month": "$595",
+        "cost_100k_week": "$1,375",
+        "cost_100k_month": "$5,954",
+    },
+    {
+        "scenario": "Typical with 70% input cached",
+        "tokens": "1,500 input + 600 output/reasoning",
+        "cost_10k_week": "$66.94",
+        "cost_10k_month": "$290",
+        "cost_100k_week": "$669",
+        "cost_100k_month": "$2,898",
+    },
+    {
+        "scenario": "Heavy with 70% input cached",
+        "tokens": "3,000 input + 1,000 output/reasoning",
+        "cost_10k_week": "$113.88",
+        "cost_10k_month": "$493",
+        "cost_100k_week": "$1,139",
+        "cost_100k_month": "$4,931",
+    },
+]
+
+SELF_HOST_COST_ROWS: list[dict[str, str]] = [
+    {"setup": "RunPod L4 24GB, 1 replica, 24/7", "weekly": "$65.52", "monthly": "$284", "read": "Cheapest simple always-on option; provider availability varies."},
+    {"setup": "RunPod L4 24GB, 2 replicas, 24/7", "weekly": "$131.04", "monthly": "$568", "read": "Better deploy safety and peak latency headroom."},
+    {"setup": "AWS g6.xlarge L4, 1 replica, 24/7", "weekly": "~$134.40", "monthly": "~$582", "read": "More managed cloud posture at higher cost."},
+    {"setup": "AWS g6.xlarge L4, 2 replicas, 24/7", "weekly": "~$268.80", "monthly": "~$1,164", "read": "Production-style redundancy, still cheaper than GPT-5.1 at 100k/week."},
+    {"setup": "RunPod L4 peak-only 30h/week", "weekly": "$11.70", "monthly": "$51", "read": "Only acceptable when cold starts and scheduled windows are fine."},
 ]
 
 RUNBOOK_ROWS: list[dict[str, str]] = [
@@ -449,6 +518,30 @@ RUNBOOK_ROWS: list[dict[str, str]] = [
         "command": "uv run --group training --group observability python -m sqlbench_lab.cli sql eval --manifest experiments/sql/<experiment>.json --model adapter --dataset datasets/sql/eval/<eval>.jsonl --mlflow",
         "output": "results/sql/<experiment>/adapter__*.json",
         "gate": "Result-equivalence score recorded as local, not official.",
+    },
+    {
+        "task": "Prepare local vLLM runtime env",
+        "command": "uv python install 3.12 && export CPATH=$HOME/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/include/python3.12 CUDA_HOME=$PWD/.venv/lib/python3.12/site-packages/nvidia/cu13 PATH=$PWD/.venv/lib/python3.12/site-packages/nvidia/cu13/bin:$PATH VLLM_USE_FLASHINFER_SAMPLER=0",
+        "output": "Python headers and bundled CUDA compiler are visible to vLLM JIT paths.",
+        "gate": "Required on the local WSL RTX 2080 Ti box; cloud hosts with aligned system CUDA may not need these exports.",
+    },
+    {
+        "task": "Print vLLM serve command",
+        "command": "uv run python -m sqlbench_lab.cli sql vllm-serve-command --manifest experiments/sql/qwen35_0_8b__exp048_storefront_v3_lora_r16_a32_d010.json --model adapter --port 8001 --served-model-name storefront-sql --lora-name storefront-sql --max-model-len 1536 --gpu-memory-utilization 0.75 --enforce-eager --no-enable-flashinfer-autotune --attention-backend TRITON_ATTN",
+        "output": "vllm serve Qwen/Qwen3.5-0.8B-Base ... --attention-backend TRITON_ATTN --enable-lora ...",
+        "gate": "Serve base plus the Exp048 LoRA adapter; do not merge or quantize until endpoint eval passes.",
+    },
+    {
+        "task": "Evaluate vLLM endpoint",
+        "command": "uv run python -m sqlbench_lab.cli sql eval --manifest experiments/sql/qwen35_0_8b__exp048_storefront_v3_lora_r16_a32_d010.json --model adapter --dataset datasets/sql/eval/storefront_sales_lab_eval_v1.jsonl --openai-base-url http://127.0.0.1:8001 --openai-model storefront-sql --result-label vllm_eval",
+        "output": "results/sql/qwen35_0_8b__exp048_storefront_v3_lora_r16_a32_d010/adapter__storefront_sales_lab_eval_v1__vllm_eval.json",
+        "gate": "Must match or beat the local Exp048 held-out gate of 10/12 before treating vLLM serving as promoted.",
+    },
+    {
+        "task": "Probe endpoint concurrency",
+        "command": "uv run python -m sqlbench_lab.cli sql openai-load-test --manifest experiments/sql/qwen35_0_8b__exp048_storefront_v3_lora_r16_a32_d010.json --model adapter --dataset datasets/sql/eval/storefront_sales_lab_eval_v1.jsonl --openai-base-url http://127.0.0.1:8001 --openai-model storefront-sql --requests 32 --concurrency 8 --output artifacts/sql/qwen35_0_8b__exp048_storefront_v3_lora_r16_a32_d010/vllm_load_c8.json",
+        "output": "Latency/RPS JSON",
+        "gate": "Record p50, p95, success count, and request rate before increasing concurrency.",
     },
     {
         "task": "Report token lengths",
@@ -793,7 +886,7 @@ FRAMEWORK_ROWS: list[dict[str, str]] = [
         "framework": "vLLM",
         "source": "https://docs.vllm.ai/en/v0.7.0/serving/openai_compatible_server.html",
         "role": "High-throughput OpenAI-compatible serving and LoRA module serving.",
-        "repo_use": "Future eval acceleration and LiveSQLBench serving path.",
+        "repo_use": "Serve Exp048 through the OpenAI-compatible completions API, then score the same frozen SQL eval files with --openai-base-url before promotion. Local WSL RTX 2080 Ti startup works with eager mode, capped GPU memory, FlashInfer sampler disabled, and TRITON_ATTN; do not promote until the endpoint eval also passes.",
     },
     {
         "framework": "MLflow",
@@ -865,6 +958,7 @@ def build_docs_site(output_dir: str | Path = "site") -> DocsSiteSummary:
         "learnings.html": _render_learnings(),
         "research.html": _render_research(),
         "runbook.html": _render_runbook(),
+        "serving.html": _render_serving(),
         "evaluation.html": _render_evaluation(experiments),
         "livesqlbench.html": _render_livesqlbench(),
         "observability.html": _render_observability(experiments),
@@ -1298,6 +1392,193 @@ def _render_runbook() -> str:
         </section>
     """
     return _page("Runbook", "runbook", body)
+
+
+def _render_serving() -> str:
+    stress_rows = "\n".join(
+        f"""
+        <tr>
+          <td><strong>c{_escape(row['concurrency'])}</strong></td>
+          <td>{_escape(row['requests'])}</td>
+          <td>{_escape(row['success'])}</td>
+          <td>{_escape(row['rps'])}</td>
+          <td>{_escape(row['p50'])}</td>
+          <td>{_escape(row['p95'])}</td>
+          <td>{_escape(row['max'])}</td>
+        </tr>
+        """
+        for row in SERVING_STRESS_ROWS
+    )
+    gpt_cost_rows = "\n".join(
+        f"""
+        <tr>
+          <td><strong>{_escape(row['scenario'])}</strong></td>
+          <td>{_escape(row['tokens'])}</td>
+          <td>{_escape(row['cost_10k_week'])}</td>
+          <td>{_escape(row['cost_10k_month'])}</td>
+          <td>{_escape(row['cost_100k_week'])}</td>
+          <td>{_escape(row['cost_100k_month'])}</td>
+        </tr>
+        """
+        for row in GPT51_COST_ROWS
+    )
+    self_host_rows = "\n".join(
+        f"""
+        <tr>
+          <td><strong>{_escape(row['setup'])}</strong></td>
+          <td>{_escape(row['weekly'])}</td>
+          <td>{_escape(row['monthly'])}</td>
+          <td>{_escape(row['read'])}</td>
+        </tr>
+        """
+        for row in SELF_HOST_COST_ROWS
+    )
+    body = f"""
+        <section class="page-head compact">
+          <p class="eyebrow">Serving</p>
+          <h1>Deployment quality, concurrency, and cost are separate gates.</h1>
+          <p class="lead">Exp048 is the current best local adapter, but the OpenAI-compatible vLLM endpoint is not promoted until endpoint quality matches local HF quality.</p>
+        </section>
+        <section class="grid three">
+          {_metric_card("Local HF quality", "10/12", "Exp048 frozen same-DB held-out eval")}
+          {_metric_card("vLLM endpoint quality", "9/12", "One extra alias ownership miss versus local HF")}
+          {_metric_card("Local stress ceiling", "160/160", "Accepted concurrent clients; p95 was 63.44s")}
+        </section>
+        <section class="grid two">
+          <article class="panel">
+            <h2>Promotion Boundary</h2>
+            <p>The served endpoint is mechanically working, but it is not the blessed deployment path. The vLLM backend must match or beat the local HF frozen eval score before product promotion.</p>
+            <div class="callout">Do not claim production readiness from transport success alone. Quality parity, latency, and cost must be recorded as separate measurements.</div>
+          </article>
+          <article class="panel">
+            <h2>Local Runtime Shape</h2>
+            <table class="key-table">
+              <tr><th>GPU</th><td>RTX 2080 Ti, WSL, fp16 fallback.</td></tr>
+              <tr><th>vLLM</th><td>0.22.1 with TRITON_ATTN and eager mode.</td></tr>
+              <tr><th>KV cache</th><td>230,912 tokens; reported 150.33x at 1,536 tokens/request.</td></tr>
+              <tr><th>Practical read</th><td>c8-c16 for interactive probes; c64+ only for batch/background traffic.</td></tr>
+            </table>
+          </article>
+        </section>
+        <section class="panel full">
+          <h2>Local Adapter Inference</h2>
+          <p>Start the Exp048 adapter as an OpenAI-compatible vLLM completions endpoint, then send the same rendered SQL prompt shape used by repo eval.</p>
+          <pre><code>uv python install 3.12
+export CPATH=$HOME/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/include/python3.12
+export CUDA_HOME=$PWD/.venv/lib/python3.12/site-packages/nvidia/cu13
+export PATH=$PWD/.venv/lib/python3.12/site-packages/nvidia/cu13/bin:$PATH
+export VLLM_USE_FLASHINFER_SAMPLER=0
+
+uv run --group serving vllm serve Qwen/Qwen3.5-0.8B-Base \\
+  --host 127.0.0.1 \\
+  --port 8001 \\
+  --max-model-len 1536 \\
+  --gpu-memory-utilization 0.75 \\
+  --enforce-eager \\
+  --no-enable-flashinfer-autotune \\
+  --attention-backend TRITON_ATTN \\
+  --language-model-only \\
+  --served-model-name storefront-sql \\
+  --enable-lora \\
+  --max-lora-rank 16 \\
+  --lora-modules storefront-sql=$PWD/artifacts/sql/qwen35_0_8b__exp048_storefront_v3_lora_r16_a32_d010/adapter</code></pre>
+          <pre><code>curl http://127.0.0.1:8001/v1/completions \\
+  -H 'Content-Type: application/json' \\
+  -d '{{
+    "model": "storefront-sql",
+    "prompt": "&lt;|system|&gt;You are a precise text-to-SQL model. Return only the final SQL statement.&lt;|user|&gt;Dialect:\\nSQLite\\n\\nSchema:\\n...\\n\\nQuestion:\\n...&lt;|assistant|&gt;",
+    "max_tokens": 128,
+    "temperature": 0
+  }}'</code></pre>
+          <div class="callout">For application traffic, build prompts with the repo renderer rather than hand-writing chat markers. The curl example is only the wire-format shape.</div>
+        </section>
+        <section class="panel full">
+          <h2>Raw Serving Notebook</h2>
+          <p>The runnable notebook <code>notebooks/sql_local_serving_kv_cache_walkthrough.ipynb</code> walks one held-out storefront case from manifest to vLLM command, rendered prompt, raw completion request, execution scoring, endpoint gates, and the local vLLM KV-cache allocation functions.</p>
+          <pre><code>uv run --with jupyter jupyter lab notebooks/sql_local_serving_kv_cache_walkthrough.ipynb</code></pre>
+          <div class="callout">The server-start cell is guarded by <code>START_VLLM_SERVER = False</code> so opening the notebook does not accidentally launch a long-running vLLM process.</div>
+        </section>
+        <section class="panel full">
+          <h2>Repo Endpoint Evaluation</h2>
+          <p>Use the CLI path below to score the running endpoint with frozen eval files. Always set a result label so remote endpoint output cannot overwrite local HF eval artifacts.</p>
+          <pre><code>uv run python -m sqlbench_lab.cli sql eval \\
+  --manifest experiments/sql/qwen35_0_8b__exp048_storefront_v3_lora_r16_a32_d010.json \\
+  --model adapter \\
+  --dataset datasets/sql/eval/storefront_sales_lab_eval_v1.jsonl \\
+  --openai-base-url http://127.0.0.1:8001 \\
+  --openai-model storefront-sql \\
+  --result-label vllm_eval \\
+  --max-new-tokens 128</code></pre>
+          <pre><code>uv run python -m sqlbench_lab.cli sql openai-load-test \\
+  --manifest experiments/sql/qwen35_0_8b__exp048_storefront_v3_lora_r16_a32_d010.json \\
+  --model adapter \\
+  --dataset datasets/sql/eval/storefront_sales_lab_eval_v1.jsonl \\
+  --openai-base-url http://127.0.0.1:8001 \\
+  --openai-model storefront-sql \\
+  --requests 32 \\
+  --concurrency 8 \\
+  --output artifacts/sql/qwen35_0_8b__exp048_storefront_v3_lora_r16_a32_d010/vllm_load_c8.json \\
+  --max-new-tokens 128</code></pre>
+        </section>
+        <section class="panel full">
+          <h2>GPT-5.1 API Inference</h2>
+          <p>Use GPT-5.1 medium reasoning when accuracy is worth token-priced inference and no local adapter parity risk is acceptable. Keep the stable system prompt and schema prefix first to improve prompt-cache hits.</p>
+          <pre><code>curl https://api.openai.com/v1/responses \\
+  -H "Authorization: Bearer $OPENAI_API_KEY" \\
+  -H "Content-Type: application/json" \\
+  -d '{{
+    "model": "gpt-5.1",
+    "reasoning": {{"effort": "medium"}},
+    "text": {{"verbosity": "low"}},
+    "input": [
+      {{
+        "role": "system",
+        "content": "You are a precise text-to-SQL model. Return only the final SQL statement. Use the declared SQL dialect and stay grounded in the provided schema."
+      }},
+      {{
+        "role": "user",
+        "content": "Dialect:\\nSQLite\\n\\nDatabase ID:\\nstorefront_sales\\n\\nSchema:\\n...\\n\\nQuestion:\\n..."
+      }}
+    ],
+    "max_output_tokens": 512
+  }}'</code></pre>
+          <div class="callout">For cost control, set a tight max_output_tokens ceiling, keep n=1, avoid unnecessary tools, and record input, cached input, output, and reasoning output tokens per request.</div>
+        </section>
+        <section class="panel full">
+          <h2>Local vLLM Stress Test</h2>
+          <table class="dense-table">
+            <thead><tr><th>Concurrency</th><th>Requests</th><th>Success</th><th>RPS</th><th>p50</th><th>p95</th><th>Max</th></tr></thead>
+            <tbody>{stress_rows}</tbody>
+          </table>
+        </section>
+        <section class="panel full">
+          <h2>GPT-5.1 Medium Reasoning Cost</h2>
+          <p>Rates checked from OpenAI API pricing: GPT-5.1 input $1.25/M tokens, cached input $0.125/M tokens, output $10/M tokens. Medium reasoning cost is modeled as additional output tokens because completion tokens include visible answer and reasoning budget.</p>
+          <table class="dense-table">
+            <thead><tr><th>Scenario</th><th>Token Budget / Query</th><th>10k / Week</th><th>10k / Month</th><th>100k / Week</th><th>100k / Month</th></tr></thead>
+            <tbody>{gpt_cost_rows}</tbody>
+          </table>
+        </section>
+        <section class="panel full">
+          <h2>Self-Hosted Cost Comparison</h2>
+          <p>At 100k queries/week, query volume is still modest: about 0.165 qps average. Self-hosting cost is mostly GPU uptime, not token count, so one or two L4-class replicas can be materially cheaper if model quality is good enough.</p>
+          <table class="dense-table">
+            <thead><tr><th>Setup</th><th>Weekly</th><th>Monthly</th><th>Read</th></tr></thead>
+            <tbody>{self_host_rows}</tbody>
+          </table>
+        </section>
+        <section class="grid two">
+          <article class="panel">
+            <h2>10k Queries / Week</h2>
+            <p>GPT-5.1 is financially reasonable at this volume: typical SQL is roughly $79/week, while always-on self-hosting is roughly $65-$170/week depending on provider. Pick the better quality path first.</p>
+          </article>
+          <article class="panel">
+            <h2>100k Queries / Week</h2>
+            <p>Self-hosting becomes economically attractive: GPT-5.1 typical SQL is roughly $3.4k/month, while one to two L4 replicas are roughly $284-$1.2k/month before engineering and on-call cost.</p>
+          </article>
+        </section>
+    """
+    return _page("Serving", "serving", body)
 
 
 def _render_evaluation(experiments: list[ExperimentRecord]) -> str:
@@ -1807,6 +2088,7 @@ def _nav(active: str, prefix: str) -> str:
         ("learnings", "Learnings", "learnings.html"),
         ("research", "Research", "research.html"),
         ("runbook", "Runbook", "runbook.html"),
+        ("serving", "Serving", "serving.html"),
         ("evaluation", "Evaluation", "evaluation.html"),
         ("livesqlbench", "LiveSQLBench", "livesqlbench.html"),
         ("observability", "Observability", "observability.html"),

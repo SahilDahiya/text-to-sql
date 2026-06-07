@@ -22,6 +22,9 @@ from .sql import (
     load_sql_train_examples,
     record_sql_prompt_candidate,
     report_sql_prompt_lengths,
+    build_openai_completion_predictor,
+    build_vllm_serve_command,
+    run_openai_completion_load_test,
     run_sql_candidate_pool_eval,
     run_sql_eval,
     run_sql_eval_with_repair,
@@ -153,9 +156,68 @@ def main(argv: list[str] | None = None) -> int:
     eval_sql.add_argument("--max-new-tokens", type=int, default=128, help="Maximum generated SQL tokens")
     eval_sql.add_argument("--system-prompt-file", help="Override eval system prompt from a text file")
     eval_sql.add_argument("--result-label", help="Append a stable label to the eval result file")
+    eval_sql.add_argument("--openai-base-url", help="Use an OpenAI-compatible /v1/completions endpoint")
+    eval_sql.add_argument("--openai-model", help="Model name to send to the OpenAI-compatible endpoint")
+    eval_sql.add_argument("--openai-api-key", help="Optional bearer token for the OpenAI-compatible endpoint")
+    eval_sql.add_argument("--openai-timeout", type=float, default=60.0, help="Remote completion timeout in seconds")
     eval_sql.add_argument("--mlflow", action="store_true", help="Log the eval run to MLflow")
     eval_sql.add_argument("--mlflow-tracking-uri", help="Override the MLflow tracking URI")
     eval_sql.add_argument("--mlflow-experiment", help="Override the MLflow experiment name")
+
+    vllm_command = sql_subparsers.add_parser("vllm-serve-command", help="Print a vLLM serve command for a manifest")
+    vllm_command.add_argument("--manifest", required=True, help="Path to SQL SFT manifest JSON")
+    vllm_command.add_argument("--model", choices=["base", "adapter"], required=True, help="Model variant to serve")
+    vllm_command.add_argument("--host", default="127.0.0.1", help="vLLM bind host")
+    vllm_command.add_argument("--port", type=int, default=8000, help="vLLM bind port")
+    vllm_command.add_argument("--max-model-len", type=int, default=1536, help="vLLM max model length")
+    vllm_command.add_argument(
+        "--gpu-memory-utilization",
+        type=float,
+        help="Optional vLLM GPU memory utilization cap, for example 0.75 on smaller GPUs",
+    )
+    vllm_command.add_argument("--enforce-eager", action="store_true", help="Add vLLM --enforce-eager")
+    flashinfer_autotune_group = vllm_command.add_mutually_exclusive_group()
+    flashinfer_autotune_group.add_argument(
+        "--enable-flashinfer-autotune",
+        dest="flashinfer_autotune",
+        action="store_true",
+        help="Add vLLM --enable-flashinfer-autotune",
+    )
+    flashinfer_autotune_group.add_argument(
+        "--no-enable-flashinfer-autotune",
+        dest="flashinfer_autotune",
+        action="store_false",
+        help="Add vLLM --no-enable-flashinfer-autotune",
+    )
+    vllm_command.set_defaults(flashinfer_autotune=None)
+    vllm_command.add_argument(
+        "--attention-backend",
+        help="Optional vLLM attention backend, for example TRITON_ATTN when FlashInfer JIT fails",
+    )
+    vllm_command.add_argument("--served-model-name", help="Optional vLLM served model name")
+    vllm_command.add_argument("--lora-name", help="Optional LoRA module name for adapter serving")
+    vllm_command.add_argument(
+        "--no-language-model-only",
+        action="store_true",
+        help="Do not add --language-model-only for hybrid Qwen checkpoints",
+    )
+
+    openai_load = sql_subparsers.add_parser(
+        "openai-load-test",
+        help="Run a small OpenAI-compatible completions latency/concurrency probe",
+    )
+    openai_load.add_argument("--manifest", required=True, help="Path to SQL SFT manifest JSON")
+    openai_load.add_argument("--model", choices=["base", "adapter"], required=True, help="Model variant to label")
+    openai_load.add_argument("--dataset", help="Eval dataset used as prompt source")
+    openai_load.add_argument("--openai-base-url", required=True, help="OpenAI-compatible base URL")
+    openai_load.add_argument("--openai-model", required=True, help="Model name sent to the endpoint")
+    openai_load.add_argument("--openai-api-key", help="Optional bearer token")
+    openai_load.add_argument("--openai-timeout", type=float, default=60.0, help="Remote completion timeout in seconds")
+    openai_load.add_argument("--max-new-tokens", type=int, default=128, help="Maximum generated SQL tokens")
+    openai_load.add_argument("--requests", type=int, default=8, help="Total request count")
+    openai_load.add_argument("--concurrency", type=int, default=4, help="Concurrent worker count")
+    openai_load.add_argument("--system-prompt-file", help="Override eval system prompt from a text file")
+    openai_load.add_argument("--output", required=True, help="Output JSON path")
 
     eval_candidates = sql_subparsers.add_parser(
         "eval-candidates",
@@ -477,6 +539,22 @@ def _run_sql_command(args: argparse.Namespace) -> int:
         )
         return 0
     if args.sql_command == "eval":
+        if bool(args.openai_base_url) != bool(args.openai_model):
+            raise ValueError("--openai-base-url and --openai-model must be provided together")
+        predictor = None
+        if args.openai_base_url:
+            if not args.result_label:
+                raise ValueError("remote OpenAI eval requires --result-label to avoid overwriting local eval output")
+            predictor = build_openai_completion_predictor(
+                args.manifest,
+                model_variant=args.model,
+                base_url=args.openai_base_url,
+                model=args.openai_model,
+                max_new_tokens=args.max_new_tokens,
+                timeout_seconds=args.openai_timeout,
+                api_key=args.openai_api_key,
+                system_prompt=_read_prompt_file(args.system_prompt_file),
+            )
         summary = run_sql_eval(
             args.manifest,
             model_variant=args.model,
@@ -484,6 +562,7 @@ def _run_sql_command(args: argparse.Namespace) -> int:
             max_new_tokens=args.max_new_tokens,
             system_prompt=_read_prompt_file(args.system_prompt_file),
             result_label=args.result_label,
+            predictor=predictor,
             log_mlflow=args.mlflow or None,
             mlflow_tracking_uri=args.mlflow_tracking_uri,
             mlflow_experiment=args.mlflow_experiment,
@@ -493,6 +572,47 @@ def _run_sql_command(args: argparse.Namespace) -> int:
             f"{summary.experiment_id} model={summary.model_variant} "
             f"passed={summary.passed_count}/{summary.case_count} "
             f"pass_rate={summary.pass_rate:.4f}"
+        )
+        return 0
+    if args.sql_command == "vllm-serve-command":
+        command = build_vllm_serve_command(
+            args.manifest,
+            model_variant=args.model,
+            host=args.host,
+            port=args.port,
+            max_model_len=args.max_model_len,
+            gpu_memory_utilization=args.gpu_memory_utilization,
+            enforce_eager=args.enforce_eager,
+            flashinfer_autotune=args.flashinfer_autotune,
+            attention_backend=args.attention_backend,
+            served_model_name=args.served_model_name,
+            lora_name=args.lora_name,
+            language_model_only=not args.no_language_model_only,
+        )
+        print(command.shell_command)
+        return 0
+    if args.sql_command == "openai-load-test":
+        summary = run_openai_completion_load_test(
+            args.manifest,
+            model_variant=args.model,
+            eval_dataset=args.dataset,
+            base_url=args.openai_base_url,
+            model=args.openai_model,
+            request_count=args.requests,
+            concurrency=args.concurrency,
+            max_new_tokens=args.max_new_tokens,
+            timeout_seconds=args.openai_timeout,
+            api_key=args.openai_api_key,
+            system_prompt=_read_prompt_file(args.system_prompt_file),
+            output_path=args.output,
+        )
+        print(
+            "completed OpenAI-compatible load test "
+            f"{summary.experiment_id} model={summary.model_variant} "
+            f"success={summary.success_count}/{summary.request_count} "
+            f"rps={summary.requests_per_second:.4f} "
+            f"p50={summary.p50_latency_seconds} p95={summary.p95_latency_seconds} "
+            f"output={summary.result_path}"
         )
         return 0
     if args.sql_command == "eval-candidates":

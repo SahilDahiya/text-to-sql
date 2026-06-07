@@ -32,6 +32,9 @@ dev = [
 observability = [
     "mlflow>=3.0.0",
 ]
+serving = [
+    "vllm>=0.22.1",
+]
 training = [
     "accelerate>=1.10.0",
     "datasets>=4.4.0",

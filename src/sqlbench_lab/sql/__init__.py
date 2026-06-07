@@ -29,6 +29,13 @@ from .prompt_optimization import SQLPromptCandidateSummary, record_sql_prompt_ca
 from .repair_collection import SQLRepairCollectionSummary, collect_sql_repair_data
 from .rendering import build_eval_messages, build_repair_eval_messages, build_repair_messages, build_train_messages
 from .schema_linking import SQLSchemaLinkingSummary, attach_sql_schema_linking
+from .serving import (
+    OpenAILoadTestSummary,
+    VLLMServeCommand,
+    build_openai_completion_predictor,
+    build_vllm_serve_command,
+    run_openai_completion_load_test,
+)
 from .token_report import (
     SQLTokenLengthReport,
     SQLTrainTokenBudgetFilterSummary,
@@ -61,6 +68,8 @@ __all__ = [
     "SQLProfileMetadataSummary",
     "SQLPromptCandidateSummary",
     "SQLTrainExample",
+    "OpenAILoadTestSummary",
+    "VLLMServeCommand",
     "attach_sqlite_profile_metadata",
     "attach_sql_schema_linking",
     "build_eval_messages",
@@ -68,6 +77,8 @@ __all__ = [
     "build_repair_messages",
     "build_sqlite_fixture",
     "build_train_messages",
+    "build_openai_completion_predictor",
+    "build_vllm_serve_command",
     "analyze_sql_eval_result",
     "assert_no_sql_dataset_leakage",
     "audit_sql_dataset_leakage",
@@ -89,6 +100,7 @@ __all__ = [
     "run_sql_candidate_pool_eval",
     "run_sql_eval",
     "run_sql_eval_with_repair",
+    "run_openai_completion_load_test",
     "run_sql_sft",
     "tokenize_sql_sft_messages",
 ]
