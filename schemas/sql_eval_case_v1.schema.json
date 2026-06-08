@@ -28,7 +28,7 @@
       "enum": ["spider", "bird", "livesqlbench", "synthetic", "smoke"]
     },
     "source_split": {
-      "enum": ["train", "dev", "eval", "synthetic", "smoke"]
+      "enum": ["train", "dev", "dev_v2", "eval", "challenge", "challenge_v2", "synthetic", "smoke"]
     },
     "task_id": {"type": "string", "minLength": 1},
     "fixture_id": {"type": "string", "minLength": 1},

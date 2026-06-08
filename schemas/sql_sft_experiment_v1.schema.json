@@ -36,7 +36,7 @@
       "additionalProperties": false,
       "required": ["method", "loss_target", "stage"],
       "properties": {
-        "method": {"const": "lora_sft"},
+        "method": {"enum": ["lora_sft", "qlora_sft"]},
         "loss_target": {"const": "assistant_sql_only"},
         "stage": {"enum": ["direct_sql_sft", "execution_repair_sft", "tool_trajectory_sft"]},
         "notes": {"type": ["string", "null"]}
@@ -114,6 +114,19 @@
           "minItems": 1,
           "items": {"type": "string", "minLength": 1}
         }
+      }
+    },
+    "quantization": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode"],
+      "properties": {
+        "mode": {"enum": ["none", "bitsandbytes_4bit"]},
+        "bnb_4bit_quant_type": {"enum": ["nf4", "fp4"]},
+        "bnb_4bit_use_double_quant": {"type": "boolean"},
+        "bnb_4bit_compute_dtype": {"enum": ["bfloat16", "float16", "float32"]},
+        "device_map": {"enum": [null, "auto"]},
+        "prepare_model_for_kbit_training": {"type": "boolean"}
       }
     },
     "eval_plan": {

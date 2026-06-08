@@ -61,6 +61,16 @@ class SQLTrainerConfig:
 
 
 @dataclass(frozen=True)
+class SQLQuantizationConfig:
+    mode: str
+    bnb_4bit_quant_type: str
+    bnb_4bit_use_double_quant: bool
+    bnb_4bit_compute_dtype: str
+    device_map: str | None
+    prepare_model_for_kbit_training: bool
+
+
+@dataclass(frozen=True)
 class SQLLoRAConfig:
     r: int
     lora_alpha: int
@@ -93,6 +103,7 @@ class SQLSFTExperimentManifest:
     prompt: SQLPromptConfig
     train_inputs: SQLTrainInputsConfig
     trainer: SQLTrainerConfig
+    quantization: SQLQuantizationConfig
     lora: SQLLoRAConfig
     eval_plan: SQLEvalPlanConfig
     output_paths: SQLOutputPathsConfig
@@ -125,6 +136,7 @@ def load_sql_sft_manifest(path: str | Path) -> SQLSFTExperimentManifest:
             ),
         ),
         trainer=_load_trainer_config(payload.get("trainer", {})),
+        quantization=_load_quantization_config(payload.get("quantization", _default_quantization_payload())),
         lora=_load_lora_config(payload.get("lora", _default_lora_payload())),
         eval_plan=SQLEvalPlanConfig(**payload["eval_plan"]),
         output_paths=SQLOutputPathsConfig(**payload["output_paths"]),
@@ -214,6 +226,28 @@ def _default_lora_payload() -> dict[str, Any]:
             "down_proj",
         ],
     }
+
+
+def _default_quantization_payload() -> dict[str, Any]:
+    return {
+        "mode": "none",
+        "bnb_4bit_quant_type": "nf4",
+        "bnb_4bit_use_double_quant": True,
+        "bnb_4bit_compute_dtype": "bfloat16",
+        "device_map": None,
+        "prepare_model_for_kbit_training": False,
+    }
+
+
+def _load_quantization_config(payload: dict[str, Any]) -> SQLQuantizationConfig:
+    return SQLQuantizationConfig(
+        mode=str(payload["mode"]),
+        bnb_4bit_quant_type=str(payload.get("bnb_4bit_quant_type", "nf4")),
+        bnb_4bit_use_double_quant=bool(payload.get("bnb_4bit_use_double_quant", True)),
+        bnb_4bit_compute_dtype=str(payload.get("bnb_4bit_compute_dtype", "bfloat16")),
+        device_map=_optional_str(payload.get("device_map")),
+        prepare_model_for_kbit_training=bool(payload.get("prepare_model_for_kbit_training", False)),
+    )
 
 
 def _load_lora_config(payload: dict[str, Any]) -> SQLLoRAConfig:

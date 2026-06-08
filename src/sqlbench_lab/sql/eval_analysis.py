@@ -23,6 +23,16 @@ class SQLEvalFailureAnalysis:
 
 
 @dataclass(frozen=True)
+class SQLEvalTagSlice:
+    tag: str
+    case_count: int
+    passed_count: int
+    failed_count: int
+    pass_rate: float
+    failure_counts: dict[str, int]
+
+
+@dataclass(frozen=True)
 class SQLEvalAnalysisSummary:
     result_path: str
     analysis_path: str
@@ -34,6 +44,7 @@ class SQLEvalAnalysisSummary:
     failed_count: int
     pass_rate: float
     failure_counts: dict[str, int]
+    tag_slices: list[SQLEvalTagSlice]
     failures: list[SQLEvalFailureAnalysis]
 
 
@@ -54,6 +65,11 @@ def analyze_sql_eval_result(
     failure_counts: dict[str, int] = {}
     for failure in failures:
         failure_counts[failure.failure_type] = failure_counts.get(failure.failure_type, 0) + 1
+    tag_slices = _analyze_tag_slices(
+        result_path=resolved_result_path,
+        eval_dataset=_optional_text(payload.get("eval_dataset")),
+        records=records,
+    )
 
     resolved_output_path = Path(output_path) if output_path is not None else _default_analysis_path(resolved_result_path)
     summary = SQLEvalAnalysisSummary(
@@ -67,6 +83,7 @@ def analyze_sql_eval_result(
         failed_count=len(failures),
         pass_rate=float(payload.get("pass_rate", 0.0)),
         failure_counts=dict(sorted(failure_counts.items())),
+        tag_slices=tag_slices,
         failures=failures,
     )
     resolved_output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -163,6 +180,96 @@ def _optional_text(value: Any) -> str | None:
     if value is None:
         return None
     return str(value)
+
+
+def _analyze_tag_slices(
+    *,
+    result_path: Path,
+    eval_dataset: str | None,
+    records: list[dict[str, Any]],
+) -> list[SQLEvalTagSlice]:
+    if eval_dataset is None or not eval_dataset.strip():
+        return []
+
+    eval_path = _resolve_eval_dataset_path(result_path=result_path, eval_dataset=eval_dataset)
+    case_tags = _load_eval_case_tags(eval_path)
+    missing_case_ids = sorted(
+        {
+            str(record.get("case_id", ""))
+            for record in records
+            if str(record.get("case_id", "")) not in case_tags
+        }
+    )
+    if missing_case_ids:
+        raise ValueError(
+            f"eval result references case_id values missing from {eval_path}: "
+            f"{', '.join(missing_case_ids[:10])}"
+        )
+
+    slice_counts: dict[str, dict[str, Any]] = {}
+    for record in records:
+        case_id = str(record.get("case_id", ""))
+        passed = bool(record.get("passed"))
+        failure_type = None if passed else classify_sql_eval_failure(record)
+        for tag in case_tags[case_id]:
+            tag_counts = slice_counts.setdefault(
+                tag,
+                {"case_count": 0, "passed_count": 0, "failure_counts": {}},
+            )
+            tag_counts["case_count"] += 1
+            if passed:
+                tag_counts["passed_count"] += 1
+            else:
+                failures = tag_counts["failure_counts"]
+                failures[failure_type] = failures.get(failure_type, 0) + 1
+
+    slices = []
+    for tag, counts in sorted(slice_counts.items()):
+        case_count = int(counts["case_count"])
+        passed_count = int(counts["passed_count"])
+        failed_count = case_count - passed_count
+        slices.append(
+            SQLEvalTagSlice(
+                tag=tag,
+                case_count=case_count,
+                passed_count=passed_count,
+                failed_count=failed_count,
+                pass_rate=passed_count / case_count if case_count else 0.0,
+                failure_counts=dict(sorted(counts["failure_counts"].items())),
+            )
+        )
+    return slices
+
+
+def _resolve_eval_dataset_path(*, result_path: Path, eval_dataset: str) -> Path:
+    raw_path = Path(eval_dataset)
+    if raw_path.is_absolute():
+        candidates = [raw_path]
+    else:
+        candidates = [raw_path, result_path.parent / raw_path]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    raise FileNotFoundError(f"eval dataset does not exist for analysis: {eval_dataset}")
+
+
+def _load_eval_case_tags(eval_path: Path) -> dict[str, list[str]]:
+    case_tags: dict[str, list[str]] = {}
+    with eval_path.open(encoding="utf-8") as handle:
+        for line_number, line in enumerate(handle, start=1):
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            case_id = str(row.get("case_id", ""))
+            if not case_id:
+                raise ValueError(f"eval case missing case_id at {eval_path}:{line_number}")
+            tags = row.get("tags", [])
+            if not isinstance(tags, list) or not all(isinstance(tag, str) for tag in tags):
+                raise ValueError(f"eval case tags must be a list of strings at {eval_path}:{line_number}")
+            if case_id in case_tags:
+                raise ValueError(f"duplicate eval case_id in {eval_path}: {case_id}")
+            case_tags[case_id] = sorted(set(tags))
+    return case_tags
 
 
 def _default_analysis_path(result_path: Path) -> Path:

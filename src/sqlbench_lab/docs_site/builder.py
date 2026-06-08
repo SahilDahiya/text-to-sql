@@ -405,6 +405,30 @@ HISTORY_ROWS: list[dict[str, str]] = [
         "signal": "vLLM 0.22.1 can start locally on the WSL RTX 2080 Ti with gpu_memory_utilization=0.75, eager mode, FlashInfer sampler disabled, FlashInfer autotune disabled, and TRITON_ATTN. The frozen held-out endpoint eval completed but scored 9/12, below the local HF 10/12. Stress probes with max_new_tokens=128 succeeded through c160: c8 was 32/32 at 0.5826 rps with p95 18.3s, c64 was 64/64 at 1.8890 rps with p95 32.7s, and c160 was 160/160 at 2.3994 rps with p95 63.4s.",
         "lesson": "Serving is mechanically wired but not promoted. The extra vLLM miss is a deterministic alias ownership slip in eval_002, while eval_003 and eval_006 match the local HF failures. Treat vLLM backend parity as an eval gate, not a deployment afterthought. For this local GPU, admitted concurrency is not the same as useful interactive concurrency; use c8-c16 for interactive probes and c64+ only for batch/background work.",
     },
+    {
+        "phase": "Exp049 QLoRA",
+        "focus": "Repeat Exp048 with QLoRA while keeping data, prompt, LoRA shape, trainer schedule, and eval gates fixed.",
+        "signal": "The QLoRA path loads the base model with bitsandbytes 4-bit NF4, double quantization, bfloat16 compute intent, device_map=auto, and PEFT prepare_model_for_kbit_training. Training completed in 1,379s over 390 steps with final train_loss 0.08428 and wrote a normal PEFT adapter. Local HF scored 9/12 dev and 9/12 frozen held-out eval. vLLM endpoint eval on port 8003 also scored 9/12; c8 load was 32/32 at 0.6515 rps with p50 10.21s and p95 17.17s.",
+        "lesson": "QLoRA is now a working training path, but it is not a quality upgrade for this 0.8B one-DB lab. It saves training memory and serves like a normal LoRA adapter, but it regressed below Exp048 local HF quality. Use QLoRA when memory unlocks a larger model or longer context, not as a replacement for the current Exp048 adapter.",
+    },
+    {
+        "phase": "Exp048 vs Exp049 stress",
+        "focus": "Run fresh-server LoRA and QLoRA vLLM concurrency ladders with the same frozen eval prompts and request counts.",
+        "signal": "Both adapters served cleanly through c32 with zero request failures. LoRA c32 handled 64/64 at 1.3195 rps with p50 18.60s and p95 30.11s. QLoRA c32 handled 64/64 at 1.4715 rps with p50 15.04s and p95 25.64s. Both runs reported the same 230,912-token GPU KV cache and 150.33x theoretical concurrency at 1,536 tokens/request.",
+        "lesson": "QLoRA has no observed serving stress penalty in this setup because inference still serves a normal PEFT adapter on the same base model. The quality gate, not concurrency, remains the blocker for Exp049.",
+    },
+    {
+        "phase": "Exp050-057 one-DB ladder",
+        "focus": "Break the next storefront work into controlled same-DB experiments instead of one undiagnosable data expansion.",
+        "signal": "Exp050 showed Exp048 at 15/24 on challenge_v1. Exp051-Exp055 each added 14 rows over train_v3 for one failure family: support no-issue filters, date boundary semantics, return-ratio denominator and alias ownership, grouped HAVING counts, and anti-join or missing-relationship queries. The best isolated ablations reached 17/24 challenge, but moved failures between schema validity and semantics. Exp056 combined the supplements into train_v4 with 200 rows and reached 11/12 dev_v2, 12/12 eval_v1, and 22/24 challenge_v1, with only schema-error failures on challenge. Exp057 repeated train_v4 with QLoRA, ran faster with fewer loaded total parameters, reached 12/12 dev_v2 and 22/24 challenge_v1, but regressed eval_v1 to 10/12. Train_v4 has no exact question or gold-SQL overlap with dev_v1, dev_v2, eval_v1, or challenge_v1.",
+        "lesson": "For a production single-DB text-to-SQL model, dataset diversification should be inside the database semantics: same schema, new literals, new phrasings, and isolated failure families. The isolated ablations diagnosed useful row families, but Exp056 proved the families compose and is the promoted LoRA checkpoint. Exp057 keeps QLoRA as a credible memory/runtime tradeoff, not the preferred quality checkpoint, because stable eval parity matters more than train loss, runtime, or one targeted gate.",
+    },
+    {
+        "phase": "Exp058-063 contrast ladder",
+        "focus": "Turn the next one-DB improvement into hard-negative data and richer eval slices rather than another broad expansion.",
+        "signal": "Exp058 added per-tag eval slicing and showed Exp056 failures concentrated in join_path, return_ratio, and grouped_ranking slices despite 22/24 challenge_v1. Exp063 introduced challenge_v2 with alias-ownership, boundary, and anti-join contrast cases; the promoted Exp056 adapter scored 8/15, with anti_join/left_join_predicate at 1/5, boundary_semantics at 4/6, and alias_ownership at 3/4. The train ladder kept the Exp056 recipe fixed: Exp059 added 12 alias contrast rows and reached 9/15 challenge_v2 while preserving 12/12 eval_v1; Exp060 and Exp061 improved targeted slices but regressed eval_v1 to 11/12. Exp062 combined all three into train_v5 with 236 rows and reached 12/15 challenge_v2, but also regressed eval_v1 to 11/12.",
+        "lesson": "Same-DB diversification should include adversarial near-neighbor examples and sliced gates, but promotion still requires a clean protected eval gate. Aggregate same-DB scores can hide that the model memorized common shapes but still confuses predicate ownership, inclusive/exclusive operators, anti-join semantics, and SQL alias validity. Exp062 is a rejected ablation, not a promoted replacement for Exp056.",
+    },
 ]
 
 SERVING_STRESS_ROWS: list[dict[str, str]] = [
@@ -417,6 +441,21 @@ SERVING_STRESS_ROWS: list[dict[str, str]] = [
     {"concurrency": "64", "requests": "64", "success": "64/64", "rps": "1.8890", "p50": "24.36s", "p95": "32.70s", "max": "33.81s"},
     {"concurrency": "128", "requests": "128", "success": "128/128", "rps": "2.2966", "p50": "43.22s", "p95": "53.25s", "max": "55.16s"},
     {"concurrency": "160", "requests": "160", "success": "160/160", "rps": "2.3994", "p50": "53.90s", "p95": "63.44s", "max": "65.91s"},
+]
+
+LORA_QLORA_STRESS_ROWS: list[dict[str, str]] = [
+    {"adapter": "Exp048 LoRA", "concurrency": "1", "requests": "8", "success": "8/8", "rps": "0.0818", "p50": "12.74s", "p95": "17.54s", "avg_chars": "231.9"},
+    {"adapter": "Exp049 QLoRA", "concurrency": "1", "requests": "8", "success": "8/8", "rps": "0.0898", "p50": "9.79s", "p95": "19.95s", "avg_chars": "231.2"},
+    {"adapter": "Exp048 LoRA", "concurrency": "2", "requests": "12", "success": "12/12", "rps": "0.1414", "p50": "14.06s", "p95": "20.60s", "avg_chars": "231.2"},
+    {"adapter": "Exp049 QLoRA", "concurrency": "2", "requests": "12", "success": "12/12", "rps": "0.1912", "p50": "9.85s", "p95": "15.96s", "avg_chars": "226.8"},
+    {"adapter": "Exp048 LoRA", "concurrency": "4", "requests": "16", "success": "16/16", "rps": "0.2849", "p50": "12.55s", "p95": "17.65s", "avg_chars": "242.1"},
+    {"adapter": "Exp049 QLoRA", "concurrency": "4", "requests": "16", "success": "16/16", "rps": "0.3040", "p50": "9.86s", "p95": "17.48s", "avg_chars": "242.6"},
+    {"adapter": "Exp048 LoRA", "concurrency": "8", "requests": "32", "success": "32/32", "rps": "0.5324", "p50": "11.85s", "p95": "20.14s", "avg_chars": "231.3"},
+    {"adapter": "Exp049 QLoRA", "concurrency": "8", "requests": "32", "success": "32/32", "rps": "0.6761", "p50": "9.78s", "p95": "16.70s", "avg_chars": "227.9"},
+    {"adapter": "Exp048 LoRA", "concurrency": "16", "requests": "48", "success": "48/48", "rps": "0.9600", "p50": "13.68s", "p95": "22.23s", "avg_chars": "231.2"},
+    {"adapter": "Exp049 QLoRA", "concurrency": "16", "requests": "48", "success": "48/48", "rps": "1.0555", "p50": "11.04s", "p95": "20.02s", "avg_chars": "226.8"},
+    {"adapter": "Exp048 LoRA", "concurrency": "32", "requests": "64", "success": "64/64", "rps": "1.3195", "p50": "18.60s", "p95": "30.11s", "avg_chars": "233.9"},
+    {"adapter": "Exp049 QLoRA", "concurrency": "32", "requests": "64", "success": "64/64", "rps": "1.4715", "p50": "15.04s", "p95": "25.64s", "avg_chars": "230.8"},
 ]
 
 GPT51_COST_ROWS: list[dict[str, str]] = [
@@ -868,7 +907,7 @@ FRAMEWORK_ROWS: list[dict[str, str]] = [
         "framework": "bitsandbytes / QLoRA",
         "source": "https://arxiv.org/abs/2305.14314",
         "role": "4-bit NF4, double quantization, paged optimizers for memory-efficient tuning.",
-        "repo_use": "Add when memory blocks larger model/context experiments, not as a quality fix by itself.",
+        "repo_use": "Implemented for Exp049 and Exp057 with bitsandbytes 4-bit NF4 plus PEFT k-bit preparation. Exp057 on train_v4 ran faster and loaded fewer total parameters than Exp056 LoRA, reached 12/12 dev_v2 and 22/24 challenge_v1, but regressed stable eval_v1 from 12/12 to 10/12; use QLoRA as a memory/runtime tradeoff unless it matches the full LoRA quality gates.",
     },
     {
         "framework": "Accelerate",
@@ -1409,6 +1448,21 @@ def _render_serving() -> str:
         """
         for row in SERVING_STRESS_ROWS
     )
+    lora_qlora_stress_rows = "\n".join(
+        f"""
+        <tr>
+          <td><strong>{_escape(row['adapter'])}</strong></td>
+          <td>c{_escape(row['concurrency'])}</td>
+          <td>{_escape(row['requests'])}</td>
+          <td>{_escape(row['success'])}</td>
+          <td>{_escape(row['rps'])}</td>
+          <td>{_escape(row['p50'])}</td>
+          <td>{_escape(row['p95'])}</td>
+          <td>{_escape(row['avg_chars'])}</td>
+        </tr>
+        """
+        for row in LORA_QLORA_STRESS_ROWS
+    )
     gpt_cost_rows = "\n".join(
         f"""
         <tr>
@@ -1448,7 +1502,7 @@ def _render_serving() -> str:
           <article class="panel">
             <h2>Promotion Boundary</h2>
             <p>The served endpoint is mechanically working, but it is not the blessed deployment path. The vLLM backend must match or beat the local HF frozen eval score before product promotion.</p>
-            <div class="callout">Do not claim production readiness from transport success alone. Quality parity, latency, and cost must be recorded as separate measurements.</div>
+            <div class="callout">Do not claim production readiness from transport success alone. Quality parity, latency, and cost must be recorded as separate measurements. Exp049 QLoRA also served successfully but stayed at 9/12, so it is rejected as a replacement for Exp048.</div>
           </article>
           <article class="panel">
             <h2>Local Runtime Shape</h2>
@@ -1459,6 +1513,29 @@ def _render_serving() -> str:
               <tr><th>Practical read</th><td>c8-c16 for interactive probes; c64+ only for batch/background traffic.</td></tr>
             </table>
           </article>
+        </section>
+        <section class="panel full">
+          <h2>QLoRA Serving Check</h2>
+          <p>Exp049 repeated Exp048 with QLoRA only: same storefront train_v3 data, same prompt, same r16/alpha32/dropout0.10 LoRA shape, and same dev/eval gates. Training completed and produced a standard adapter, but quality regressed.</p>
+          <table>
+            <thead><tr><th>Gate</th><th>Result</th><th>Decision</th></tr></thead>
+            <tbody>
+              <tr><td>Local HF dev</td><td>9/12</td><td>Below Exp048 10/12.</td></tr>
+              <tr><td>Local HF held-out eval</td><td>9/12</td><td>Below Exp048 10/12.</td></tr>
+              <tr><td>vLLM held-out eval</td><td>9/12</td><td>Serving works, not promoted.</td></tr>
+              <tr><td>vLLM c8 load</td><td>32/32, 0.6515 rps, p50 10.21s, p95 17.17s</td><td>Latency is usable for probes; quality is the blocker.</td></tr>
+            </tbody>
+          </table>
+          <div class="callout">The QLoRA adapter is useful as proof that the memory-efficient training path works. It is not the current best storefront model.</div>
+        </section>
+        <section class="panel full">
+          <h2>LoRA vs QLoRA Stress</h2>
+          <p>A paired fresh-server ladder compared Exp048 LoRA and Exp049 QLoRA on the same local RTX 2080 Ti, vLLM flags, frozen held-out eval prompts, max_new_tokens=128, and shaped request counts. Both adapters served cleanly through c32; no QLoRA-specific inference stress penalty showed up.</p>
+          <table class="dense-table">
+            <thead><tr><th>Adapter</th><th>Concurrency</th><th>Requests</th><th>Success</th><th>RPS</th><th>p50</th><th>p95</th><th>Avg Chars</th></tr></thead>
+            <tbody>{lora_qlora_stress_rows}</tbody>
+          </table>
+          <div class="callout">Read this as a transport/runtime result only. Exp049 still fails the quality gate at 9/12, so higher stress tolerance does not make it the promoted model.</div>
         </section>
         <section class="panel full">
           <h2>Local Adapter Inference</h2>

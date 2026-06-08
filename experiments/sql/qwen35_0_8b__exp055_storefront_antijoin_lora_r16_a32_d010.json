@@ -1,0 +1,56 @@
+{
+  "schema_version": "sql_sft_experiment:v1",
+  "experiment_id": "qwen35_0_8b__exp055_storefront_antijoin_lora_r16_a32_d010",
+  "student": {
+    "model_family": "qwen35",
+    "base_model": "Qwen/Qwen3.5-0.8B-Base",
+    "adapter_name": "qwen35_0_8b_storefront_antijoin_lora_r16_a32_d010_exp055"
+  },
+  "training_method": {
+    "method": "lora_sft",
+    "loss_target": "assistant_sql_only",
+    "stage": "direct_sql_sft",
+    "notes": "One-DB storefront ablation from Exp048. Keeps model, prompt, LoRA recipe, trainer settings, and train_v3 fixed. Adds only anti-join and missing-relationship examples, including support tickets, returns, completed sales, channel-scoped absences, and date-scoped no-sales queries. This is a local same-DB training-science experiment, not a benchmark score."
+  },
+  "prompt": {"style": "canonical_chat"},
+  "train_inputs": {
+    "train_datasets": ["datasets/sql/train/storefront_sales_lab_train_exp055_antijoin_v1.jsonl"],
+    "validation_datasets": []
+  },
+  "trainer": {
+    "backend": "trl_sft_trainer",
+    "num_train_epochs": 3.0,
+    "per_device_train_batch_size": 1,
+    "gradient_accumulation_steps": 1,
+    "learning_rate": 0.0002,
+    "logging_steps": 10,
+    "packing": false,
+    "packing_strategy": "bfd",
+    "max_length": 1536,
+    "bf16": null,
+    "tf32": null,
+    "gradient_checkpointing": false,
+    "save_strategy": "no",
+    "save_steps": null,
+    "save_total_limit": null,
+    "auto_resume_from_checkpoint": false
+  },
+  "lora": {
+    "r": 16,
+    "lora_alpha": 32,
+    "lora_dropout": 0.10,
+    "bias": "none",
+    "target_modules": ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
+  },
+  "eval_plan": {
+    "smoke_dataset": "datasets/sql/eval/storefront_sales_lab_dev_v2.jsonl",
+    "baseline_results": "results/sql/qwen35_0_8b__exp055_storefront_antijoin_lora_r16_a32_d010/base_dev_v2.json",
+    "post_train_results": "results/sql/qwen35_0_8b__exp055_storefront_antijoin_lora_r16_a32_d010/adapter_dev_v2.json"
+  },
+  "output_paths": {
+    "experiment_root": "artifacts/sql/qwen35_0_8b__exp055_storefront_antijoin_lora_r16_a32_d010",
+    "adapter_dir": "artifacts/sql/qwen35_0_8b__exp055_storefront_antijoin_lora_r16_a32_d010/adapter",
+    "train_summary_json": "artifacts/sql/qwen35_0_8b__exp055_storefront_antijoin_lora_r16_a32_d010/train_summary.json",
+    "eval_summary_json": "artifacts/sql/qwen35_0_8b__exp055_storefront_antijoin_lora_r16_a32_d010/eval_summary.json"
+  }
+}

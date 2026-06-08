@@ -47,7 +47,11 @@ from sqlbench_lab.sql.benchmark_import import _select_raw_rows
 from sqlbench_lab.sql.benchmark_import import _filter_raw_rows_by_db_id
 from sqlbench_lab.sql.benchmark_import import _exclude_raw_rows_by_db_id
 from sqlbench_lab.sql.eval_runner import _render_generation_prompt
-from sqlbench_lab.sql.training import _load_initial_trainable_adapter
+from sqlbench_lab.sql.training import (
+    _load_initial_trainable_adapter,
+    _load_trainable_model,
+    _prepare_model_for_quantized_training,
+)
 
 
 WORKSPACE_ROOT = Path(__file__).resolve().parents[1]
@@ -101,6 +105,41 @@ class _FakePeftModel:
 
 class _FakePeft:
     PeftModel = _FakePeftModel
+
+
+class _FakePeftWithKbitPrepare:
+    prepared_models: list[object] = []
+
+    @classmethod
+    def prepare_model_for_kbit_training(cls, model: object) -> dict[str, object]:
+        cls.prepared_models.append(model)
+        return {"prepared": model}
+
+
+class _FakeBitsAndBytesConfig:
+    def __init__(self, **kwargs) -> None:
+        self.kwargs = kwargs
+
+
+class _FakeAutoModel:
+    calls: list[tuple[str, dict[str, object]]] = []
+
+    @classmethod
+    def from_pretrained(cls, base_model: str, **kwargs) -> dict[str, object]:
+        cls.calls.append((base_model, kwargs))
+        return {"base_model": base_model, "kwargs": kwargs}
+
+
+class _FakeTransformers:
+    BitsAndBytesConfig = _FakeBitsAndBytesConfig
+    AutoModelForCausalLM = _FakeAutoModel
+    AutoModelForImageTextToText = _FakeAutoModel
+
+
+class _FakeTorch:
+    bfloat16 = "bf16-dtype"
+    float16 = "fp16-dtype"
+    float32 = "fp32-dtype"
 
 
 class SQLPipelineTests(unittest.TestCase):
@@ -170,6 +209,84 @@ class SQLPipelineTests(unittest.TestCase):
             self.assertIsNotNone(row.db_path)
             with sqlite3.connect(WORKSPACE_ROOT / row.db_path) as connection:
                 connection.execute(row.target_sql).fetchall()
+
+    def test_storefront_targeted_one_db_splits_are_clean_and_executable(self) -> None:
+        train_paths = {
+            "exp051": "datasets/sql/train/storefront_sales_lab_train_exp051_support_v1.jsonl",
+            "exp052": "datasets/sql/train/storefront_sales_lab_train_exp052_date_v1.jsonl",
+            "exp053": "datasets/sql/train/storefront_sales_lab_train_exp053_return_ratio_v1.jsonl",
+            "exp054": "datasets/sql/train/storefront_sales_lab_train_exp054_having_v1.jsonl",
+            "exp055": "datasets/sql/train/storefront_sales_lab_train_exp055_antijoin_v1.jsonl",
+            "v4": "datasets/sql/train/storefront_sales_lab_train_v4.jsonl",
+            "exp059": "datasets/sql/train/storefront_sales_lab_train_exp059_alias_contrast_v1.jsonl",
+            "exp060": "datasets/sql/train/storefront_sales_lab_train_exp060_boundary_contrast_v1.jsonl",
+            "exp061": "datasets/sql/train/storefront_sales_lab_train_exp061_antijoin_contrast_v1.jsonl",
+            "v5": "datasets/sql/train/storefront_sales_lab_train_v5.jsonl",
+        }
+        eval_paths = [
+            "datasets/sql/eval/storefront_sales_lab_dev_v1.jsonl",
+            "datasets/sql/eval/storefront_sales_lab_dev_v2.jsonl",
+            "datasets/sql/eval/storefront_sales_lab_eval_v1.jsonl",
+            "datasets/sql/eval/storefront_sales_lab_challenge_v1.jsonl",
+            "datasets/sql/eval/storefront_sales_lab_challenge_v2.jsonl",
+        ]
+
+        train_rows = {
+            name: load_sql_train_examples(path)
+            for name, path in train_paths.items()
+        }
+        dev_v2_cases = load_sql_eval_cases("datasets/sql/eval/storefront_sales_lab_dev_v2.jsonl")
+        challenge_cases = load_sql_eval_cases("datasets/sql/eval/storefront_sales_lab_challenge_v1.jsonl")
+        challenge_v2_cases = load_sql_eval_cases("datasets/sql/eval/storefront_sales_lab_challenge_v2.jsonl")
+        summary = audit_sql_dataset_leakage(
+            train_paths=[train_paths["v5"]],
+            eval_paths=eval_paths,
+            require_db_disjoint=False,
+        )
+
+        self.assertEqual({name: len(rows) for name, rows in train_rows.items()}, {
+            "exp051": 144,
+            "exp052": 144,
+            "exp053": 144,
+            "exp054": 144,
+            "exp055": 144,
+            "v4": 200,
+            "exp059": 212,
+            "exp060": 212,
+            "exp061": 212,
+            "v5": 236,
+        })
+        self.assertEqual(len(dev_v2_cases), 12)
+        self.assertEqual(len(challenge_cases), 24)
+        self.assertEqual(len(challenge_v2_cases), 15)
+        self.assertTrue(summary.passed)
+        self.assertEqual({case.source_split for case in dev_v2_cases}, {"dev_v2"})
+        self.assertEqual({case.source_split for case in challenge_cases}, {"challenge"})
+        self.assertEqual({case.source_split for case in challenge_v2_cases}, {"challenge_v2"})
+        self.assertEqual(sum("targeted_exp051" in row.tags for row in train_rows["v4"]), 14)
+        self.assertEqual(sum("targeted_exp052" in row.tags for row in train_rows["v4"]), 14)
+        self.assertEqual(sum("targeted_exp053" in row.tags for row in train_rows["v4"]), 14)
+        self.assertEqual(sum("targeted_exp054" in row.tags for row in train_rows["v4"]), 14)
+        self.assertEqual(sum("targeted_exp055" in row.tags for row in train_rows["v4"]), 14)
+        self.assertEqual(sum("targeted_exp059" in row.tags for row in train_rows["v5"]), 12)
+        self.assertEqual(sum("targeted_exp060" in row.tags for row in train_rows["v5"]), 12)
+        self.assertEqual(sum("targeted_exp061" in row.tags for row in train_rows["v5"]), 12)
+        self.assertTrue(all("challenge_v1" in case.tags for case in challenge_cases))
+        self.assertTrue(all("challenge_v2" in case.tags for case in challenge_v2_cases))
+        self.assertFalse(
+            {row.target_sql for row in train_rows["v5"]}
+            & {case.gold_sql for path in eval_paths for case in load_sql_eval_cases(path)}
+        )
+        for rows in train_rows.values():
+            for row in rows:
+                self.assertIsNotNone(row.db_path)
+                with sqlite3.connect(WORKSPACE_ROOT / row.db_path) as connection:
+                    connection.execute(row.target_sql).fetchall()
+        for cases in (dev_v2_cases, challenge_cases, challenge_v2_cases):
+            for case in cases:
+                self.assertIsNotNone(case.db_path)
+                with sqlite3.connect(WORKSPACE_ROOT / case.db_path) as connection:
+                    connection.execute(case.gold_sql).fetchall()
 
     def test_record_sql_prompt_candidate_writes_artifact_with_failure_counts(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -940,6 +1057,179 @@ class SQLPipelineTests(unittest.TestCase):
         self.assertEqual(manifest.student.initial_adapter_dir, "artifacts/sql/source/adapter")
         self.assertEqual(manifest.lora.bias, "lora_only")
 
+    def test_load_sql_sft_manifest_reads_qlora_quantization_config(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            manifest_path = Path(tmp_dir) / "qlora_manifest.json"
+            payload = {
+                "schema_version": "sql_sft_experiment:v1",
+                "experiment_id": "qlora_test",
+                "student": {
+                    "model_family": "qwen35",
+                    "base_model": "Qwen/Qwen3.5-0.8B-Base",
+                    "adapter_name": "qlora_test_adapter",
+                },
+                "training_method": {
+                    "method": "qlora_sft",
+                    "loss_target": "assistant_sql_only",
+                    "stage": "direct_sql_sft",
+                    "notes": None,
+                },
+                "train_inputs": {
+                    "train_datasets": ["datasets/sql/train/qwen35_0_8b_direct_sql_seed_v1.jsonl"],
+                    "validation_datasets": [],
+                },
+                "trainer": {
+                    "backend": "trl_sft_trainer",
+                    "num_train_epochs": 1.0,
+                    "per_device_train_batch_size": 1,
+                    "gradient_accumulation_steps": 1,
+                    "learning_rate": 0.0002,
+                    "logging_steps": 1,
+                },
+                "quantization": {
+                    "mode": "bitsandbytes_4bit",
+                    "bnb_4bit_quant_type": "nf4",
+                    "bnb_4bit_use_double_quant": True,
+                    "bnb_4bit_compute_dtype": "bfloat16",
+                    "device_map": "auto",
+                    "prepare_model_for_kbit_training": True,
+                },
+                "lora": {
+                    "r": 16,
+                    "lora_alpha": 32,
+                    "lora_dropout": 0.10,
+                    "bias": "none",
+                    "target_modules": ["q_proj"],
+                },
+                "eval_plan": {
+                    "smoke_dataset": "datasets/sql/smoke/sql_smoke_v1.jsonl",
+                    "baseline_results": "results/sql/qlora_test/base.json",
+                    "post_train_results": "results/sql/qlora_test/adapter.json",
+                },
+                "output_paths": {
+                    "experiment_root": "artifacts/sql/qlora_test",
+                    "adapter_dir": "artifacts/sql/qlora_test/adapter",
+                    "train_summary_json": "artifacts/sql/qlora_test/train_summary.json",
+                    "eval_summary_json": "artifacts/sql/qlora_test/eval_summary.json",
+                },
+            }
+            manifest_path.write_text(json.dumps(payload), encoding="utf-8")
+
+            manifest = load_sql_sft_manifest(manifest_path)
+
+        self.assertEqual(manifest.training_method.method, "qlora_sft")
+        self.assertEqual(manifest.quantization.mode, "bitsandbytes_4bit")
+        self.assertEqual(manifest.quantization.bnb_4bit_quant_type, "nf4")
+        self.assertTrue(manifest.quantization.bnb_4bit_use_double_quant)
+        self.assertEqual(manifest.quantization.bnb_4bit_compute_dtype, "bfloat16")
+        self.assertEqual(manifest.quantization.device_map, "auto")
+        self.assertTrue(manifest.quantization.prepare_model_for_kbit_training)
+
+    def test_qlora_manifest_requires_bitsandbytes_quantization(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            manifest_path = Path(tmp_dir) / "bad_qlora_manifest.json"
+            payload = {
+                "schema_version": "sql_sft_experiment:v1",
+                "experiment_id": "bad_qlora_test",
+                "student": {
+                    "model_family": "qwen35",
+                    "base_model": "Qwen/Qwen3.5-0.8B-Base",
+                    "adapter_name": "bad_qlora_test_adapter",
+                },
+                "training_method": {
+                    "method": "qlora_sft",
+                    "loss_target": "assistant_sql_only",
+                    "stage": "direct_sql_sft",
+                    "notes": None,
+                },
+                "train_inputs": {
+                    "train_datasets": ["datasets/sql/train/qwen35_0_8b_direct_sql_seed_v1.jsonl"],
+                    "validation_datasets": [],
+                },
+                "trainer": {
+                    "backend": "trl_sft_trainer",
+                    "num_train_epochs": 1.0,
+                    "per_device_train_batch_size": 1,
+                    "gradient_accumulation_steps": 1,
+                    "learning_rate": 0.0002,
+                    "logging_steps": 1,
+                },
+                "quantization": {
+                    "mode": "none",
+                    "prepare_model_for_kbit_training": False,
+                },
+                "lora": {
+                    "r": 16,
+                    "lora_alpha": 32,
+                    "lora_dropout": 0.10,
+                    "bias": "none",
+                    "target_modules": ["q_proj"],
+                },
+                "eval_plan": {
+                    "smoke_dataset": "datasets/sql/smoke/sql_smoke_v1.jsonl",
+                    "baseline_results": "results/sql/bad_qlora_test/base.json",
+                    "post_train_results": "results/sql/bad_qlora_test/adapter.json",
+                },
+                "output_paths": {
+                    "experiment_root": "artifacts/sql/bad_qlora_test",
+                    "adapter_dir": "artifacts/sql/bad_qlora_test/adapter",
+                    "train_summary_json": "artifacts/sql/bad_qlora_test/train_summary.json",
+                    "eval_summary_json": "artifacts/sql/bad_qlora_test/eval_summary.json",
+                },
+            }
+            manifest_path.write_text(json.dumps(payload), encoding="utf-8")
+
+            with self.assertRaisesRegex(ValueError, "requires quantization.mode='bitsandbytes_4bit'"):
+                run_sql_sft(manifest_path, dry_run=True)
+
+    def test_load_trainable_model_passes_bitsandbytes_4bit_config(self) -> None:
+        _FakeAutoModel.calls.clear()
+        quantization_config = {
+            "mode": "bitsandbytes_4bit",
+            "bnb_4bit_quant_type": "nf4",
+            "bnb_4bit_use_double_quant": True,
+            "bnb_4bit_compute_dtype": "bfloat16",
+            "device_map": "auto",
+            "prepare_model_for_kbit_training": True,
+        }
+
+        model = _load_trainable_model(
+            _FakeTransformers,
+            "Qwen/Qwen3.5-0.8B-Base",
+            torch_module=_FakeTorch,
+            quantization_config=quantization_config,
+        )
+
+        self.assertEqual(model["base_model"], "Qwen/Qwen3.5-0.8B-Base")
+        _, kwargs = _FakeAutoModel.calls[0]
+        self.assertEqual(kwargs["device_map"], "auto")
+        bnb_config = kwargs["quantization_config"]
+        self.assertIsInstance(bnb_config, _FakeBitsAndBytesConfig)
+        self.assertEqual(
+            bnb_config.kwargs,
+            {
+                "load_in_4bit": True,
+                "bnb_4bit_quant_type": "nf4",
+                "bnb_4bit_use_double_quant": True,
+                "bnb_4bit_compute_dtype": "bf16-dtype",
+            },
+        )
+
+    def test_prepare_model_for_quantized_training_uses_peft_helper(self) -> None:
+        _FakePeftWithKbitPrepare.prepared_models.clear()
+        model = object()
+
+        prepared = _prepare_model_for_quantized_training(
+            _FakePeftWithKbitPrepare,
+            model,
+            {
+                "prepare_model_for_kbit_training": True,
+            },
+        )
+
+        self.assertEqual(prepared, {"prepared": model})
+        self.assertEqual(_FakePeftWithKbitPrepare.prepared_models, [model])
+
     def test_load_initial_trainable_adapter_requires_peft_files_and_trainable_load(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             adapter_dir = Path(tmp_dir) / "adapter"
@@ -1459,6 +1749,34 @@ class SQLPipelineTests(unittest.TestCase):
         }
         with tempfile.TemporaryDirectory() as tmp_dir:
             result_path = Path(tmp_dir) / "eval.json"
+            eval_path = Path(tmp_dir) / "test.jsonl"
+            result_payload["eval_dataset"] = str(eval_path)
+            eval_rows = [
+                {
+                    "schema_version": "sql_eval_case:v1",
+                    "case_id": record["case_id"],
+                    "source_benchmark": "smoke",
+                    "source_split": "smoke",
+                    "task_id": record["task_id"],
+                    "fixture_id": "company_small",
+                    "db_id": "company_small",
+                    "db_path": None,
+                    "dialect": "sqlite",
+                    "question": "test",
+                    "schema_text": "CREATE TABLE employees (name TEXT);",
+                    "knowledge_text": None,
+                    "gold_sql": "SELECT name FROM employees;",
+                    "task_type": "select",
+                    "order_sensitive": False,
+                    "numeric_tolerance": 0.000001,
+                    "tags": ["smoke", "slice_passed" if record["passed"] else "slice_failed"],
+                }
+                for record in result_payload["records"]
+            ]
+            eval_path.write_text(
+                "".join(json.dumps(row) + "\n" for row in eval_rows),
+                encoding="utf-8",
+            )
             result_path.write_text(json.dumps(result_payload), encoding="utf-8")
 
             summary = analyze_sql_eval_result(result_path)
@@ -1468,6 +1786,10 @@ class SQLPipelineTests(unittest.TestCase):
         self.assertEqual(summary.failure_counts["prediction_schema_error"], 1)
         self.assertEqual(summary.failure_counts["prediction_syntax_error"], 1)
         self.assertEqual(summary.failure_counts["row_count_mismatch"], 1)
+        tag_slices = {tag_slice.tag: tag_slice for tag_slice in summary.tag_slices}
+        self.assertEqual(tag_slices["smoke"].case_count, 4)
+        self.assertEqual(tag_slices["smoke"].passed_count, 1)
+        self.assertEqual(tag_slices["slice_failed"].failure_counts["prediction_schema_error"], 1)
 
     def test_collect_sql_repair_data_writes_valid_repair_rows(self) -> None:
         eval_rows = [
