@@ -601,6 +601,24 @@ RUNBOOK_ROWS: list[dict[str, str]] = [
         "gate": "Compare first@1, pass@N, and selected@1 before deciding whether generation or selection is the bottleneck.",
     },
     {
+        "task": "Step SQL environment",
+        "command": "cd separate_projects/db_sql_agent_env && uv run python -m db_sql_agent_env.cli env-step --dataset ../../datasets/sql/eval/<eval>.jsonl --case-id <case_id> --sql \"SELECT ...\"",
+        "output": "Structured JSON with validation, execution, evaluation, reward, and repair observation fields.",
+        "gate": "Read-only execution returns syntax/schema/execution feedback without mutating the database.",
+    },
+    {
+        "task": "Run extracted SQL agent env",
+        "command": "cd separate_projects/db_sql_agent_env && uv run python -m pytest",
+        "output": "Standalone env-step project test results.",
+        "gate": "The future separate project stays dependency-light and does not import sqlbench_lab.",
+    },
+    {
+        "task": "Import standalone seed data",
+        "command": "cd separate_projects/db_sql_agent_env && uv run python -m db_sql_agent_env.cli import-seed --train ../../datasets/sql/train/storefront_sales_lab_train_v4.jsonl --eval ../../datasets/sql/eval/storefront_sales_lab_challenge_v2.jsonl --output data/storefront_seed",
+        "output": "train.jsonl, eval.jsonl, and dataset_summary.json in the seed directory.",
+        "gate": "Fails on exact train/eval question or SQL overlap unless --allow-overlap is explicit.",
+    },
+    {
         "task": "Analyze failures",
         "command": "uv run python -m sqlbench_lab.cli sql analyze-eval --result results/sql/<experiment>/adapter__<eval>.json",
         "output": "Sibling .analysis.json",
@@ -791,9 +809,9 @@ BLACKSMITH_ROWS: list[dict[str, str]] = [
     },
     {
         "move": "LiveSQLBench Agent Skeleton",
-        "why": "LiveSQLBench is the end goal, but agent engineering should start after the small direct model has a stable plateau and candidate selection is measured.",
-        "first_artifact": "Define the stop rule for fine-tuning first; then create inspect-schema, inspect-values, run-sql, revise-sql, and final-answer actions as a separate lane.",
-        "gate": "Move to agent engineering when two consecutive small-model SFT/data experiments fail to improve fresh unseen selected@1 by at least +3/50, or candidate pass@N is much higher than selected@1.",
+        "why": "The portfolio target is a DB-specific SQL agent, not only a one-shot adapter. The first agent artifact is a safe environment step that can execute a candidate SQL action and return structured repair feedback.",
+        "first_artifact": "Use the extracted db_sql_agent_env env-step command to produce syntax/schema/execution/result observations for one case and one SQL action; later wrap the same contract in OpenEnv with inspect-schema, inspect-values, repair-sql, and final-answer actions.",
+        "gate": "The environment step must be read-only, structured, test-covered, and able to explain real schema/syntax failures before any RL or self-healing loop is added.",
     },
     {
         "move": "Fine-Tuning Stop Rule",
