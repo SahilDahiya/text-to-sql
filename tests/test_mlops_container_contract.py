@@ -7,9 +7,15 @@ from sqlbench_lab.mlops.container_contract import (
     DEV_CLI_IMAGE_NAME,
     DEV_CLI_IMAGE_TAG,
     DEV_CONTAINER_DOCKERFILE,
+    DEV_VLLM_DOCKERFILE,
+    DEV_VLLM_ENTRYPOINT,
+    DEV_VLLM_IMAGE_NAME,
+    DEV_VLLM_IMAGE_TAG,
     build_dev_cli_docker_build_command,
     build_dev_cli_docker_run_command,
+    build_dev_vllm_docker_build_command,
     dev_cli_container_contract,
+    dev_vllm_serving_container_contract,
 )
 
 WORKSPACE_ROOT = Path(__file__).resolve().parents[1]
@@ -85,6 +91,51 @@ class SQLAdapterContainerContractTests(unittest.TestCase):
         self.assertIn("artifacts/", dockerignore_text)
         self.assertIn("results/", dockerignore_text)
         self.assertIn(".metaflow/", dockerignore_text)
+
+    def test_dev_vllm_serving_container_contract_names_adapter_sync_requirements(self) -> None:
+        contract = dev_vllm_serving_container_contract()
+
+        self.assertEqual(contract.image_name, DEV_VLLM_IMAGE_NAME)
+        self.assertEqual(contract.image_tag, DEV_VLLM_IMAGE_TAG)
+        self.assertEqual(contract.dockerfile_path, DEV_VLLM_DOCKERFILE)
+        self.assertEqual(contract.entrypoint_path, DEV_VLLM_ENTRYPOINT)
+        self.assertEqual(contract.exposed_port, 8000)
+        self.assertIn("SQLBENCH_BASE_MODEL", contract.required_environment_variables)
+        self.assertIn("SQLBENCH_ADAPTER_URI", contract.required_environment_variables)
+        self.assertIn("SQLBENCH_GPU_MEMORY_UTILIZATION", contract.optional_environment_variables)
+        self.assertIn("--enable-lora", contract.startup_summary)
+
+    def test_dev_vllm_docker_build_command_is_stable(self) -> None:
+        self.assertEqual(
+            build_dev_vllm_docker_build_command(tag="sqlbench-vllm:test"),
+            (
+                "docker",
+                "build",
+                "-f",
+                "docker/sqlbench-vllm.Dockerfile",
+                "-t",
+                "sqlbench-vllm:test",
+                ".",
+            ),
+        )
+
+    def test_vllm_dockerfile_and_entrypoint_exist(self) -> None:
+        dockerfile = WORKSPACE_ROOT / DEV_VLLM_DOCKERFILE
+        entrypoint = WORKSPACE_ROOT / DEV_VLLM_ENTRYPOINT
+        cloudbuild = WORKSPACE_ROOT / "cloudbuild/sqlbench-vllm.yaml"
+
+        self.assertTrue(dockerfile.exists())
+        self.assertTrue(entrypoint.exists())
+        self.assertTrue(cloudbuild.exists())
+        dockerfile_text = dockerfile.read_text(encoding="utf-8")
+        entrypoint_text = entrypoint.read_text(encoding="utf-8")
+        cloudbuild_text = cloudbuild.read_text(encoding="utf-8")
+        self.assertIn("vllm/vllm-openai:v0.22.1", dockerfile_text)
+        self.assertIn("google-cloud-storage", dockerfile_text)
+        self.assertIn("SQLBENCH_ADAPTER_URI", entrypoint_text)
+        self.assertIn("adapter_model.safetensors", entrypoint_text)
+        self.assertIn("vllm", entrypoint_text)
+        self.assertIn("docker/sqlbench-vllm.Dockerfile", cloudbuild_text)
 
 
 if __name__ == "__main__":

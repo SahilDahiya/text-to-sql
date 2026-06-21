@@ -32,7 +32,9 @@ class SQLAdapterDevEndpointPlan:
     max_replica_count: int
     max_model_len: int
     max_num_seqs: int
+    max_lora_rank: int
     gpu_memory_utilization: float
+    environment_variables: dict[str, str]
     startup_args: tuple[str, ...]
     health_path: str = "/health"
     completions_path: str = "/v1/completions"
@@ -57,6 +59,7 @@ def build_dev_gcp_vllm_endpoint_plan(
     max_replica_count: int = 1,
     max_model_len: int = 4096,
     max_num_seqs: int = 64,
+    max_lora_rank: int = 16,
     gpu_memory_utilization: float = 0.75,
 ) -> SQLAdapterDevEndpointPlan:
     """Build the temporary dev endpoint plan without provisioning infrastructure."""
@@ -69,7 +72,21 @@ def build_dev_gcp_vllm_endpoint_plan(
         raise ValueError("replica counts must be positive and max_replica_count >= min_replica_count")
     if not 0.0 < gpu_memory_utilization <= 1.0:
         raise ValueError("gpu_memory_utilization must be between 0 and 1")
+    resolved_project = _non_empty(project_id, "project_id")
+    resolved_max_model_len = _positive_int(max_model_len, "max_model_len")
+    resolved_max_num_seqs = _positive_int(max_num_seqs, "max_num_seqs")
+    resolved_max_lora_rank = _positive_int(max_lora_rank, "max_lora_rank")
     openai_model = f"{contract.inputs.experiment_id}-dev"
+    environment_variables = {
+        "SQLBENCH_BASE_MODEL": contract.inputs.base_model,
+        "SQLBENCH_OPENAI_MODEL": openai_model,
+        "SQLBENCH_ADAPTER_NAME": contract.inputs.adapter_name,
+        "SQLBENCH_ADAPTER_URI": gcs_plan.adapter_uri,
+        "SQLBENCH_MAX_MODEL_LEN": str(resolved_max_model_len),
+        "SQLBENCH_MAX_NUM_SEQS": str(resolved_max_num_seqs),
+        "SQLBENCH_MAX_LORA_RANK": str(resolved_max_lora_rank),
+        "SQLBENCH_GPU_MEMORY_UTILIZATION": f"{gpu_memory_utilization:.2f}",
+    }
     startup_args = (
         "--model",
         contract.inputs.base_model,
@@ -79,21 +96,23 @@ def build_dev_gcp_vllm_endpoint_plan(
         "--lora-modules",
         f"{contract.inputs.adapter_name}={gcs_plan.adapter_uri}",
         "--max-model-len",
-        str(_positive_int(max_model_len, "max_model_len")),
+        str(resolved_max_model_len),
         "--max-num-seqs",
-        str(_positive_int(max_num_seqs, "max_num_seqs")),
+        str(resolved_max_num_seqs),
+        "--max-lora-rank",
+        str(resolved_max_lora_rank),
         "--gpu-memory-utilization",
         f"{gpu_memory_utilization:.2f}",
     )
     return SQLAdapterDevEndpointPlan(
         schema_version=DEV_ENDPOINT_PLAN_SCHEMA_VERSION,
         environment=DEV_ENVIRONMENT,
-        project_id=_non_empty(project_id, "project_id"),
+        project_id=resolved_project,
         region=_non_empty(region, "region"),
         endpoint_id=_non_empty(endpoint_id, "endpoint_id"),
         serving_target=_non_empty(serving_target, "serving_target"),
         image_uri=_non_empty(image_uri, "image_uri"),
-        service_account=contract.environment.serving_service_account,
+        service_account=_gcp_service_account_email(contract.environment.serving_service_account, resolved_project),
         base_model=contract.inputs.base_model,
         adapter_name=contract.inputs.adapter_name,
         adapter_uri=gcs_plan.adapter_uri,
@@ -103,9 +122,11 @@ def build_dev_gcp_vllm_endpoint_plan(
         accelerator_count=_positive_int(accelerator_count, "accelerator_count"),
         min_replica_count=min_replica_count,
         max_replica_count=max_replica_count,
-        max_model_len=max_model_len,
-        max_num_seqs=max_num_seqs,
+        max_model_len=resolved_max_model_len,
+        max_num_seqs=resolved_max_num_seqs,
+        max_lora_rank=resolved_max_lora_rank,
         gpu_memory_utilization=gpu_memory_utilization,
+        environment_variables=environment_variables,
         startup_args=startup_args,
     )
 
@@ -121,3 +142,10 @@ def _positive_int(value: int, name: str) -> int:
     if value <= 0:
         raise ValueError(f"{name} must be positive")
     return value
+
+
+def _gcp_service_account_email(value: str, project_id: str) -> str:
+    resolved = _non_empty(value, "service_account")
+    if "@" in resolved:
+        return resolved
+    return f"{resolved}@{_non_empty(project_id, 'project_id')}.iam.gserviceaccount.com"

@@ -1,0 +1,121 @@
+"""Dev vLLM entrypoint that syncs one GCS LoRA adapter then starts OpenAI serving."""
+
+from __future__ import annotations
+
+import os
+import shlex
+from pathlib import Path
+
+from google.cloud import storage
+
+
+def main() -> None:
+    base_model = _required_env("SQLBENCH_BASE_MODEL")
+    openai_model = _required_env("SQLBENCH_OPENAI_MODEL")
+    adapter_name = _required_env("SQLBENCH_ADAPTER_NAME")
+    adapter_uri = _required_env("SQLBENCH_ADAPTER_URI")
+    host = os.environ.get("SQLBENCH_HOST", "0.0.0.0")
+    port = _positive_int_env("SQLBENCH_PORT", 8000)
+    max_model_len = _positive_int_env("SQLBENCH_MAX_MODEL_LEN", 4096)
+    max_num_seqs = _positive_int_env("SQLBENCH_MAX_NUM_SEQS", 64)
+    max_lora_rank = _positive_int_env("SQLBENCH_MAX_LORA_RANK", 16)
+    gpu_memory_utilization = _float_env("SQLBENCH_GPU_MEMORY_UTILIZATION", 0.75)
+
+    adapter_dir = Path("/models/adapters") / adapter_name
+    _download_gcs_prefix(adapter_uri, adapter_dir)
+    _assert_adapter_materialized(adapter_dir)
+
+    command = [
+        "vllm",
+        "serve",
+        base_model,
+        "--host",
+        host,
+        "--port",
+        str(port),
+        "--served-model-name",
+        openai_model,
+        "--enable-lora",
+        "--max-lora-rank",
+        str(max_lora_rank),
+        "--lora-modules",
+        f"{adapter_name}={adapter_dir}",
+        "--max-model-len",
+        str(max_model_len),
+        "--max-num-seqs",
+        str(max_num_seqs),
+        "--gpu-memory-utilization",
+        f"{gpu_memory_utilization:.2f}",
+    ]
+    extra_args = os.environ.get("SQLBENCH_VLLM_EXTRA_ARGS", "").strip()
+    if extra_args:
+        command.extend(shlex.split(extra_args))
+    os.execvp(command[0], command)
+
+
+def _download_gcs_prefix(gcs_uri: str, destination: Path) -> None:
+    bucket_name, prefix = _parse_gcs_uri(gcs_uri)
+    client = storage.Client()
+    blobs = list(client.list_blobs(bucket_name, prefix=prefix))
+    if not blobs:
+        raise RuntimeError(f"no GCS objects found under adapter URI: {gcs_uri}")
+    destination.mkdir(parents=True, exist_ok=True)
+    copied = 0
+    for blob in blobs:
+        if blob.name.endswith("/"):
+            continue
+        relative_name = blob.name[len(prefix) :].lstrip("/")
+        if not relative_name:
+            continue
+        target = destination / relative_name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        blob.download_to_filename(target)
+        copied += 1
+    if copied == 0:
+        raise RuntimeError(f"no adapter files copied from GCS URI: {gcs_uri}")
+
+
+def _parse_gcs_uri(value: str) -> tuple[str, str]:
+    if not value.startswith("gs://"):
+        raise ValueError("SQLBENCH_ADAPTER_URI must start with gs://")
+    without_scheme = value[len("gs://") :].strip("/")
+    if "/" not in without_scheme:
+        raise ValueError("SQLBENCH_ADAPTER_URI must include a bucket and prefix")
+    bucket, prefix = without_scheme.split("/", 1)
+    if not bucket or not prefix:
+        raise ValueError("SQLBENCH_ADAPTER_URI must include a bucket and prefix")
+    return bucket, prefix.rstrip("/") + "/"
+
+
+def _assert_adapter_materialized(adapter_dir: Path) -> None:
+    required_files = ("adapter_config.json", "adapter_model.safetensors")
+    missing = [filename for filename in required_files if not (adapter_dir / filename).is_file()]
+    if missing:
+        raise FileNotFoundError(f"downloaded adapter is missing required files: {', '.join(missing)}")
+
+
+def _required_env(name: str) -> str:
+    value = os.environ.get(name, "").strip()
+    if not value:
+        raise ValueError(f"{name} must be set")
+    return value
+
+
+def _positive_int_env(name: str, default: int) -> int:
+    raw_value = os.environ.get(name)
+    value = default if raw_value is None else int(raw_value)
+    if value <= 0:
+        raise ValueError(f"{name} must be positive")
+    return value
+
+
+def _float_env(name: str, default: float) -> float:
+    raw_value = os.environ.get(name)
+    value = default if raw_value is None else float(raw_value)
+    if value <= 0:
+        raise ValueError(f"{name} must be positive")
+    return value
+
+
+if __name__ == "__main__":
+    main()

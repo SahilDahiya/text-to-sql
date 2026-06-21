@@ -1296,6 +1296,18 @@ def _render_pipeline() -> str:
           <div class="callout">The image deliberately avoids hidden production behavior: no prod registry, no prod bucket, no automatic upload, and no hidden GPU server startup.</div>
         </section>
         <section class="panel full">
+          <h2>Dev vLLM Serving Image</h2>
+          <p><code>docker/sqlbench-vllm.Dockerfile</code> is the TAP-637 serving packaging artifact. It pins <code>vllm/vllm-openai:v0.22.1</code>, installs the GCS client, and runs <code>docker/sqlbench-vllm-entrypoint.py</code> to download one LoRA adapter prefix before starting the OpenAI-compatible vLLM server.</p>
+          <table class="key-table">
+            <tr><th>Image</th><td><code>sqlbench-vllm:dev</code></td></tr>
+            <tr><th>Cloud Build</th><td><code>gcloud builds submit --region us-central1 --config cloudbuild/sqlbench-vllm.yaml --substitutions _IMAGE=us-central1-docker.pkg.dev/mistri-467901/sqlbench/sqlbench-vllm:dev .</code></td></tr>
+            <tr><th>Required env</th><td><code>SQLBENCH_BASE_MODEL</code>, <code>SQLBENCH_OPENAI_MODEL</code>, <code>SQLBENCH_ADAPTER_NAME</code>, and <code>SQLBENCH_ADAPTER_URI</code>.</td></tr>
+            <tr><th>Base model</th><td>Dev serving may pull the base model from Hugging Face by model ID. Mirroring the base model to GCS is a later soft-prod hardening step for cold-start and network independence.</td></tr>
+            <tr><th>Adapter</th><td>The adapter is always read from the dev model bucket because it is run-specific and tenant/database-specific.</td></tr>
+            <tr><th>Failure mode</th><td>The entrypoint fails before serving if the adapter GCS prefix is empty or missing <code>adapter_config.json</code> or <code>adapter_model.safetensors</code>.</td></tr>
+          </table>
+        </section>
+        <section class="panel full">
           <h2>Dev Cloud Training, Serving, Registry, and Hardening Contracts</h2>
           <p>The remaining dev slices are represented as explicit plan artifacts, not hidden cloud side effects. The Metaflow flow now emits these records after <code>decide_dev_promote_or_reject</code>: <code>vertex_training_job_plan</code>, <code>dev_endpoint_plan</code>, <code>promotion_registry_plan</code>, <code>dev_observability_record</code>, <code>endpoint_monitoring_record</code>, and <code>cost_capacity_record</code>.</p>
           <table class="key-table">

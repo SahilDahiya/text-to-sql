@@ -8,6 +8,10 @@ from typing import Any
 DEV_CLI_IMAGE_NAME = "sqlbench-lab-dev-cli"
 DEV_CLI_IMAGE_TAG = "dev"
 DEV_CONTAINER_DOCKERFILE = "docker/sqlbench-dev-cli.Dockerfile"
+DEV_VLLM_IMAGE_NAME = "sqlbench-vllm"
+DEV_VLLM_IMAGE_TAG = "dev"
+DEV_VLLM_DOCKERFILE = "docker/sqlbench-vllm.Dockerfile"
+DEV_VLLM_ENTRYPOINT = "docker/sqlbench-vllm-entrypoint.py"
 
 
 @dataclass(frozen=True)
@@ -20,6 +24,22 @@ class SQLAdapterDevContainerContract:
     default_dependency_groups: tuple[str, ...]
     optional_dependency_groups: tuple[str, ...]
     supported_command_summaries: tuple[str, ...]
+
+    def to_json_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
+class SQLAdapterDevServingContainerContract:
+    image_name: str
+    image_tag: str
+    dockerfile_path: str
+    entrypoint_path: str
+    build_context: str
+    required_environment_variables: tuple[str, ...]
+    optional_environment_variables: tuple[str, ...]
+    exposed_port: int
+    startup_summary: str
 
     def to_json_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -44,6 +64,35 @@ def dev_cli_container_contract() -> SQLAdapterDevContainerContract:
             "sql openai-load-test",
             "docs build",
         ),
+    )
+
+
+def dev_vllm_serving_container_contract() -> SQLAdapterDevServingContainerContract:
+    """Return the canonical dev vLLM serving container contract."""
+
+    return SQLAdapterDevServingContainerContract(
+        image_name=DEV_VLLM_IMAGE_NAME,
+        image_tag=DEV_VLLM_IMAGE_TAG,
+        dockerfile_path=DEV_VLLM_DOCKERFILE,
+        entrypoint_path=DEV_VLLM_ENTRYPOINT,
+        build_context=".",
+        required_environment_variables=(
+            "SQLBENCH_BASE_MODEL",
+            "SQLBENCH_OPENAI_MODEL",
+            "SQLBENCH_ADAPTER_NAME",
+            "SQLBENCH_ADAPTER_URI",
+        ),
+        optional_environment_variables=(
+            "SQLBENCH_HOST",
+            "SQLBENCH_PORT",
+            "SQLBENCH_MAX_MODEL_LEN",
+            "SQLBENCH_MAX_NUM_SEQS",
+            "SQLBENCH_GPU_MEMORY_UTILIZATION",
+            "SQLBENCH_MAX_LORA_RANK",
+            "SQLBENCH_VLLM_EXTRA_ARGS",
+        ),
+        exposed_port=8000,
+        startup_summary="download GCS adapter prefix, then exec vllm serve with --enable-lora",
     )
 
 
@@ -74,3 +123,19 @@ def build_dev_cli_docker_run_command(
     if not cli_args:
         raise ValueError("cli_args must be non-empty")
     return ("docker", "run", "--rm", tag, *cli_args)
+
+
+def build_dev_vllm_docker_build_command(
+    *,
+    tag: str = f"{DEV_VLLM_IMAGE_NAME}:{DEV_VLLM_IMAGE_TAG}",
+) -> tuple[str, ...]:
+    contract = dev_vllm_serving_container_contract()
+    return (
+        "docker",
+        "build",
+        "-f",
+        contract.dockerfile_path,
+        "-t",
+        tag,
+        contract.build_context,
+    )
