@@ -48,6 +48,7 @@ class SQLAdapterDevCloudContractTests(unittest.TestCase):
             self.assertEqual(plan.schema_version, DEV_VERTEX_JOB_SCHEMA_VERSION)
             self.assertEqual(plan.machine.machine_type, "g2-standard-4")
             self.assertEqual(plan.machine.accelerator_type, "NVIDIA_L4")
+            self.assertEqual(plan.service_account, "sqlbench-dev-train-sa@mistri-467901.iam.gserviceaccount.com")
             self.assertEqual(plan.command, ("python", "-m", "sqlbench_lab.cli"))
             self.assertEqual(plan.args[:3], ("sql", "run-sft", "--manifest"))
             self.assertTrue(plan.manifest_uri.endswith("/manifest.json"))

@@ -108,7 +108,7 @@ def build_dev_vertex_training_job_plan(
         display_name=display_name,
         experiment_id=contract.inputs.experiment_id,
         image_uri=resolved_image,
-        service_account=contract.environment.training_service_account,
+        service_account=_gcp_service_account_email(contract.environment.training_service_account, resolved_project),
         machine=SQLAdapterVertexMachineSpec(
             machine_type=_non_empty(machine_type, "machine_type"),
             accelerator_type=_non_empty(accelerator_type, "accelerator_type"),
@@ -186,3 +186,10 @@ def _label_value(value: str) -> str:
         else:
             allowed.append("_")
     return "".join(allowed)[:63].strip("_-") or "sql"
+
+
+def _gcp_service_account_email(value: str, project_id: str) -> str:
+    resolved = _non_empty(value, "service_account")
+    if "@" in resolved:
+        return resolved
+    return f"{resolved}@{_non_empty(project_id, 'project_id')}.iam.gserviceaccount.com"
