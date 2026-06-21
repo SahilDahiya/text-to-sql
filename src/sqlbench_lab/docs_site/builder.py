@@ -1244,6 +1244,17 @@ def _render_pipeline() -> str:
           <div class="callout">The first tests prove the contract can represent Exp056 as promotable, Exp062 as rejected for protected eval regression, and Exp049 as rejected when offline and endpoint quality gates miss.</div>
         </section>
         <section class="panel full">
+          <h2>Local Dev Metaflow Flow</h2>
+          <p><code>flows/sql_adapter_offline_dev_flow.py</code> is the first TAP-632 orchestration artifact. It keeps Metaflow thin: the flow validates the manifest through the repo CLI, replays explicit train/eval artifacts, runs failure analysis through the repo CLI, builds the MLOps run contract, and emits the dev promotion decision.</p>
+          <table class="key-table">
+            <tr><th>Command</th><td><code>uv run --group mlops python flows/sql_adapter_offline_dev_flow.py run</code></td></tr>
+            <tr><th>Default target</th><td>Exp056 replay mode with the promoted train summary and dev_v2, eval_v1, and challenge_v1 result files.</td></tr>
+            <tr><th>Steps</th><td>start, validate_inputs, train_adapter, eval_dev, eval_eval, eval_challenge, decide_dev_promote_or_reject, end.</td></tr>
+            <tr><th>Boundary</th><td>Dev only. The planner rejects non-dev environments and does not define prod paths or prod promotion behavior.</td></tr>
+          </table>
+          <div class="callout">Replay mode is intentional for the first slice: it proves orchestration, artifact capture, failure analysis, and promotion logic without requiring a GPU train/eval rerun.</div>
+        </section>
+        <section class="panel full">
           <table class="dense-table">
             <thead>
               <tr><th>#</th><th>Stage</th><th>Artifact</th><th>Command</th><th>Risk Controlled</th></tr>

@@ -1,5 +1,25 @@
-"""MLOps contracts for SQL adapter training and serving runs."""
+"""MLOps contracts and local/dev flows for SQL adapter runs."""
 
+from .offline_dev_flow import (
+    EXP056_CHALLENGE_RESULT_PATH,
+    EXP056_DEV_RESULT_PATH,
+    EXP056_EVAL_RESULT_PATH,
+    EXP056_EXPERIMENT_ID,
+    EXP056_MANIFEST_PATH,
+    EXP056_TRAIN_SUMMARY_PATH,
+    CLICommandResult,
+    SQLAdapterOfflineEvalSpec,
+    SQLAdapterOfflineFlowPlan,
+    build_analyze_eval_command,
+    build_offline_flow_plan,
+    build_offline_run_contract,
+    build_train_command,
+    build_validate_manifest_command,
+    decide_offline_flow_promotion,
+    default_exp056_offline_flow_plan,
+    run_repo_cli_command,
+    validate_offline_flow_plan,
+)
 from .run_contract import (
     DEV_ARTIFACT_BUCKET,
     DEV_DATASET_BUCKET,
@@ -30,6 +50,13 @@ from .run_contract import (
 )
 
 __all__ = [
+    "EXP056_CHALLENGE_RESULT_PATH",
+    "EXP056_DEV_RESULT_PATH",
+    "EXP056_EVAL_RESULT_PATH",
+    "EXP056_EXPERIMENT_ID",
+    "EXP056_MANIFEST_PATH",
+    "EXP056_TRAIN_SUMMARY_PATH",
+    "CLICommandResult",
     "DEV_ARTIFACT_BUCKET",
     "DEV_DATASET_BUCKET",
     "DEV_ENVIRONMENT",
@@ -46,6 +73,8 @@ __all__ = [
     "SUPPORTED_ENVIRONMENTS",
     "INVESTIGATE_DECISION",
     "SQLAdapterEnvironmentConfig",
+    "SQLAdapterOfflineEvalSpec",
+    "SQLAdapterOfflineFlowPlan",
     "SQLAdapterEvalGateConfig",
     "SQLAdapterEvalGateSummary",
     "SQLAdapterLoadTestSummary",
@@ -54,6 +83,15 @@ __all__ = [
     "SQLAdapterRunContract",
     "SQLAdapterRunInputs",
     "SQLAdapterTrainSummary",
+    "build_analyze_eval_command",
+    "build_offline_flow_plan",
+    "build_offline_run_contract",
+    "build_train_command",
+    "build_validate_manifest_command",
     "build_sql_adapter_run_contract",
+    "decide_offline_flow_promotion",
     "decide_sql_adapter_promotion",
+    "default_exp056_offline_flow_plan",
+    "run_repo_cli_command",
+    "validate_offline_flow_plan",
 ]

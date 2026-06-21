@@ -212,6 +212,7 @@ tempCodeRunnerFile.py
 # SQLBench Lab generated outputs
 artifacts/
 results/
+.metaflow/
 mlruns/
 mlflow.db
 external/

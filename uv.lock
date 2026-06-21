@@ -384,6 +384,34 @@ wheels = [
 ]
 
 [[package]]
+name = "boto3"
+version = "1.43.34"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "botocore" },
+    { name = "jmespath" },
+    { name = "s3transfer" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/01/ac/178eb7f96bb6d5771105fe998b8b34512ef3f7ce9e2f1ab8d018df935bee/boto3-1.43.34.tar.gz", hash = "sha256:444207c6c883d4df3ea3b2c36df43ad492b86e0b889eebd2fc1d5ea8db0a8a1a", size = 112656, upload-time = "2026-06-19T19:33:39.366Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/4c/5f/ac0872df61c3cea3539252f867cf8d76c226e4952f52a981b3fa54381060/boto3-1.43.34-py3-none-any.whl", hash = "sha256:42595057324606928c6e2432b3093978e4d722e0d432bce942f2a385702c0a43", size = 140029, upload-time = "2026-06-19T19:33:37.807Z" },
+]
+
+[[package]]
+name = "botocore"
+version = "1.43.34"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "jmespath" },
+    { name = "python-dateutil" },
+    { name = "urllib3" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/3c/0d/559cdceb9f6acea6b91404970b7973e28a4434fa8a70eb1416b0af478d86/botocore-1.43.34.tar.gz", hash = "sha256:ccc973cf30c6445b30afe5760f6dc949a80f1f862cb23d9c45747f2c814ece77", size = 15591382, upload-time = "2026-06-19T19:33:28.561Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d5/ea/dc5aab38e2b3f63380810465fab92c836e9e8bce458eba4a8a896f25e1d2/botocore-1.43.34-py3-none-any.whl", hash = "sha256:238a0269f33c5914b9343900b44767e783b3e8b6dcb6e065eac8b4495601c5df", size = 15277590, upload-time = "2026-06-19T19:33:24.562Z" },
+]
+
+[[package]]
 name = "cachetools"
 version = "7.1.1"
 source = { registry = "https://pypi.org/simple" }
@@ -2611,6 +2639,19 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/d6/54/cfe61301667036ec958cb99bd3efefba235e65cdeb9c84d24a8293ba1d90/mdurl-0.1.2.tar.gz", hash = "sha256:bb413d29f5eea38f31dd4754dd7377d4465116fb207585f97bf925588687c1ba", size = 8729, upload-time = "2022-08-14T12:40:10.846Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/b3/38/89ba8ad64ae25be8de66a6d463314cf1eb366222074cfda9ee839c56a4b4/mdurl-0.1.2-py3-none-any.whl", hash = "sha256:84008a41e51615a49fc9966191ff91509e3c40b939176e643fd50a5c2196b8f8", size = 9979, upload-time = "2022-08-14T12:40:09.779Z" },
+]
+
+[[package]]
+name = "metaflow"
+version = "2.19.34"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "boto3" },
+    { name = "requests" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/a1/6f/a9ca2c74ab90a2e742584b4e4c4111808ca1dc49fd44576b16884206a760/metaflow-2.19.34.tar.gz", hash = "sha256:14a3b8f2861a0c3d774e04f4f7fe72e33f20b17a4d53f0d3f5b67697e6800180", size = 1613635, upload-time = "2026-06-18T12:40:31.148Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c7/9b/0c0f108e5a78172d968930b6aada5e36d01ea629cb7c9d8a65d7ab9b7132/metaflow-2.19.34-py2.py3-none-any.whl", hash = "sha256:2a354b2bb3b90bfece537ba32408016ba6d3fc93a2fa75002c4d478579dce5ac", size = 1810194, upload-time = "2026-06-18T12:40:28.818Z" },
 ]
 
 [[package]]
@@ -5158,6 +5199,18 @@ wheels = [
 ]
 
 [[package]]
+name = "s3transfer"
+version = "0.19.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "botocore" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/f6/94/dcdaeb1713cab9c84def276cfac7388b17c7d9855bbcfe88d77e4dbafd44/s3transfer-0.19.0.tar.gz", hash = "sha256:ce436931687addc4c1712d52d40b32f53e88315723f107ffa20ba82b05a0f685", size = 165171, upload-time = "2026-06-16T19:44:51.599Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/46/5f/4c174edad94f82de888ac00a5ddd8d07b35609b6c94f0bdf4d74af57703e/s3transfer-0.19.0-py3-none-any.whl", hash = "sha256:777cc2415536f1debadb5c2ef7779275d0fc0fe0e042411cdd6caebeb2685262", size = 90101, upload-time = "2026-06-16T19:44:50.439Z" },
+]
+
+[[package]]
 name = "safetensors"
 version = "0.7.0"
 source = { registry = "https://pypi.org/simple" }
@@ -5599,6 +5652,9 @@ dev = [
     { name = "pytest" },
     { name = "ruff" },
 ]
+mlops = [
+    { name = "metaflow" },
+]
 observability = [
     { name = "mlflow" },
 ]
@@ -5626,6 +5682,7 @@ dev = [
     { name = "pytest", specifier = ">=8.3.0" },
     { name = "ruff", specifier = ">=0.11.0" },
 ]
+mlops = [{ name = "metaflow", specifier = ">=2.15.0" }]
 observability = [{ name = "mlflow", specifier = ">=3.0.0" }]
 serving = [{ name = "vllm", specifier = ">=0.22.1" }]
 training = [

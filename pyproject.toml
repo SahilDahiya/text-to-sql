@@ -35,6 +35,9 @@ dev = [
 observability = [
     "mlflow>=3.0.0",
 ]
+mlops = [
+    "metaflow>=2.15.0",
+]
 serving = [
     "vllm>=0.22.1",
 ]

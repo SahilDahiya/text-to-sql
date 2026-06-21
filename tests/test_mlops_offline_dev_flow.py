@@ -1,0 +1,192 @@
+from __future__ import annotations
+
+import json
+import tempfile
+import unittest
+from pathlib import Path
+
+from sqlbench_lab.mlops import (
+    DEV_ENVIRONMENT,
+    PROMOTE_DECISION,
+    build_offline_flow_plan,
+    build_train_command,
+    build_validate_manifest_command,
+    decide_offline_flow_promotion,
+    default_exp056_offline_flow_plan,
+    validate_offline_flow_plan,
+)
+
+
+class SQLAdapterOfflineDevFlowTests(unittest.TestCase):
+    def test_default_exp056_plan_is_dev_only_and_protects_eval_gate(self) -> None:
+        plan = default_exp056_offline_flow_plan()
+
+        self.assertEqual(plan.environment, DEV_ENVIRONMENT)
+        self.assertEqual(plan.manifest_path, "experiments/sql/qwen35_0_8b__exp056_storefront_v4_lora_r16_a32_d010.json")
+        self.assertEqual(tuple(spec.label for spec in plan.eval_specs), ("dev_v2", "eval_v1", "challenge_v1"))
+        self.assertFalse(plan.eval_specs[0].protected)
+        self.assertTrue(plan.eval_specs[1].protected)
+        self.assertEqual(plan.eval_specs[1].min_passed_count, 12)
+
+    def test_cli_commands_wrap_repo_cli(self) -> None:
+        self.assertEqual(
+            build_validate_manifest_command("experiments/sql/exp.json", python_executable="python"),
+            (
+                "python",
+                "-m",
+                "sqlbench_lab.cli",
+                "sql",
+                "validate-manifest",
+                "--manifest",
+                "experiments/sql/exp.json",
+            ),
+        )
+        self.assertEqual(
+            build_train_command("experiments/sql/exp.json", dry_run=True, python_executable="python"),
+            (
+                "python",
+                "-m",
+                "sqlbench_lab.cli",
+                "sql",
+                "run-sft",
+                "--manifest",
+                "experiments/sql/exp.json",
+                "--dry-run",
+            ),
+        )
+
+    def test_plan_fails_fast_when_artifacts_are_missing(self) -> None:
+        plan = build_offline_flow_plan(
+            manifest_path="missing_manifest.json",
+            train_summary_path="missing_train_summary.json",
+            dev_result_path="missing_dev.json",
+            eval_result_path="missing_eval.json",
+            challenge_result_path="missing_challenge.json",
+        )
+
+        with self.assertRaisesRegex(FileNotFoundError, "missing offline flow artifact"):
+            validate_offline_flow_plan(plan)
+
+    def test_temp_replay_plan_promotes_from_existing_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            manifest = _write_manifest(root, "qwen35_0_8b__exp056_storefront_v4_lora_r16_a32_d010")
+            train = _write_train_summary(root, manifest_id=manifest.stem)
+            dev = _write_eval_result(root, label="dev_v2", passed=11, total=12)
+            protected_eval = _write_eval_result(root, label="eval_v1", passed=12, total=12)
+            challenge = _write_eval_result(root, label="challenge_v1", passed=22, total=24)
+            plan = build_offline_flow_plan(
+                manifest_path=str(manifest),
+                train_summary_path=str(train),
+                dev_result_path=str(dev),
+                eval_result_path=str(protected_eval),
+                challenge_result_path=str(challenge),
+            )
+
+            validate_offline_flow_plan(plan)
+            decision = decide_offline_flow_promotion(plan)
+
+            self.assertEqual(decision.decision, PROMOTE_DECISION)
+            self.assertEqual(decision.failed_gates, ())
+            self.assertIn("eval_v1", decision.passed_gates)
+
+
+def _write_manifest(root: Path, experiment_id: str) -> Path:
+    path = root / f"{experiment_id}.json"
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": "sql_sft_experiment:v1",
+                "experiment_id": experiment_id,
+                "student": {
+                    "model_family": "qwen35",
+                    "base_model": "Qwen/Qwen3.5-0.8B-Base",
+                    "adapter_name": f"{experiment_id}_adapter",
+                },
+                "training_method": {
+                    "method": "lora_sft",
+                    "loss_target": "assistant_sql_only",
+                    "stage": "direct_sql_sft",
+                    "notes": None,
+                },
+                "prompt": {"style": "canonical_chat"},
+                "train_inputs": {
+                    "train_datasets": ["datasets/sql/train/storefront_sales_lab_train_v4.jsonl"],
+                    "validation_datasets": [],
+                },
+                "eval_plan": {
+                    "smoke_dataset": "datasets/sql/eval/storefront_sales_lab_dev_v2.jsonl",
+                    "baseline_results": f"results/sql/{experiment_id}/base.json",
+                    "post_train_results": f"results/sql/{experiment_id}/adapter.json",
+                },
+                "output_paths": {
+                    "experiment_root": f"artifacts/sql/{experiment_id}",
+                    "adapter_dir": f"artifacts/sql/{experiment_id}/adapter",
+                    "train_summary_json": f"artifacts/sql/{experiment_id}/train_summary.json",
+                    "eval_summary_json": f"artifacts/sql/{experiment_id}/eval_summary.json",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
+def _write_train_summary(root: Path, *, manifest_id: str) -> Path:
+    path = root / "train_summary.json"
+    path.write_text(
+        json.dumps(
+            {
+                "experiment_id": manifest_id,
+                "base_model": "Qwen/Qwen3.5-0.8B-Base",
+                "adapter_dir": f"artifacts/sql/{manifest_id}/adapter",
+                "train_row_count": 200,
+                "dry_run": False,
+                "trainable_parameters": 6389760,
+                "total_parameters": 859375680,
+                "training_metrics": {"train_loss": 0.07, "train_runtime": 1234.0},
+            }
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
+def _write_eval_result(root: Path, *, label: str, passed: int, total: int) -> Path:
+    path = root / f"{label}.json"
+    records = [
+        {
+            "case_id": f"{label}_{index + 1:03d}",
+            "task_id": f"{label}_{index + 1:03d}",
+            "model_variant": "adapter",
+            "predicted_sql": "SELECT 1",
+            "passed": index < passed,
+            "prediction_error": None if index < passed else "no such column: T3.item_id",
+            "gold_error": None,
+            "predicted_rows": [[1]] if index < passed else [],
+            "gold_rows": [[1]],
+        }
+        for index in range(total)
+    ]
+    path.write_text(
+        json.dumps(
+            {
+                "experiment_id": "exp",
+                "base_model": "Qwen/Qwen3.5-0.8B-Base",
+                "model_variant": "adapter",
+                "adapter_dir": "artifacts/sql/exp/adapter",
+                "eval_dataset": f"datasets/sql/eval/{label}.jsonl",
+                "result_path": str(path),
+                "case_count": total,
+                "passed_count": passed,
+                "pass_rate": passed / total,
+                "records": records,
+            }
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
+if __name__ == "__main__":
+    unittest.main()
