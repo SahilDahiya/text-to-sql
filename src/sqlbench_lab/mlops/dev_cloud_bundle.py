@@ -63,6 +63,7 @@ def build_dev_cloud_bundle_from_offline_plan(
     vertex_accelerator_type: str | None = "NVIDIA_L4",
     vertex_accelerator_count: int = 1,
     serving_base_model_uri: str | None = None,
+    serving_target: str = "gce_gpu_vm",
 ) -> SQLAdapterDevCloudBundle:
     """Build all dev cloud/hardening artifacts from one offline flow plan."""
 
@@ -86,6 +87,7 @@ def build_dev_cloud_bundle_from_offline_plan(
         project_id=gcp_project,
         region=gcp_region,
         image_uri=serving_image_uri,
+        serving_target=serving_target,
         base_model_uri=serving_base_model_uri,
     )
     promotion_registry_plan = build_dev_promotion_registry_plan(

@@ -126,6 +126,7 @@ class SQLAdapterDevCloudContractTests(unittest.TestCase):
             )
 
             self.assertEqual(plan.schema_version, DEV_ENDPOINT_PLAN_SCHEMA_VERSION)
+            self.assertEqual(plan.serving_target, "gce_gpu_vm")
             self.assertEqual(plan.service_account, "sqlbench-dev-serving-sa@mistri-467901.iam.gserviceaccount.com")
             self.assertIsNone(plan.base_model_uri)
             self.assertEqual(plan.openai_model, f"{contract.inputs.experiment_id}-dev")
@@ -138,6 +139,24 @@ class SQLAdapterDevCloudContractTests(unittest.TestCase):
             self.assertIn(f"{contract.inputs.adapter_name}={gcs_plan.adapter_uri}", plan.startup_args)
             self.assertEqual(plan.max_replica_count, 1)
             self.assertEqual(plan.gpu_memory_utilization, 0.75)
+            self.assertTrue(plan.requires_gpu_driver_control)
+            self.assertIn("CUDA 13.0-compatible NVIDIA driver", " ".join(plan.runtime_requirements))
+            self.assertIn("cloud_run_gpu", plan.rejected_serving_targets)
+            self.assertIn("driver 12020", " ".join(plan.deployment_notes))
+
+    def test_dev_gcp_vllm_endpoint_plan_rejects_cloud_run_gpu_for_current_image(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            contract, _decision, gcs_plan = _promoted_contract(Path(tmp_dir))
+
+            with self.assertRaisesRegex(ValueError, "Cloud Run GPU is rejected"):
+                build_dev_gcp_vllm_endpoint_plan(
+                    contract,
+                    gcs_plan,
+                    project_id="mistri-467901",
+                    region="us-central1",
+                    image_uri="us-central1-docker.pkg.dev/mistri-467901/sqlbench/sqlbench-vllm:dev",
+                    serving_target="cloud_run_gpu",
+                )
 
     def test_dev_gcp_vllm_endpoint_plan_can_use_mirrored_base_model_uri(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -325,6 +344,8 @@ class SQLAdapterDevCloudContractTests(unittest.TestCase):
             self.assertTrue(bundle["vertex_training_job_plan"]["dry_run"])
             self.assertEqual(bundle["vertex_training_job_plan"]["machine"]["accelerator_count"], 0)
             self.assertEqual(bundle["dev_endpoint_plan"]["schema_version"], DEV_ENDPOINT_PLAN_SCHEMA_VERSION)
+            self.assertEqual(bundle["dev_endpoint_plan"]["serving_target"], "gce_gpu_vm")
+            self.assertTrue(bundle["dev_endpoint_plan"]["requires_gpu_driver_control"])
             self.assertEqual(config["workerPoolSpecs"][0]["containerSpec"]["args"][-1], "--dry-run")
             self.assertEqual(config["workerPoolSpecs"][0]["machineSpec"], {"machineType": "n1-standard-4"})
             publish_record = json.loads((publish_dir / "publish_record.json").read_text(encoding="utf-8"))

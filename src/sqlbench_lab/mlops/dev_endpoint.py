@@ -9,6 +9,14 @@ from sqlbench_lab.mlops.gcs_sync import SQLAdapterGCSSyncPlan
 from sqlbench_lab.mlops.run_contract import DEV_ENVIRONMENT, SQLAdapterRunContract
 
 DEV_ENDPOINT_PLAN_SCHEMA_VERSION = "sql_adapter_dev_vllm_endpoint:v1"
+DEV_ENDPOINT_SERVING_TARGET_GCE_GPU_VM = "gce_gpu_vm"
+DEV_ENDPOINT_SERVING_TARGET_CLOUD_RUN_GPU = "cloud_run_gpu"
+DEV_ENDPOINT_SUPPORTED_SERVING_TARGETS = (
+    DEV_ENDPOINT_SERVING_TARGET_GCE_GPU_VM,
+    "gke_gpu_node_pool",
+    "vertex_custom_gpu_endpoint",
+)
+DEV_ENDPOINT_REJECTED_SERVING_TARGETS = (DEV_ENDPOINT_SERVING_TARGET_CLOUD_RUN_GPU,)
 
 
 @dataclass(frozen=True)
@@ -35,6 +43,10 @@ class SQLAdapterDevEndpointPlan:
     max_num_seqs: int
     max_lora_rank: int
     gpu_memory_utilization: float
+    requires_gpu_driver_control: bool
+    runtime_requirements: tuple[str, ...]
+    rejected_serving_targets: tuple[str, ...]
+    deployment_notes: tuple[str, ...]
     environment_variables: dict[str, str]
     startup_args: tuple[str, ...]
     health_path: str = "/health"
@@ -52,7 +64,7 @@ def build_dev_gcp_vllm_endpoint_plan(
     region: str,
     image_uri: str,
     endpoint_id: str = "sql-adapter-dev-vllm",
-    serving_target: str = "gcp_temporary_gpu_endpoint",
+    serving_target: str = DEV_ENDPOINT_SERVING_TARGET_GCE_GPU_VM,
     machine_type: str = "g2-standard-4",
     accelerator_type: str = "NVIDIA_L4",
     accelerator_count: int = 1,
@@ -75,6 +87,7 @@ def build_dev_gcp_vllm_endpoint_plan(
     if not 0.0 < gpu_memory_utilization <= 1.0:
         raise ValueError("gpu_memory_utilization must be between 0 and 1")
     resolved_project = _non_empty(project_id, "project_id")
+    resolved_serving_target = _serving_target(serving_target)
     resolved_max_model_len = _positive_int(max_model_len, "max_model_len")
     resolved_max_num_seqs = _positive_int(max_num_seqs, "max_num_seqs")
     resolved_max_lora_rank = _positive_int(max_lora_rank, "max_lora_rank")
@@ -115,7 +128,7 @@ def build_dev_gcp_vllm_endpoint_plan(
         project_id=resolved_project,
         region=_non_empty(region, "region"),
         endpoint_id=_non_empty(endpoint_id, "endpoint_id"),
-        serving_target=_non_empty(serving_target, "serving_target"),
+        serving_target=resolved_serving_target,
         image_uri=_non_empty(image_uri, "image_uri"),
         service_account=_gcp_service_account_email(contract.environment.serving_service_account, resolved_project),
         base_model=contract.inputs.base_model,
@@ -132,9 +145,34 @@ def build_dev_gcp_vllm_endpoint_plan(
         max_num_seqs=resolved_max_num_seqs,
         max_lora_rank=resolved_max_lora_rank,
         gpu_memory_utilization=gpu_memory_utilization,
+        requires_gpu_driver_control=True,
+        runtime_requirements=(
+            "current dev image requires a CUDA 13.0-compatible NVIDIA driver",
+            "base model must be available from SQLBENCH_BASE_MODEL_URI or Hugging Face before vLLM starts",
+            "adapter GCS prefix must contain adapter_config.json and adapter_model.safetensors",
+        ),
+        rejected_serving_targets=DEV_ENDPOINT_REJECTED_SERVING_TARGETS,
+        deployment_notes=(
+            "Cloud Run GPU is rejected for this dev image after the 2026-06-21 L4 attempt reported driver 12020.",
+            "Use a target with explicit NVIDIA driver control, such as a GCE GPU VM, GKE GPU node pool, or Vertex custom GPU endpoint.",
+            "Promotion still requires endpoint eval and load-test artifacts from the live OpenAI-compatible endpoint.",
+        ),
         environment_variables=environment_variables,
         startup_args=startup_args,
     )
+
+
+def _serving_target(value: str) -> str:
+    resolved = _non_empty(value, "serving_target")
+    if resolved in DEV_ENDPOINT_REJECTED_SERVING_TARGETS:
+        raise ValueError(
+            "Cloud Run GPU is rejected for the current dev vLLM image because the managed L4 driver "
+            "reported 12020 while the image requires a CUDA 13.0-compatible NVIDIA driver"
+        )
+    if resolved not in DEV_ENDPOINT_SUPPORTED_SERVING_TARGETS:
+        supported = ", ".join(DEV_ENDPOINT_SUPPORTED_SERVING_TARGETS)
+        raise ValueError(f"unsupported dev serving target {resolved!r}; supported: {supported}")
+    return resolved
 
 
 def _non_empty(value: str, name: str) -> str:
