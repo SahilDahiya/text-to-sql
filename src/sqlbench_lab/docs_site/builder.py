@@ -1231,6 +1231,19 @@ def _render_pipeline() -> str:
           <h1>Every stage has an artifact, a command, and a failure mode.</h1>
         </section>
         <section class="panel full">
+          <h2>MLOps Run Contract</h2>
+          <p><code>sqlbench_lab.mlops.run_contract</code> is the first production-loop artifact for TAP-631 and the dev environment boundary for TAP-648. It converts existing manifest, train summary, eval result, analysis, endpoint eval, and load-test JSON into one machine-readable contract plus a deterministic promotion decision.</p>
+          <table class="key-table">
+            <tr><th>Environment</th><td>Only <code>dev</code> is supported now. The default contract records <code>gs://mistri-sqlbench-dev-artifacts</code>, <code>gs://mistri-sqlbench-dev-datasets</code>, <code>gs://mistri-sqlbench-dev-models</code>, and the dev train, serving, and pipeline service-account names. Any non-dev environment fails fast.</td></tr>
+            <tr><th>Inputs</th><td>environment, experiment_id, manifest_path, base_model, adapter_name, adapter_method, train_datasets, and output_root.</td></tr>
+            <tr><th>Train</th><td>train_row_count, dry_run, trainable_parameters, total_parameters, train_loss, and train_runtime_seconds.</td></tr>
+            <tr><th>Eval gates</th><td>Offline and endpoint eval gates keep result_path, analysis_path, passed_count, pass_rate, failure_counts, failed_case_ids, and protected/required thresholds.</td></tr>
+            <tr><th>Load gates</th><td>Request count, concurrency, success count, RPS, p50, p95, max latency, and required success rate.</td></tr>
+            <tr><th>Decision</th><td><code>promote</code>, <code>reject</code>, or <code>investigate</code>. Missing required evidence investigates; failed thresholds reject.</td></tr>
+          </table>
+          <div class="callout">The first tests prove the contract can represent Exp056 as promotable, Exp062 as rejected for protected eval regression, and Exp049 as rejected when offline and endpoint quality gates miss.</div>
+        </section>
+        <section class="panel full">
           <table class="dense-table">
             <thead>
               <tr><th>#</th><th>Stage</th><th>Artifact</th><th>Command</th><th>Risk Controlled</th></tr>
