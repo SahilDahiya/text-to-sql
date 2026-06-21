@@ -10,6 +10,8 @@ DEV_CLI_IMAGE_TAG = "dev"
 DEV_CONTAINER_DOCKERFILE = "docker/sqlbench-dev-cli.Dockerfile"
 DEV_VLLM_IMAGE_NAME = "sqlbench-vllm"
 DEV_VLLM_IMAGE_TAG = "dev"
+DEV_VLLM_BASE_IMAGE = "vllm/vllm-openai:v0.22.1"
+DEV_VLLM_TORCH_CUDA_RUNTIME = "torch 2.11.0+cu130 / CUDA 13.0"
 DEV_VLLM_DOCKERFILE = "docker/sqlbench-vllm.Dockerfile"
 DEV_VLLM_ENTRYPOINT = "docker/sqlbench-vllm-entrypoint.py"
 
@@ -33,6 +35,8 @@ class SQLAdapterDevContainerContract:
 class SQLAdapterDevServingContainerContract:
     image_name: str
     image_tag: str
+    base_image: str
+    torch_cuda_runtime: str
     dockerfile_path: str
     entrypoint_path: str
     build_context: str
@@ -40,6 +44,7 @@ class SQLAdapterDevServingContainerContract:
     optional_environment_variables: tuple[str, ...]
     exposed_port: int
     startup_summary: str
+    runtime_compatibility_notes: tuple[str, ...]
 
     def to_json_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -73,6 +78,8 @@ def dev_vllm_serving_container_contract() -> SQLAdapterDevServingContainerContra
     return SQLAdapterDevServingContainerContract(
         image_name=DEV_VLLM_IMAGE_NAME,
         image_tag=DEV_VLLM_IMAGE_TAG,
+        base_image=DEV_VLLM_BASE_IMAGE,
+        torch_cuda_runtime=DEV_VLLM_TORCH_CUDA_RUNTIME,
         dockerfile_path=DEV_VLLM_DOCKERFILE,
         entrypoint_path=DEV_VLLM_ENTRYPOINT,
         build_context=".",
@@ -94,6 +101,11 @@ def dev_vllm_serving_container_contract() -> SQLAdapterDevServingContainerContra
         ),
         exposed_port=8000,
         startup_summary="download GCS adapter prefix, then exec vllm serve with --enable-lora",
+        runtime_compatibility_notes=(
+            "Cloud Run L4 rejected the current image on 2026-06-21 because its managed driver reported CUDA driver 12020.",
+            "The current dev image uses torch 2.11.0+cu130 / CUDA 13.0 and requires a GPU target with a compatible NVIDIA driver.",
+            "Use Vertex, GKE, or GCE where the driver can satisfy the image, or build a separate CUDA 12.x serving stack and rerun endpoint eval plus load gates.",
+        ),
     )
 
 

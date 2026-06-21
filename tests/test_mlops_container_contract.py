@@ -97,6 +97,8 @@ class SQLAdapterContainerContractTests(unittest.TestCase):
 
         self.assertEqual(contract.image_name, DEV_VLLM_IMAGE_NAME)
         self.assertEqual(contract.image_tag, DEV_VLLM_IMAGE_TAG)
+        self.assertEqual(contract.base_image, "vllm/vllm-openai:v0.22.1")
+        self.assertEqual(contract.torch_cuda_runtime, "torch 2.11.0+cu130 / CUDA 13.0")
         self.assertEqual(contract.dockerfile_path, DEV_VLLM_DOCKERFILE)
         self.assertEqual(contract.entrypoint_path, DEV_VLLM_ENTRYPOINT)
         self.assertEqual(contract.exposed_port, 8000)
@@ -105,6 +107,8 @@ class SQLAdapterContainerContractTests(unittest.TestCase):
         self.assertIn("SQLBENCH_GPU_MEMORY_UTILIZATION", contract.optional_environment_variables)
         self.assertIn("SQLBENCH_BASE_MODEL_URI", contract.optional_environment_variables)
         self.assertIn("--enable-lora", contract.startup_summary)
+        self.assertIn("Cloud Run L4 rejected", " ".join(contract.runtime_compatibility_notes))
+        self.assertIn("driver 12020", " ".join(contract.runtime_compatibility_notes))
 
     def test_dev_vllm_docker_build_command_is_stable(self) -> None:
         self.assertEqual(

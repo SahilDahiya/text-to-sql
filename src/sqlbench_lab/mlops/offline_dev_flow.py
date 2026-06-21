@@ -60,6 +60,7 @@ class SQLAdapterOfflineFlowPlan:
     train_summary_path: str
     eval_specs: tuple[SQLAdapterOfflineEvalSpec, ...]
     endpoint_eval_spec: SQLAdapterOfflineEvalSpec | None = None
+    require_endpoint_eval: bool = False
     load_test_paths: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
@@ -160,6 +161,7 @@ def build_offline_flow_plan(
             if endpoint_eval_result_path is not None
             else None
         ),
+        require_endpoint_eval=endpoint_eval_result_path is not None or endpoint_min_passed_count is not None,
         load_test_paths=load_test_paths,
     )
 
@@ -331,7 +333,7 @@ def decide_offline_flow_promotion(plan: SQLAdapterOfflineFlowPlan) -> SQLAdapter
         contract,
         policy=SQLAdapterPromotionPolicy(
             require_train=True,
-            require_endpoint_eval=plan.endpoint_eval_spec is not None,
+            require_endpoint_eval=plan.require_endpoint_eval,
             require_load_test=bool(plan.load_test_paths),
         ),
     )

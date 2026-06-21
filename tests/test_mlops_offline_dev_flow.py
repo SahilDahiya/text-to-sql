@@ -7,6 +7,7 @@ from pathlib import Path
 
 from sqlbench_lab.mlops import (
     DEV_ENVIRONMENT,
+    INVESTIGATE_DECISION,
     PROMOTE_DECISION,
     REJECT_DECISION,
     build_dev_cost_capacity_record,
@@ -168,6 +169,30 @@ class SQLAdapterOfflineDevFlowTests(unittest.TestCase):
             self.assertEqual(decision.decision, PROMOTE_DECISION)
             self.assertEqual(decision.failed_gates, ())
             self.assertIn("eval_v1", decision.passed_gates)
+
+    def test_temp_replay_plan_investigates_when_endpoint_gate_required_but_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            manifest = _write_manifest(root, "qwen35_0_8b__exp056_storefront_v4_lora_r16_a32_d010")
+            train = _write_train_summary(root, manifest_id=manifest.stem)
+            dev = _write_eval_result(root, label="dev_v2", passed=11, total=12)
+            protected_eval = _write_eval_result(root, label="eval_v1", passed=12, total=12)
+            challenge = _write_eval_result(root, label="challenge_v1", passed=22, total=24)
+            plan = build_offline_flow_plan(
+                manifest_path=str(manifest),
+                train_summary_path=str(train),
+                dev_result_path=str(dev),
+                eval_result_path=str(protected_eval),
+                challenge_result_path=str(challenge),
+                endpoint_min_passed_count=12,
+            )
+
+            validate_offline_flow_plan(plan)
+            decision = decide_offline_flow_promotion(plan)
+
+            self.assertEqual(decision.decision, INVESTIGATE_DECISION)
+            self.assertIn("endpoint_eval", decision.failed_gates)
+            self.assertIn("missing required endpoint eval gate", decision.reasons)
 
     def test_temp_replay_plan_promotes_with_endpoint_and_load_gates(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

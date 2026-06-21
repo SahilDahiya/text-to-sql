@@ -1301,6 +1301,8 @@ def _render_pipeline() -> str:
           <table class="key-table">
             <tr><th>Image</th><td><code>sqlbench-vllm:dev</code></td></tr>
             <tr><th>Cloud Build</th><td><code>gcloud builds submit --region us-central1 --config cloudbuild/sqlbench-vllm.yaml --substitutions _IMAGE=us-central1-docker.pkg.dev/mistri-467901/sqlbench/sqlbench-vllm:dev .</code></td></tr>
+            <tr><th>Runtime</th><td>The pushed dev image currently reports <code>torch 2.11.0+cu130</code>, <code>CUDA 13.0</code>, and <code>vllm 0.22.1</code>. The 2026-06-21 Cloud Run L4 attempt failed before health because the managed GPU runtime reported driver <code>12020</code>, which is too old for this image.</td></tr>
+            <tr><th>Cloud target</th><td>Do not promote Cloud Run GPU for this image. Use Vertex, GKE, or GCE where the NVIDIA driver can satisfy CUDA 13.0, or build a separate CUDA 12.x serving stack and rerun endpoint eval plus load gates before promotion.</td></tr>
             <tr><th>Required env</th><td><code>SQLBENCH_BASE_MODEL</code>, <code>SQLBENCH_OPENAI_MODEL</code>, <code>SQLBENCH_ADAPTER_NAME</code>, and <code>SQLBENCH_ADAPTER_URI</code>.</td></tr>
             <tr><th>Base model</th><td>Dev serving may pull the base model from Hugging Face by model ID, but live GCP endpoint runs should prefer <code>SQLBENCH_BASE_MODEL_URI</code> after mirroring the exact revision to GCS. The mirror plan is <code>sql_adapter_dev_base_model_mirror:v1</code>.</td></tr>
             <tr><th>Adapter</th><td>The adapter is always read from the dev model bucket because it is run-specific and tenant/database-specific.</td></tr>
