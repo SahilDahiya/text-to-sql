@@ -139,6 +139,8 @@ class SQLAdapterContainerContractTests(unittest.TestCase):
         self.assertIn("google-cloud-storage", dockerfile_text)
         self.assertIn("SQLBENCH_ADAPTER_URI", entrypoint_text)
         self.assertIn("SQLBENCH_BASE_MODEL_URI", entrypoint_text)
+        self.assertIn("file://", entrypoint_text)
+        self.assertIn("_copy_local_prefix", entrypoint_text)
         self.assertIn("/models/base", entrypoint_text)
         self.assertIn("adapter_model.safetensors", entrypoint_text)
         self.assertIn("vllm", entrypoint_text)

@@ -10,9 +10,11 @@ from sqlbench_lab.mlops.run_contract import DEV_ENVIRONMENT, SQLAdapterRunContra
 
 DEV_ENDPOINT_PLAN_SCHEMA_VERSION = "sql_adapter_dev_vllm_endpoint:v1"
 DEV_ENDPOINT_SERVING_TARGET_GCE_GPU_VM = "gce_gpu_vm"
+DEV_ENDPOINT_SERVING_TARGET_LOCAL_GPU_DOCKER = "local_gpu_docker"
 DEV_ENDPOINT_SERVING_TARGET_CLOUD_RUN_GPU = "cloud_run_gpu"
 DEV_ENDPOINT_SUPPORTED_SERVING_TARGETS = (
     DEV_ENDPOINT_SERVING_TARGET_GCE_GPU_VM,
+    DEV_ENDPOINT_SERVING_TARGET_LOCAL_GPU_DOCKER,
     "gke_gpu_node_pool",
     "vertex_custom_gpu_endpoint",
 )
@@ -44,6 +46,7 @@ class SQLAdapterDevEndpointPlan:
     max_lora_rank: int
     gpu_memory_utilization: float
     requires_gpu_driver_control: bool
+    preflight_checks: tuple[str, ...]
     runtime_requirements: tuple[str, ...]
     rejected_serving_targets: tuple[str, ...]
     deployment_notes: tuple[str, ...]
@@ -75,6 +78,7 @@ def build_dev_gcp_vllm_endpoint_plan(
     max_lora_rank: int = 16,
     gpu_memory_utilization: float = 0.75,
     base_model_uri: str | None = None,
+    vllm_extra_args: str | None = None,
 ) -> SQLAdapterDevEndpointPlan:
     """Build the temporary dev endpoint plan without provisioning infrastructure."""
 
@@ -105,6 +109,9 @@ def build_dev_gcp_vllm_endpoint_plan(
     resolved_base_model_uri = _optional_gcs_uri(base_model_uri, "base_model_uri")
     if resolved_base_model_uri is not None:
         environment_variables["SQLBENCH_BASE_MODEL_URI"] = resolved_base_model_uri
+    resolved_vllm_extra_args = _optional_non_empty(vllm_extra_args, "vllm_extra_args")
+    if resolved_vllm_extra_args is not None:
+        environment_variables["SQLBENCH_VLLM_EXTRA_ARGS"] = resolved_vllm_extra_args
     startup_args = (
         "--model",
         contract.inputs.base_model,
@@ -146,6 +153,11 @@ def build_dev_gcp_vllm_endpoint_plan(
         max_lora_rank=resolved_max_lora_rank,
         gpu_memory_utilization=gpu_memory_utilization,
         requires_gpu_driver_control=True,
+        preflight_checks=_preflight_checks(
+            resolved_serving_target,
+            accelerator_type=accelerator_type,
+            accelerator_count=accelerator_count,
+        ),
         runtime_requirements=(
             "current dev image requires a CUDA 13.0-compatible NVIDIA driver",
             "base model must be available from SQLBENCH_BASE_MODEL_URI or Hugging Face before vLLM starts",
@@ -154,11 +166,144 @@ def build_dev_gcp_vllm_endpoint_plan(
         rejected_serving_targets=DEV_ENDPOINT_REJECTED_SERVING_TARGETS,
         deployment_notes=(
             "Cloud Run GPU is rejected for this dev image after the 2026-06-21 L4 attempt reported driver 12020.",
+            "local_gpu_docker is the prod-like rehearsal target: same image, same env contract, local NVIDIA runtime, and local GCP ADC mount.",
             "Use a target with explicit NVIDIA driver control, such as a GCE GPU VM, GKE GPU node pool, or Vertex custom GPU endpoint.",
             "Promotion still requires endpoint eval and load-test artifacts from the live OpenAI-compatible endpoint.",
         ),
         environment_variables=environment_variables,
         startup_args=startup_args,
+    )
+
+
+def build_docker_local_vllm_run_command(
+    plan: SQLAdapterDevEndpointPlan,
+    *,
+    host_port: int = 8000,
+    container_name: str = "sqlbench-vllm-local",
+    gcloud_config_dir: str = "$HOME/.config/gcloud",
+    local_base_model_dir: str | None = None,
+    local_adapter_dir: str | None = None,
+) -> tuple[str, ...]:
+    """Build a local GPU Docker command that rehearses the dev serving endpoint."""
+
+    if plan.serving_target != DEV_ENDPOINT_SERVING_TARGET_LOCAL_GPU_DOCKER:
+        raise ValueError("local Docker run command requires serving_target='local_gpu_docker'")
+    resolved_host_port = _positive_int(host_port, "host_port")
+    resolved_container_name = _non_empty(container_name, "container_name")
+    resolved_gcloud_config_dir = _non_empty(gcloud_config_dir, "gcloud_config_dir")
+    env = dict(plan.environment_variables)
+    command = [
+        "docker",
+        "run",
+        "--rm",
+        "--gpus",
+        "all",
+        "--name",
+        resolved_container_name,
+        "-p",
+        f"{resolved_host_port}:8000",
+        "-v",
+        f"{resolved_gcloud_config_dir}:/root/.config/gcloud:ro",
+    ]
+    if local_base_model_dir is not None:
+        resolved_base_model_dir = _non_empty(local_base_model_dir, "local_base_model_dir")
+        command.extend(("-v", f"{resolved_base_model_dir}:/mnt/sqlbench/base_model:ro"))
+        env["SQLBENCH_BASE_MODEL_URI"] = "file:///mnt/sqlbench/base_model"
+    if local_adapter_dir is not None:
+        resolved_adapter_dir = _non_empty(local_adapter_dir, "local_adapter_dir")
+        command.extend(("-v", f"{resolved_adapter_dir}:/mnt/sqlbench/adapter:ro"))
+        env["SQLBENCH_ADAPTER_URI"] = "file:///mnt/sqlbench/adapter"
+    command.extend(("-e", f"GOOGLE_CLOUD_PROJECT={plan.project_id}"))
+    command.extend(("-e", f"CLOUDSDK_CORE_PROJECT={plan.project_id}"))
+    for key, value in env.items():
+        command.extend(("-e", f"{key}={value}"))
+    command.append(plan.image_uri)
+    return tuple(command)
+
+
+def build_gcloud_gce_vllm_vm_create_command(
+    plan: SQLAdapterDevEndpointPlan,
+    *,
+    zone: str,
+    instance_name: str = "sqlbench-vllm-dev-l4",
+    image_family: str = "common-cu129-ubuntu-2404-nvidia-580",
+    image_project: str = "deeplearning-platform-release",
+    boot_disk_size_gb: int = 120,
+    boot_disk_type: str = "pd-balanced",
+) -> tuple[str, ...]:
+    """Build the GCE VM create command for a driver-controlled dev serving endpoint."""
+
+    if plan.serving_target != DEV_ENDPOINT_SERVING_TARGET_GCE_GPU_VM:
+        raise ValueError("GCE VM create command requires serving_target='gce_gpu_vm'")
+    resolved_zone = _non_empty(zone, "zone")
+    resolved_instance_name = _non_empty(instance_name, "instance_name")
+    resolved_image_family = _non_empty(image_family, "image_family")
+    resolved_image_project = _non_empty(image_project, "image_project")
+    resolved_boot_disk_type = _non_empty(boot_disk_type, "boot_disk_type")
+    resolved_boot_disk_size_gb = _positive_int(boot_disk_size_gb, "boot_disk_size_gb")
+    return (
+        "gcloud",
+        "compute",
+        "instances",
+        "create",
+        resolved_instance_name,
+        f"--project={plan.project_id}",
+        f"--zone={resolved_zone}",
+        f"--machine-type={plan.machine_type}",
+        f"--accelerator=type={_gce_accelerator_type(plan.accelerator_type)},count={plan.accelerator_count}",
+        "--maintenance-policy=TERMINATE",
+        f"--image-family={resolved_image_family}",
+        f"--image-project={resolved_image_project}",
+        f"--boot-disk-size={resolved_boot_disk_size_gb}GB",
+        f"--boot-disk-type={resolved_boot_disk_type}",
+        f"--service-account={plan.service_account}",
+        "--scopes=https://www.googleapis.com/auth/cloud-platform",
+        "--labels=purpose=sqlbench-dev-serving,owner=codex,delete_after=short",
+        "--metadata=enable-oslogin=TRUE",
+    )
+
+
+def _gce_accelerator_type(value: str) -> str:
+    resolved = _non_empty(value, "accelerator_type")
+    if resolved == "NVIDIA_L4":
+        return "nvidia-l4"
+    return resolved.lower().replace("_", "-")
+
+
+def _local_gpu_docker_preflight_checks() -> tuple[str, ...]:
+    return (
+        "local nvidia-smi must report a driver compatible with the image CUDA runtime",
+        "docker info must list the nvidia runtime",
+        "docker must be authenticated to Artifact Registry for the serving image",
+        "local GCP ADC must be mounted read-only so the container can read GCS model and adapter prefixes",
+    )
+
+
+def _gce_gpu_vm_preflight_checks(*, accelerator_type: str, accelerator_count: int) -> tuple[str, ...]:
+    return (
+        "compute.googleapis.com/gpus_all_regions quota must be at least accelerator_count",
+        f"{accelerator_type} regional quota in the selected region must be at least {accelerator_count}",
+        "the serving service account must have Artifact Registry read and GCS object read permissions",
+        "the selected zone must list the requested accelerator type",
+    )
+
+
+def _preflight_checks(
+    serving_target: str,
+    *,
+    accelerator_type: str,
+    accelerator_count: int,
+) -> tuple[str, ...]:
+    if serving_target == DEV_ENDPOINT_SERVING_TARGET_LOCAL_GPU_DOCKER:
+        return _local_gpu_docker_preflight_checks()
+    if serving_target == DEV_ENDPOINT_SERVING_TARGET_GCE_GPU_VM:
+        return _gce_gpu_vm_preflight_checks(
+            accelerator_type=accelerator_type,
+            accelerator_count=accelerator_count,
+        )
+    return (
+        "serving target must provide a GPU driver compatible with the image CUDA runtime",
+        "the serving runtime must have Artifact Registry read and GCS object read permissions",
     )
 
 
@@ -202,3 +347,9 @@ def _optional_gcs_uri(value: str | None, name: str) -> str | None:
     if not resolved.startswith("gs://"):
         raise ValueError(f"{name} must start with gs://")
     return resolved
+
+
+def _optional_non_empty(value: str | None, name: str) -> str | None:
+    if value is None or not value.strip():
+        return None
+    return _non_empty(value, name)

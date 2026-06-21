@@ -72,8 +72,11 @@ from .dev_endpoint import (
     DEV_ENDPOINT_REJECTED_SERVING_TARGETS,
     DEV_ENDPOINT_SERVING_TARGET_CLOUD_RUN_GPU,
     DEV_ENDPOINT_SERVING_TARGET_GCE_GPU_VM,
+    DEV_ENDPOINT_SERVING_TARGET_LOCAL_GPU_DOCKER,
     DEV_ENDPOINT_SUPPORTED_SERVING_TARGETS,
     SQLAdapterDevEndpointPlan,
+    build_docker_local_vllm_run_command,
+    build_gcloud_gce_vllm_vm_create_command,
     build_dev_gcp_vllm_endpoint_plan,
 )
 from .endpoint_monitoring import (
@@ -152,6 +155,7 @@ __all__ = [
     "DEV_ENDPOINT_REJECTED_SERVING_TARGETS",
     "DEV_ENDPOINT_SERVING_TARGET_CLOUD_RUN_GPU",
     "DEV_ENDPOINT_SERVING_TARGET_GCE_GPU_VM",
+    "DEV_ENDPOINT_SERVING_TARGET_LOCAL_GPU_DOCKER",
     "DEV_ENDPOINT_SUPPORTED_SERVING_TARGETS",
     "DEV_ENDPOINT_MONITORING_SCHEMA_VERSION",
     "DEV_OBSERVABILITY_SCHEMA_VERSION",
@@ -212,6 +216,8 @@ __all__ = [
     "build_dev_vllm_docker_build_command",
     "build_dev_endpoint_monitoring_record",
     "build_dev_gcp_vllm_endpoint_plan",
+    "build_docker_local_vllm_run_command",
+    "build_gcloud_gce_vllm_vm_create_command",
     "build_dev_observability_record",
     "build_dev_promotion_registry_plan",
     "build_dev_vertex_training_job_plan",

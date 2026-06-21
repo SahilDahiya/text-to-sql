@@ -24,6 +24,8 @@ from sqlbench_lab.mlops import (
     build_dev_observability_record,
     build_dev_promotion_registry_plan,
     build_dev_vertex_training_job_plan,
+    build_docker_local_vllm_run_command,
+    build_gcloud_gce_vllm_vm_create_command,
     build_gcloud_vertex_custom_job_command,
     build_sql_adapter_run_contract,
     decide_sql_adapter_promotion,
@@ -140,9 +142,80 @@ class SQLAdapterDevCloudContractTests(unittest.TestCase):
             self.assertEqual(plan.max_replica_count, 1)
             self.assertEqual(plan.gpu_memory_utilization, 0.75)
             self.assertTrue(plan.requires_gpu_driver_control)
+            self.assertIn("gpus_all_regions", " ".join(plan.preflight_checks))
+            self.assertIn("NVIDIA_L4 regional quota", " ".join(plan.preflight_checks))
             self.assertIn("CUDA 13.0-compatible NVIDIA driver", " ".join(plan.runtime_requirements))
             self.assertIn("cloud_run_gpu", plan.rejected_serving_targets)
             self.assertIn("driver 12020", " ".join(plan.deployment_notes))
+
+    def test_dev_gcp_vllm_endpoint_plan_builds_gce_vm_create_command(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            contract, _decision, gcs_plan = _promoted_contract(Path(tmp_dir))
+            plan = build_dev_gcp_vllm_endpoint_plan(
+                contract,
+                gcs_plan,
+                project_id="mistri-467901",
+                region="us-central1",
+                image_uri="us-central1-docker.pkg.dev/mistri-467901/sqlbench/sqlbench-vllm:dev",
+            )
+
+            command = build_gcloud_gce_vllm_vm_create_command(plan, zone="us-central1-a")
+
+            self.assertEqual(command[:5], ("gcloud", "compute", "instances", "create", "sqlbench-vllm-dev-l4"))
+            self.assertIn("--zone=us-central1-a", command)
+            self.assertIn("--machine-type=g2-standard-4", command)
+            self.assertIn("--accelerator=type=nvidia-l4,count=1", command)
+            self.assertIn("--image-family=common-cu129-ubuntu-2404-nvidia-580", command)
+            self.assertIn("--image-project=deeplearning-platform-release", command)
+            self.assertIn("--boot-disk-size=120GB", command)
+            self.assertIn("--service-account=sqlbench-dev-serving-sa@mistri-467901.iam.gserviceaccount.com", command)
+
+    def test_dev_gcp_vllm_endpoint_plan_builds_local_gpu_docker_command(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            contract, _decision, gcs_plan = _promoted_contract(Path(tmp_dir))
+            plan = build_dev_gcp_vllm_endpoint_plan(
+                contract,
+                gcs_plan,
+                project_id="mistri-467901",
+                region="local",
+                image_uri="us-central1-docker.pkg.dev/mistri-467901/sqlbench/sqlbench-vllm:dev",
+                serving_target="local_gpu_docker",
+                base_model_uri="gs://mistri-sqlbench-dev-models/base-models/qwen/",
+                vllm_extra_args="--language-model-only --enforce-eager --attention-backend TRITON_ATTN",
+            )
+
+            command = build_docker_local_vllm_run_command(plan, host_port=8001)
+
+            self.assertEqual(plan.serving_target, "local_gpu_docker")
+            self.assertIn("nvidia runtime", " ".join(plan.preflight_checks))
+            self.assertNotIn("gpus_all_regions", " ".join(plan.preflight_checks))
+            self.assertEqual(command[:5], ("docker", "run", "--rm", "--gpus", "all"))
+            self.assertIn("-p", command)
+            self.assertIn("8001:8000", command)
+            self.assertIn("-v", command)
+            self.assertIn("$HOME/.config/gcloud:/root/.config/gcloud:ro", command)
+            self.assertIn("-e", command)
+            self.assertIn("GOOGLE_CLOUD_PROJECT=mistri-467901", command)
+            self.assertIn("CLOUDSDK_CORE_PROJECT=mistri-467901", command)
+            self.assertIn("SQLBENCH_BASE_MODEL_URI=gs://mistri-sqlbench-dev-models/base-models/qwen/", command)
+            self.assertIn(f"SQLBENCH_ADAPTER_URI={gcs_plan.adapter_uri}", command)
+            self.assertIn(
+                "SQLBENCH_VLLM_EXTRA_ARGS=--language-model-only --enforce-eager --attention-backend TRITON_ATTN",
+                command,
+            )
+            self.assertEqual(command[-1], "us-central1-docker.pkg.dev/mistri-467901/sqlbench/sqlbench-vllm:dev")
+
+            mounted_command = build_docker_local_vllm_run_command(
+                plan,
+                host_port=8001,
+                local_base_model_dir="/tmp/base",
+                local_adapter_dir="/tmp/adapter",
+            )
+
+            self.assertIn("/tmp/base:/mnt/sqlbench/base_model:ro", mounted_command)
+            self.assertIn("/tmp/adapter:/mnt/sqlbench/adapter:ro", mounted_command)
+            self.assertIn("SQLBENCH_BASE_MODEL_URI=file:///mnt/sqlbench/base_model", mounted_command)
+            self.assertIn("SQLBENCH_ADAPTER_URI=file:///mnt/sqlbench/adapter", mounted_command)
 
     def test_dev_gcp_vllm_endpoint_plan_rejects_cloud_run_gpu_for_current_image(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

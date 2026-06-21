@@ -114,13 +114,18 @@ def main(argv: list[str] | None = None) -> int:
     dev_cloud_plan.add_argument(
         "--serving-target",
         default="gce_gpu_vm",
-        choices=["gce_gpu_vm", "gke_gpu_node_pool", "vertex_custom_gpu_endpoint", "cloud_run_gpu"],
+        choices=["gce_gpu_vm", "local_gpu_docker", "gke_gpu_node_pool", "vertex_custom_gpu_endpoint", "cloud_run_gpu"],
         help="Dev serving target. cloud_run_gpu is rejected by the current vLLM runtime contract.",
     )
     dev_cloud_plan.add_argument(
         "--serving-base-model-uri",
         default="",
         help="Optional GCS prefix for a mirrored base model used by the dev vLLM endpoint",
+    )
+    dev_cloud_plan.add_argument(
+        "--serving-vllm-extra-args",
+        default="",
+        help="Optional extra args passed through SQLBENCH_VLLM_EXTRA_ARGS in the dev serving image",
     )
     dev_cloud_plan.add_argument("--dev-db-id", default="storefront_sales_lab")
     dev_cloud_plan.add_argument("--git-sha")
@@ -553,6 +558,7 @@ def _run_mlops_command(args: argparse.Namespace) -> int:
             vertex_accelerator_count=args.vertex_accelerator_count,
             serving_base_model_uri=str(args.serving_base_model_uri).strip() or None,
             serving_target=args.serving_target,
+            serving_vllm_extra_args=str(args.serving_vllm_extra_args).strip() or None,
         )
         write_dev_cloud_bundle(
             bundle,

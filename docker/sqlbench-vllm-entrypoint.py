@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import shlex
 from pathlib import Path
 
@@ -23,11 +24,11 @@ def main() -> None:
     gpu_memory_utilization = _float_env("SQLBENCH_GPU_MEMORY_UTILIZATION", 0.75)
 
     adapter_dir = Path("/models/adapters") / adapter_name
-    _download_gcs_prefix(adapter_uri, adapter_dir)
+    _materialize_uri_prefix(adapter_uri, adapter_dir)
     _assert_adapter_materialized(adapter_dir)
     if base_model_uri:
         base_model_dir = Path("/models/base") / _safe_name(base_model)
-        _download_gcs_prefix(base_model_uri, base_model_dir)
+        _materialize_uri_prefix(base_model_uri, base_model_dir)
         _assert_base_model_materialized(base_model_dir)
         served_base_model = str(base_model_dir)
     else:
@@ -61,6 +62,31 @@ def main() -> None:
     os.execvp(command[0], command)
 
 
+def _materialize_uri_prefix(uri: str, destination: Path) -> None:
+    if uri.startswith("file://"):
+        _copy_local_prefix(uri, destination)
+        return
+    _download_gcs_prefix(uri, destination)
+
+
+def _copy_local_prefix(file_uri: str, destination: Path) -> None:
+    source = Path(file_uri[len("file://") :]).expanduser()
+    if not source.is_dir():
+        raise FileNotFoundError(f"local model or adapter directory does not exist: {source}")
+    destination.mkdir(parents=True, exist_ok=True)
+    copied = 0
+    for source_path in source.rglob("*"):
+        if not source_path.is_file():
+            continue
+        relative_name = source_path.relative_to(source)
+        target = destination / relative_name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source_path, target)
+        copied += 1
+    if copied == 0:
+        raise RuntimeError(f"no local files copied from URI: {file_uri}")
+
+
 def _download_gcs_prefix(gcs_uri: str, destination: Path) -> None:
     bucket_name, prefix = _parse_gcs_uri(gcs_uri)
     client = storage.Client()
@@ -85,13 +111,13 @@ def _download_gcs_prefix(gcs_uri: str, destination: Path) -> None:
 
 def _parse_gcs_uri(value: str) -> tuple[str, str]:
     if not value.startswith("gs://"):
-        raise ValueError("SQLBENCH_ADAPTER_URI must start with gs://")
+        raise ValueError("model or adapter URI must start with gs:// or file://")
     without_scheme = value[len("gs://") :].strip("/")
     if "/" not in without_scheme:
-        raise ValueError("SQLBENCH_ADAPTER_URI must include a bucket and prefix")
+        raise ValueError("GCS model or adapter URI must include a bucket and prefix")
     bucket, prefix = without_scheme.split("/", 1)
     if not bucket or not prefix:
-        raise ValueError("SQLBENCH_ADAPTER_URI must include a bucket and prefix")
+        raise ValueError("GCS model or adapter URI must include a bucket and prefix")
     return bucket, prefix.rstrip("/") + "/"
 
 
