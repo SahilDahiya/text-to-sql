@@ -1282,6 +1282,19 @@ def _render_pipeline() -> str:
           <div class="callout">The Metaflow flow now exposes <code>gcs_sync_plan</code> as a run artifact after <code>decide_dev_promote_or_reject</code>; real upload remains a later explicit step.</div>
         </section>
         <section class="panel full">
+          <h2>Dev CLI Container</h2>
+          <p><code>docker/sqlbench-dev-cli.Dockerfile</code> is the TAP-635 packaging artifact for dev cloud execution. It packages the repo CLI and keeps the entrypoint at <code>python -m sqlbench_lab.cli</code>, so container execution calls the same command surface used locally.</p>
+          <table class="key-table">
+            <tr><th>Image</th><td><code>sqlbench-lab-dev-cli:dev</code></td></tr>
+            <tr><th>Build</th><td><code>docker build -f docker/sqlbench-dev-cli.Dockerfile --build-arg INSTALL_GROUPS=mlops -t sqlbench-lab-dev-cli:dev .</code></td></tr>
+            <tr><th>Smoke</th><td><code>docker run --rm sqlbench-lab-dev-cli:dev sql validate-manifest --manifest experiments/sql/qwen35_0_8b__exp056_storefront_v4_lora_r16_a32_d010.json</code></td></tr>
+            <tr><th>Supported commands</th><td>validate manifest, dry-run train, analyze eval, OpenAI-compatible endpoint eval, OpenAI-compatible load test, and docs build.</td></tr>
+            <tr><th>Dependency groups</th><td>The default image installs <code>mlops</code>. <code>training</code> and <code>serving</code> are explicit opt-in build groups for heavier GPU workflows.</td></tr>
+            <tr><th>Boundary</th><td>This is a dev CLI image, not a prod serving image and not a BentoML abstraction.</td></tr>
+          </table>
+          <div class="callout">The image deliberately avoids hidden production behavior: no prod registry, no prod bucket, no automatic upload, and no hidden GPU server startup.</div>
+        </section>
+        <section class="panel full">
           <table class="dense-table">
             <thead>
               <tr><th>#</th><th>Stage</th><th>Artifact</th><th>Command</th><th>Risk Controlled</th></tr>
