@@ -64,7 +64,9 @@ from .dev_cloud_bundle import (
     write_dev_cloud_bundle,
 )
 from .dev_cloud_publish import (
+    DEV_CLOUD_ARTIFACT_MANIFEST_SCHEMA_VERSION,
     DEV_CLOUD_PUBLISH_SCHEMA_VERSION,
+    SQLAdapterDevCloudPublishedArtifact,
     SQLAdapterDevCloudPublishRecord,
     materialize_dev_cloud_bundle,
 )
@@ -143,6 +145,7 @@ __all__ = [
     "DEV_GCS_SYNC_PLAN_SCHEMA_VERSION",
     "DEV_CLOUD_BUNDLE_SCHEMA_VERSION",
     "DEV_BASE_MODEL_MIRROR_SCHEMA_VERSION",
+    "DEV_CLOUD_ARTIFACT_MANIFEST_SCHEMA_VERSION",
     "DEV_CLOUD_PUBLISH_SCHEMA_VERSION",
     "DEV_COST_CAPACITY_SCHEMA_VERSION",
     "DEV_CLI_IMAGE_NAME",
@@ -185,6 +188,7 @@ __all__ = [
     "SQLAdapterDevServingContainerContract",
     "SQLAdapterDevCloudBundle",
     "SQLAdapterDevBaseModelMirrorPlan",
+    "SQLAdapterDevCloudPublishedArtifact",
     "SQLAdapterDevCloudPublishRecord",
     "SQLAdapterDevCapacityPoint",
     "SQLAdapterDevCostCapacityRecord",

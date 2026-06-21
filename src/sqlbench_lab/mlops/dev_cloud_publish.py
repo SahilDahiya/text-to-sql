@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import subprocess
 from dataclasses import asdict, dataclass
@@ -12,10 +13,20 @@ from sqlbench_lab.mlops.dev_cloud_bundle import SQLAdapterDevCloudBundle
 from sqlbench_lab.mlops.gcs_sync import SQLAdapterGCSArtifact, SQLAdapterGCSArtifactKind
 
 DEV_CLOUD_PUBLISH_SCHEMA_VERSION = "sql_adapter_dev_cloud_publish:v1"
+DEV_CLOUD_ARTIFACT_MANIFEST_SCHEMA_VERSION = "sql_adapter_dev_artifact_manifest:v1"
 
 
 class CommandRunner(Protocol):
     def __call__(self, command: tuple[str, ...]) -> None: ...
+
+
+@dataclass(frozen=True)
+class SQLAdapterDevCloudPublishedArtifact:
+    local_path: str
+    gcs_uri: str
+    is_directory: bool
+    size_bytes: int
+    sha256: str
 
 
 @dataclass(frozen=True)
@@ -29,6 +40,8 @@ class SQLAdapterDevCloudPublishRecord:
     current_pointer_updated: bool
     uploaded_uris: tuple[str, ...]
     generated_files: tuple[str, ...]
+    artifact_manifest_path: str
+    artifacts: tuple[SQLAdapterDevCloudPublishedArtifact, ...]
 
     def to_json_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -47,7 +60,34 @@ def materialize_dev_cloud_bundle(
     resolved_local_dir = Path(local_dir)
     resolved_local_dir.mkdir(parents=True, exist_ok=True)
     generated_files = _write_generated_files(bundle, resolved_local_dir)
-    upload_specs = _build_upload_specs(bundle, generated_files)
+    if update_current_pointer and not bundle.promotion_registry_plan.eligible_for_current:
+        raise ValueError("refusing to update dev current pointer for a non-promoted run")
+    upload_specs_without_manifest = _build_upload_specs(bundle, generated_files)
+    pointer_upload_specs = (
+        (
+            (str(generated_files["current_pointer"]), bundle.promotion_registry_plan.current_pointer_uri, False),
+            (str(generated_files["rollback_pointer"]), bundle.promotion_registry_plan.rollback_pointer_uri, False),
+        )
+        if update_current_pointer
+        else ()
+    )
+    published_artifacts = _build_published_artifacts((*upload_specs_without_manifest, *pointer_upload_specs))
+    artifact_manifest_path = resolved_local_dir / "artifact_manifest.json"
+    _write_json(
+        artifact_manifest_path,
+        {
+            "schema_version": DEV_CLOUD_ARTIFACT_MANIFEST_SCHEMA_VERSION,
+            "environment": bundle.run_contract.environment.environment,
+            "run_id": bundle.gcs_sync_plan.run_id,
+            "experiment_id": bundle.run_contract.inputs.experiment_id,
+            "artifacts": [asdict(artifact) for artifact in published_artifacts],
+        },
+    )
+    generated_files["artifact_manifest"] = artifact_manifest_path
+    upload_specs = (
+        *upload_specs_without_manifest,
+        (str(artifact_manifest_path), f"{bundle.gcs_sync_plan.prefix}/artifact_manifest.json", False),
+    )
     uploaded_uris: list[str] = []
     command_runner = runner or _run_command
 
@@ -60,8 +100,6 @@ def materialize_dev_cloud_bundle(
             uploaded_uris.append(gcs_uri)
 
     if update_current_pointer:
-        if not bundle.promotion_registry_plan.eligible_for_current:
-            raise ValueError("refusing to update dev current pointer for a non-promoted run")
         current_pointer = generated_files["current_pointer"]
         rollback_pointer = generated_files["rollback_pointer"]
         if publish_gcs:
@@ -84,6 +122,8 @@ def materialize_dev_cloud_bundle(
         current_pointer_updated=update_current_pointer,
         uploaded_uris=tuple(uploaded_uris),
         generated_files=tuple(str(path) for path in generated_files.values()),
+        artifact_manifest_path=str(artifact_manifest_path),
+        artifacts=published_artifacts,
     )
     publish_record_path = resolved_local_dir / "publish_record.json"
     publish_record_path.write_text(json.dumps(record.to_json_dict(), indent=2, sort_keys=True), encoding="utf-8")
@@ -162,6 +202,58 @@ def _artifact_upload_spec(
     if not local_path.exists():
         raise FileNotFoundError(f"required artifact does not exist: {local_path}")
     return str(local_path), artifact.gcs_uri, is_dir
+
+
+def _build_published_artifacts(
+    upload_specs: tuple[tuple[str, str, bool], ...],
+) -> tuple[SQLAdapterDevCloudPublishedArtifact, ...]:
+    artifacts: list[SQLAdapterDevCloudPublishedArtifact] = []
+    for local_path, gcs_uri, is_dir in upload_specs:
+        resolved_path = Path(local_path)
+        if is_dir:
+            size_bytes, digest = _directory_digest(resolved_path)
+        else:
+            if not resolved_path.is_file():
+                raise FileNotFoundError(f"required artifact file does not exist: {resolved_path}")
+            size_bytes = resolved_path.stat().st_size
+            digest = _file_sha256(resolved_path)
+        artifacts.append(
+            SQLAdapterDevCloudPublishedArtifact(
+                local_path=str(resolved_path),
+                gcs_uri=gcs_uri,
+                is_directory=is_dir,
+                size_bytes=size_bytes,
+                sha256=digest,
+            )
+        )
+    return tuple(artifacts)
+
+
+def _directory_digest(path: Path) -> tuple[int, str]:
+    if not path.is_dir():
+        raise FileNotFoundError(f"required artifact directory does not exist: {path}")
+    total_size = 0
+    hasher = hashlib.sha256()
+    for child in sorted(candidate for candidate in path.rglob("*") if candidate.is_file()):
+        relative_path = child.relative_to(path).as_posix()
+        child_size = child.stat().st_size
+        child_digest = _file_sha256(child)
+        total_size += child_size
+        hasher.update(relative_path.encode("utf-8"))
+        hasher.update(b"\0")
+        hasher.update(str(child_size).encode("ascii"))
+        hasher.update(b"\0")
+        hasher.update(child_digest.encode("ascii"))
+        hasher.update(b"\n")
+    return total_size, hasher.hexdigest()
+
+
+def _file_sha256(path: Path) -> str:
+    hasher = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            hasher.update(chunk)
+    return hasher.hexdigest()
 
 
 def _write_json(path: Path, payload: dict[str, Any]) -> None:

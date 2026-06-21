@@ -10,6 +10,7 @@ from pathlib import Path
 from sqlbench_lab.cli import main
 from sqlbench_lab.mlops import (
     DEV_CLOUD_BUNDLE_SCHEMA_VERSION,
+    DEV_CLOUD_ARTIFACT_MANIFEST_SCHEMA_VERSION,
     DEV_CLOUD_PUBLISH_SCHEMA_VERSION,
     DEV_COST_CAPACITY_SCHEMA_VERSION,
     DEV_ENDPOINT_MONITORING_SCHEMA_VERSION,
@@ -458,6 +459,17 @@ class SQLAdapterDevCloudContractTests(unittest.TestCase):
             self.assertEqual(publish_record["schema_version"], DEV_CLOUD_PUBLISH_SCHEMA_VERSION)
             self.assertFalse(publish_record["published_to_gcs"])
             self.assertFalse(publish_record["current_pointer_updated"])
+            artifact_manifest = json.loads((publish_dir / "artifact_manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(artifact_manifest["schema_version"], DEV_CLOUD_ARTIFACT_MANIFEST_SCHEMA_VERSION)
+            self.assertEqual(publish_record["artifact_manifest_path"], str(publish_dir / "artifact_manifest.json"))
+            self.assertIn(str(publish_dir / "artifact_manifest.json"), publish_record["generated_files"])
+            self.assertEqual(publish_record["artifacts"], artifact_manifest["artifacts"])
+            artifact_entries = artifact_manifest["artifacts"]
+            self.assertTrue(artifact_entries)
+            self.assertTrue(all(len(entry["sha256"]) == 64 for entry in artifact_entries))
+            self.assertTrue(all(entry["size_bytes"] >= 0 for entry in artifact_entries))
+            self.assertTrue(any(entry["is_directory"] for entry in artifact_entries))
+            self.assertTrue(any(entry["gcs_uri"].endswith("/cloud_bundle.json") for entry in artifact_entries))
             self.assertTrue((publish_dir / "run_contract.json").is_file())
             self.assertTrue((publish_dir / "decision.json").is_file())
             self.assertTrue((publish_dir / "current_pointer.json").is_file())

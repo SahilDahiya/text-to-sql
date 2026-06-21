@@ -129,6 +129,7 @@ class DocsSiteTests(unittest.TestCase):
         self.assertIn("dev_endpoint_plan", pipeline_html)
         self.assertIn("sql_adapter_dev_promotion_registry:v1", pipeline_html)
         self.assertIn("promotion_registry_plan", pipeline_html)
+        self.assertIn("artifact manifest with file/tree SHA-256 hashes", pipeline_html)
         self.assertIn("sql_adapter_dev_observability:v1", pipeline_html)
         self.assertIn("endpoint_monitoring_record", pipeline_html)
         self.assertIn("generated SQL character-count", pipeline_html)
