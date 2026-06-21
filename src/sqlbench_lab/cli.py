@@ -121,6 +121,9 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Render the Vertex training job with sql run-sft --dry-run",
     )
+    dev_cloud_plan.add_argument("--vertex-machine-type", default="g2-standard-4")
+    dev_cloud_plan.add_argument("--vertex-accelerator-type", default="NVIDIA_L4")
+    dev_cloud_plan.add_argument("--vertex-accelerator-count", type=int, default=1)
     dev_cloud_plan.add_argument(
         "--publish-local-dir",
         help="Directory for generated run contract, decision, registry, and monitoring JSON files",
@@ -534,6 +537,9 @@ def _run_mlops_command(args: argparse.Namespace) -> int:
             training_hourly_cost_usd=args.training_hourly_cost_usd,
             endpoint_hourly_cost_usd=args.endpoint_hourly_cost_usd,
             vertex_dry_run=args.vertex_dry_run,
+            vertex_machine_type=args.vertex_machine_type,
+            vertex_accelerator_type=args.vertex_accelerator_type,
+            vertex_accelerator_count=args.vertex_accelerator_count,
         )
         write_dev_cloud_bundle(
             bundle,

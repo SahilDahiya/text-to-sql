@@ -17,7 +17,7 @@ DEV_VERTEX_JOB_SCHEMA_VERSION = "sql_adapter_vertex_training_job:v1"
 @dataclass(frozen=True)
 class SQLAdapterVertexMachineSpec:
     machine_type: str
-    accelerator_type: str
+    accelerator_type: str | None
     accelerator_count: int
     replica_count: int = 1
 
@@ -46,14 +46,16 @@ class SQLAdapterVertexTrainingJobPlan:
         return asdict(self)
 
     def to_custom_job_spec(self) -> dict[str, Any]:
+        machine_spec: dict[str, Any] = {
+            "machineType": self.machine.machine_type,
+        }
+        if self.machine.accelerator_count > 0:
+            machine_spec["acceleratorType"] = _non_empty(self.machine.accelerator_type or "", "accelerator_type")
+            machine_spec["acceleratorCount"] = self.machine.accelerator_count
         return {
             "workerPoolSpecs": [
                 {
-                    "machineSpec": {
-                        "machineType": self.machine.machine_type,
-                        "acceleratorType": self.machine.accelerator_type,
-                        "acceleratorCount": self.machine.accelerator_count,
-                    },
+                    "machineSpec": machine_spec,
                     "replicaCount": self.machine.replica_count,
                     "containerSpec": {
                         "imageUri": self.image_uri,
@@ -74,7 +76,7 @@ def build_dev_vertex_training_job_plan(
     region: str,
     image_uri: str,
     machine_type: str = "g2-standard-4",
-    accelerator_type: str = "NVIDIA_L4",
+    accelerator_type: str | None = "NVIDIA_L4",
     accelerator_count: int = 1,
     replica_count: int = 1,
     container_manifest_path: str | None = None,
@@ -111,8 +113,8 @@ def build_dev_vertex_training_job_plan(
         service_account=_gcp_service_account_email(contract.environment.training_service_account, resolved_project),
         machine=SQLAdapterVertexMachineSpec(
             machine_type=_non_empty(machine_type, "machine_type"),
-            accelerator_type=_non_empty(accelerator_type, "accelerator_type"),
-            accelerator_count=_positive_int(accelerator_count, "accelerator_count"),
+            accelerator_type=_optional_accelerator_type(accelerator_type, accelerator_count),
+            accelerator_count=_non_negative_int(accelerator_count, "accelerator_count"),
             replica_count=_positive_int(replica_count, "replica_count"),
         ),
         command=("python", "-m", "sqlbench_lab.cli"),
@@ -176,6 +178,18 @@ def _positive_int(value: int, name: str) -> int:
     if value <= 0:
         raise ValueError(f"{name} must be positive")
     return value
+
+
+def _non_negative_int(value: int, name: str) -> int:
+    if value < 0:
+        raise ValueError(f"{name} must be non-negative")
+    return value
+
+
+def _optional_accelerator_type(value: str | None, accelerator_count: int) -> str | None:
+    if accelerator_count == 0:
+        return None
+    return _non_empty(value or "", "accelerator_type")
 
 
 def _label_value(value: str) -> str:

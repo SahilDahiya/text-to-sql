@@ -91,6 +91,28 @@ class SQLAdapterDevCloudContractTests(unittest.TestCase):
             )
             self.assertTrue(plan.manifest_uri.startswith("gs://"))
 
+    def test_vertex_training_job_plan_can_render_cpu_dry_run_machine(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            contract, _decision, gcs_plan = _promoted_contract(Path(tmp_dir))
+
+            plan = build_dev_vertex_training_job_plan(
+                contract,
+                gcs_plan,
+                project_id="mistri-467901",
+                region="us-central1",
+                image_uri="us-central1-docker.pkg.dev/mistri-467901/sqlbench/sqlbench-lab-dev-cli:dev",
+                machine_type="n1-standard-4",
+                accelerator_type=None,
+                accelerator_count=0,
+                dry_run=True,
+            )
+            machine_spec = plan.to_custom_job_spec()["workerPoolSpecs"][0]["machineSpec"]
+
+            self.assertEqual(plan.machine.machine_type, "n1-standard-4")
+            self.assertIsNone(plan.machine.accelerator_type)
+            self.assertEqual(plan.machine.accelerator_count, 0)
+            self.assertEqual(machine_spec, {"machineType": "n1-standard-4"})
+
     def test_dev_gcp_vllm_endpoint_plan_names_adapter_and_capacity(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             contract, _decision, gcs_plan = _promoted_contract(Path(tmp_dir))
@@ -254,6 +276,10 @@ class SQLAdapterDevCloudContractTests(unittest.TestCase):
                         "--run-id",
                         "cli-run-123",
                         "--vertex-dry-run",
+                        "--vertex-machine-type",
+                        "n1-standard-4",
+                        "--vertex-accelerator-count",
+                        "0",
                         "--publish-local-dir",
                         str(publish_dir),
                         "--output",
@@ -272,8 +298,10 @@ class SQLAdapterDevCloudContractTests(unittest.TestCase):
             self.assertEqual(bundle["gcs_sync_plan"]["run_id"], "cli-run-123")
             self.assertEqual(bundle["vertex_training_job_plan"]["schema_version"], DEV_VERTEX_JOB_SCHEMA_VERSION)
             self.assertTrue(bundle["vertex_training_job_plan"]["dry_run"])
+            self.assertEqual(bundle["vertex_training_job_plan"]["machine"]["accelerator_count"], 0)
             self.assertEqual(bundle["dev_endpoint_plan"]["schema_version"], DEV_ENDPOINT_PLAN_SCHEMA_VERSION)
             self.assertEqual(config["workerPoolSpecs"][0]["containerSpec"]["args"][-1], "--dry-run")
+            self.assertEqual(config["workerPoolSpecs"][0]["machineSpec"], {"machineType": "n1-standard-4"})
             publish_record = json.loads((publish_dir / "publish_record.json").read_text(encoding="utf-8"))
             self.assertEqual(publish_record["schema_version"], DEV_CLOUD_PUBLISH_SCHEMA_VERSION)
             self.assertFalse(publish_record["published_to_gcs"])
