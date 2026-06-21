@@ -6,8 +6,6 @@ from pathlib import Path
 
 from sqlbench_lab.docs_site import build_docs_site
 
-WORKSPACE_ROOT = Path(__file__).resolve().parents[1]
-
 
 class DocsSiteTests(unittest.TestCase):
     def test_build_docs_site_writes_dense_browser_pages(self) -> None:
@@ -121,12 +119,7 @@ class DocsSiteTests(unittest.TestCase):
         self.assertIn("$3.4k/month", serving_html)
         self.assertIn("optimizer</span>", observability_html)
         self.assertIn("prompt_dev_dataset", observability_html)
-        self.assertIn("Do not add markdown docs", documentation_html)
+        self.assertIn("Markdown docs are allowed", documentation_html)
+        self.assertIn("Use browser docs for durable operating surfaces", documentation_html)
         self.assertIn("Train Inputs", experiment_html)
         self.assertIn("Eval Results", experiment_html)
-
-    def test_repo_docs_do_not_use_markdown_docs(self) -> None:
-        docs_dir = WORKSPACE_ROOT / "docs"
-        markdown_docs = sorted(path.name for path in docs_dir.glob("*.md"))
-
-        self.assertEqual(markdown_docs, [])

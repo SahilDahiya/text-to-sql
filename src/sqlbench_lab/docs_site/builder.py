@@ -1176,7 +1176,7 @@ def _render_home(experiments: list[ExperimentRecord]) -> str:
         <section class="page-head">
           <p class="eyebrow">SQLBench Lab</p>
           <h1>Dense browser map for training, eval, and competition readiness.</h1>
-          <p class="lead">This view organizes the repo by decisions, artifacts, gates, and experiment evidence. Markdown remains agent-readable source context; this site is the working cockpit.</p>
+          <p class="lead">This view organizes the repo by decisions, artifacts, gates, and experiment evidence. Markdown and browser pages are both repo docs; this site is the structured working cockpit.</p>
         </section>
         <section class="metrics">{''.join(cards)}</section>
         <section class="grid two">
@@ -1868,14 +1868,14 @@ def _render_documentation() -> str:
     body = """
         <section class="page-head compact">
           <p class="eyebrow">Documentation</p>
-          <h1>Docs are maintained as structured browser pages, not markdown notes.</h1>
-          <p class="lead">The goal is dense operational memory: pages should organize decisions, artifacts, commands, gates, and lessons so a future run can move faster.</p>
+          <h1>Docs can live in browser pages or markdown.</h1>
+          <p class="lead">The goal is dense operational memory: choose the format that makes decisions, artifacts, commands, gates, and lessons easiest to reuse.</p>
         </section>
         <section class="grid two">
           <article class="panel">
             <h2>How To Change Docs</h2>
             <ol class="tight">
-              <li>Edit <code>src/sqlbench_lab/docs_site/builder.py</code> first.</li>
+              <li>Edit <code>src/sqlbench_lab/docs_site/builder.py</code> first for browser docs.</li>
               <li>Use structured sections, tables, cards, and artifact links instead of prose dumps.</li>
               <li>Add the page to the nav when it is a durable operating surface.</li>
               <li>Add or update <code>tests/test_docs_site.py</code> for required pages and sections.</li>
@@ -1897,8 +1897,8 @@ def _render_documentation() -> str:
         <section class="grid two">
           <article class="panel">
             <h2>Markdown Policy</h2>
-            <p>Do not add markdown docs for repo knowledge, training plans, experiment reads, LiveSQLBench notes, or tooling roadmaps. Markdown is only for tool-mandated files such as <code>AGENTS.md</code> or external issue text.</p>
-            <div class="callout">If a doc change matters to the project, it belongs in the browser docs source first. Generated HTML is output; <code>builder.py</code> is the tracked source.</div>
+            <p>Markdown docs are allowed for repo knowledge, training plans, experiment reads, LiveSQLBench notes, and tooling roadmaps when markdown is the clearer format.</p>
+            <div class="callout">Use browser docs for durable operating surfaces that need navigation, tables, cross-links, or generated experiment indexes. Generated HTML is output; <code>builder.py</code> is the tracked browser-docs source.</div>
           </article>
           <article class="panel">
             <h2>Shape Rules</h2>
