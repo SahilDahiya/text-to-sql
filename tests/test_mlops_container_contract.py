@@ -103,10 +103,13 @@ class SQLAdapterContainerContractTests(unittest.TestCase):
         self.assertEqual(contract.entrypoint_path, DEV_VLLM_ENTRYPOINT)
         self.assertEqual(contract.exposed_port, 8000)
         self.assertIn("SQLBENCH_BASE_MODEL", contract.required_environment_variables)
+        self.assertIn("SQLBENCH_BASE_SERVED_MODEL", contract.required_environment_variables)
+        self.assertIn("SQLBENCH_OPENAI_MODEL", contract.required_environment_variables)
         self.assertIn("SQLBENCH_ADAPTER_URI", contract.required_environment_variables)
         self.assertIn("SQLBENCH_GPU_MEMORY_UTILIZATION", contract.optional_environment_variables)
         self.assertIn("SQLBENCH_BASE_MODEL_URI", contract.optional_environment_variables)
         self.assertIn("--enable-lora", contract.startup_summary)
+        self.assertIn("LoRA request model", contract.startup_summary)
         self.assertIn("Cloud Run L4 rejected", " ".join(contract.runtime_compatibility_notes))
         self.assertIn("driver 12020", " ".join(contract.runtime_compatibility_notes))
 

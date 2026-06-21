@@ -281,7 +281,8 @@ class SQLAdapterOfflineDevFlowTests(unittest.TestCase):
             )
 
             self.assertEqual(vertex.environment, DEV_ENVIRONMENT)
-            self.assertEqual(endpoint_plan.openai_model, f"{manifest.stem}-dev")
+            self.assertEqual(endpoint_plan.served_model_name, f"{manifest.stem}-dev")
+            self.assertEqual(endpoint_plan.openai_model, f"{manifest.stem}_adapter")
             self.assertTrue(registry.eligible_for_current)
             self.assertEqual(observability.decision, PROMOTE_DECISION)
             self.assertEqual(monitoring.request_count, 32)

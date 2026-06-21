@@ -35,6 +35,7 @@ class SQLAdapterDevEndpointPlan:
     base_model_uri: str | None
     adapter_name: str
     adapter_uri: str
+    served_model_name: str
     openai_model: str
     machine_type: str
     accelerator_type: str
@@ -95,9 +96,11 @@ def build_dev_gcp_vllm_endpoint_plan(
     resolved_max_model_len = _positive_int(max_model_len, "max_model_len")
     resolved_max_num_seqs = _positive_int(max_num_seqs, "max_num_seqs")
     resolved_max_lora_rank = _positive_int(max_lora_rank, "max_lora_rank")
-    openai_model = f"{contract.inputs.experiment_id}-dev"
+    served_model_name = f"{contract.inputs.experiment_id}-dev"
+    openai_model = contract.inputs.adapter_name
     environment_variables = {
         "SQLBENCH_BASE_MODEL": contract.inputs.base_model,
+        "SQLBENCH_BASE_SERVED_MODEL": served_model_name,
         "SQLBENCH_OPENAI_MODEL": openai_model,
         "SQLBENCH_ADAPTER_NAME": contract.inputs.adapter_name,
         "SQLBENCH_ADAPTER_URI": gcs_plan.adapter_uri,
@@ -116,7 +119,7 @@ def build_dev_gcp_vllm_endpoint_plan(
         "--model",
         contract.inputs.base_model,
         "--served-model-name",
-        openai_model,
+        served_model_name,
         "--enable-lora",
         "--lora-modules",
         f"{contract.inputs.adapter_name}={gcs_plan.adapter_uri}",
@@ -142,6 +145,7 @@ def build_dev_gcp_vllm_endpoint_plan(
         base_model_uri=resolved_base_model_uri,
         adapter_name=contract.inputs.adapter_name,
         adapter_uri=gcs_plan.adapter_uri,
+        served_model_name=served_model_name,
         openai_model=openai_model,
         machine_type=_non_empty(machine_type, "machine_type"),
         accelerator_type=_non_empty(accelerator_type, "accelerator_type"),
@@ -162,6 +166,7 @@ def build_dev_gcp_vllm_endpoint_plan(
             "current dev image requires a CUDA 13.0-compatible NVIDIA driver",
             "base model must be available from SQLBENCH_BASE_MODEL_URI or Hugging Face before vLLM starts",
             "adapter GCS prefix must contain adapter_config.json and adapter_model.safetensors",
+            "OpenAI-compatible eval and load-test requests must use the LoRA adapter model ID, not the base served model alias",
         ),
         rejected_serving_targets=DEV_ENDPOINT_REJECTED_SERVING_TARGETS,
         deployment_notes=(

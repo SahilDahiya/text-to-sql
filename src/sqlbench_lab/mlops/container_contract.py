@@ -85,6 +85,7 @@ def dev_vllm_serving_container_contract() -> SQLAdapterDevServingContainerContra
         build_context=".",
         required_environment_variables=(
             "SQLBENCH_BASE_MODEL",
+            "SQLBENCH_BASE_SERVED_MODEL",
             "SQLBENCH_OPENAI_MODEL",
             "SQLBENCH_ADAPTER_NAME",
             "SQLBENCH_ADAPTER_URI",
@@ -100,7 +101,7 @@ def dev_vllm_serving_container_contract() -> SQLAdapterDevServingContainerContra
             "SQLBENCH_VLLM_EXTRA_ARGS",
         ),
         exposed_port=8000,
-        startup_summary="download GCS adapter prefix, then exec vllm serve with --enable-lora",
+        startup_summary="download GCS adapter prefix, then exec vllm serve with --enable-lora and a LoRA request model",
         runtime_compatibility_notes=(
             "Cloud Run L4 rejected the current image on 2026-06-21 because its managed driver reported CUDA driver 12020.",
             "The current dev image uses torch 2.11.0+cu130 / CUDA 13.0 and requires a GPU target with a compatible NVIDIA driver.",

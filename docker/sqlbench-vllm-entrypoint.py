@@ -13,6 +13,7 @@ from google.cloud import storage
 def main() -> None:
     base_model = _required_env("SQLBENCH_BASE_MODEL")
     base_model_uri = os.environ.get("SQLBENCH_BASE_MODEL_URI", "").strip()
+    base_served_model = _required_env("SQLBENCH_BASE_SERVED_MODEL")
     openai_model = _required_env("SQLBENCH_OPENAI_MODEL")
     adapter_name = _required_env("SQLBENCH_ADAPTER_NAME")
     adapter_uri = _required_env("SQLBENCH_ADAPTER_URI")
@@ -22,6 +23,8 @@ def main() -> None:
     max_num_seqs = _positive_int_env("SQLBENCH_MAX_NUM_SEQS", 64)
     max_lora_rank = _positive_int_env("SQLBENCH_MAX_LORA_RANK", 16)
     gpu_memory_utilization = _float_env("SQLBENCH_GPU_MEMORY_UTILIZATION", 0.75)
+    if openai_model != adapter_name:
+        raise ValueError("SQLBENCH_OPENAI_MODEL must equal SQLBENCH_ADAPTER_NAME so clients request the LoRA model")
 
     adapter_dir = Path("/models/adapters") / adapter_name
     _materialize_uri_prefix(adapter_uri, adapter_dir)
@@ -43,7 +46,7 @@ def main() -> None:
         "--port",
         str(port),
         "--served-model-name",
-        openai_model,
+        base_served_model,
         "--enable-lora",
         "--max-lora-rank",
         str(max_lora_rank),
