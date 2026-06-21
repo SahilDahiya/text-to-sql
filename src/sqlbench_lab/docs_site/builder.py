@@ -1685,6 +1685,24 @@ uv run --group serving vllm serve Qwen/Qwen3.5-0.8B-Base \\
           <div class="callout">For application traffic, build prompts with the repo renderer rather than hand-writing chat markers. The curl example is only the wire-format shape.</div>
         </section>
         <section class="panel full">
+          <h2>Local SQL Ask App</h2>
+          <p>The FastAPI/HTMX query app is a local manual testing console for the promoted storefront adapter. It reuses the repo eval prompt renderer, sends completions to the explicit local endpoint, extracts SQL, and runs read-only SELECT execution against the storefront SQLite database.</p>
+          <pre><code>uv run --group web python -m sqlbench_lab.cli web query-app \\
+  --manifest experiments/sql/qwen35_0_8b__exp056_storefront_v4_lora_r16_a32_d010.json \\
+  --schema-source datasets/sql/eval/storefront_sales_lab_eval_v1.jsonl \\
+  --db datasets/sql/dbs/storefront_sales_lab/storefront_sales_lab.sqlite \\
+  --openai-base-url http://127.0.0.1:8000 \\
+  --openai-model qwen35_0_8b_storefront_v4_lora_r16_a32_d010_exp056 \\
+  --host 127.0.0.1 \\
+  --port 8080</code></pre>
+          <table class="key-table">
+            <tr><th>Scope</th><td>Local dev only: one known endpoint, one known SQLite DB, no auth, no DB upload, and no cloud deployment claim.</td></tr>
+            <tr><th>Prompt</th><td>Loads the first storefront eval case as the schema template, replaces the question, and renders the same SFT prompt format used by endpoint eval.</td></tr>
+            <tr><th>SQL safety</th><td>Generated SQL must be one <code>SELECT</code> or <code>WITH</code> statement. Execution uses SQLite <code>mode=ro</code>, <code>PRAGMA query_only = ON</code>, and a display row limit.</td></tr>
+          </table>
+          <div class="callout">Use this app to manually test natural-language questions after the vLLM endpoint is already running. It is a product-like probe, not a replacement for frozen eval and load-test gates.</div>
+        </section>
+        <section class="panel full">
           <h2>Raw Serving Notebook</h2>
           <p>The runnable notebook <code>notebooks/sql_local_serving_kv_cache_walkthrough.ipynb</code> walks one held-out storefront case from manifest to vLLM command, rendered prompt, raw completion request, execution scoring, endpoint gates, and the local vLLM KV-cache allocation functions.</p>
           <pre><code>uv run --with jupyter jupyter lab notebooks/sql_local_serving_kv_cache_walkthrough.ipynb</code></pre>

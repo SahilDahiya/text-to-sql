@@ -5673,6 +5673,12 @@ training = [
     { name = "transformers" },
     { name = "trl" },
 ]
+web = [
+    { name = "fastapi" },
+    { name = "jinja2" },
+    { name = "python-multipart" },
+    { name = "uvicorn" },
+]
 
 [package.metadata]
 requires-dist = [{ name = "jsonschema", specifier = ">=4.23.0" }]
@@ -5696,6 +5702,12 @@ training = [
     { name = "torchvision", specifier = ">=0.22.0" },
     { name = "transformers", specifier = ">=4.57.1" },
     { name = "trl", specifier = ">=0.25.0" },
+]
+web = [
+    { name = "fastapi", specifier = ">=0.115.0" },
+    { name = "jinja2", specifier = ">=3.1.0" },
+    { name = "python-multipart", specifier = ">=0.0.9" },
+    { name = "uvicorn", specifier = ">=0.30.0" },
 ]
 
 [[package]]

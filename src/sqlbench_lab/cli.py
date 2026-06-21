@@ -54,6 +54,35 @@ def main(argv: list[str] | None = None) -> int:
     docs_serve.add_argument("--host", default="127.0.0.1", help="HTTP bind host")
     docs_serve.add_argument("--port", type=int, default=8000, help="HTTP bind port")
 
+    web_parser = subparsers.add_parser("web", help="Local browser app commands")
+    web_subparsers = web_parser.add_subparsers(dest="web_command")
+    query_app = web_subparsers.add_parser(
+        "query-app",
+        help="Launch the local FastAPI/HTMX natural-language SQL query app",
+    )
+    query_app.add_argument(
+        "--manifest",
+        default="experiments/sql/qwen35_0_8b__exp056_storefront_v4_lora_r16_a32_d010.json",
+        help="Path to SQL SFT manifest JSON",
+    )
+    query_app.add_argument(
+        "--schema-source",
+        default="datasets/sql/eval/storefront_sales_lab_eval_v1.jsonl",
+        help="Eval JSONL whose first case provides the schema and prompt metadata",
+    )
+    query_app.add_argument(
+        "--db",
+        default="datasets/sql/dbs/storefront_sales_lab/storefront_sales_lab.sqlite",
+        help="SQLite database path used for read-only execution",
+    )
+    query_app.add_argument("--openai-base-url", required=True, help="OpenAI-compatible base URL")
+    query_app.add_argument("--openai-model", required=True, help="Model name sent to the endpoint")
+    query_app.add_argument("--host", default="127.0.0.1", help="FastAPI bind host")
+    query_app.add_argument("--port", type=int, default=8080, help="FastAPI bind port")
+    query_app.add_argument("--row-limit", type=int, default=100, help="Maximum rows displayed per query")
+    query_app.add_argument("--max-new-tokens", type=int, default=128, help="Maximum generated SQL tokens")
+    query_app.add_argument("--openai-timeout", type=float, default=60.0, help="Remote completion timeout in seconds")
+
     mlops_parser = subparsers.add_parser("mlops", help="SQL adapter MLOps commands")
     mlops_subparsers = mlops_parser.add_subparsers(dest="mlops_command")
     dev_cloud_plan = mlops_subparsers.add_parser(
@@ -499,6 +528,11 @@ def main(argv: list[str] | None = None) -> int:
             return _run_docs_command(args)
         except (ImportError, ValueError) as exc:
             parser.error(str(exc))
+    if args.command == "web":
+        try:
+            return _run_web_command(args)
+        except (ImportError, ValueError) as exc:
+            parser.error(str(exc))
     parser.print_help()
     return 0
 
@@ -516,6 +550,29 @@ def _run_docs_command(args: argparse.Namespace) -> int:
     if args.docs_command == "serve":
         return serve_docs_site(args.output, host=args.host, port=args.port)
     raise ValueError("missing docs command")
+
+
+def _run_web_command(args: argparse.Namespace) -> int:
+    if args.web_command == "query-app":
+        from sqlbench_lab.webapp.app import serve_query_app
+        from sqlbench_lab.webapp.sql_query import SQLAskAppConfig
+
+        config = SQLAskAppConfig(
+            manifest_path=args.manifest,
+            schema_source_path=args.schema_source,
+            db_path=args.db,
+            openai_base_url=args.openai_base_url,
+            openai_model=args.openai_model,
+            row_limit=args.row_limit,
+            timeout_seconds=args.openai_timeout,
+            max_new_tokens=args.max_new_tokens,
+        )
+        print(f"starting SQL ask app at http://{args.host}:{args.port}")
+        print(f"endpoint: {args.openai_base_url}")
+        print(f"model: {args.openai_model}")
+        print(f"db: {args.db}")
+        return serve_query_app(config=config, host=args.host, port=args.port)
+    raise ValueError("missing web command")
 
 
 def _run_mlops_command(args: argparse.Namespace) -> int:
