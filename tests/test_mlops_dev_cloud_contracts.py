@@ -3,9 +3,13 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
+from contextlib import redirect_stdout
+from io import StringIO
 from pathlib import Path
 
+from sqlbench_lab.cli import main
 from sqlbench_lab.mlops import (
+    DEV_CLOUD_BUNDLE_SCHEMA_VERSION,
     DEV_COST_CAPACITY_SCHEMA_VERSION,
     DEV_ENDPOINT_MONITORING_SCHEMA_VERSION,
     DEV_ENDPOINT_PLAN_SCHEMA_VERSION,
@@ -178,6 +182,67 @@ class SQLAdapterDevCloudContractTests(unittest.TestCase):
             self.assertEqual(record.total_estimated_cost_usd, 3.5)
             self.assertEqual(record.request_count, 32)
             self.assertEqual(record.peak_concurrency, 8)
+
+    def test_cli_writes_dev_cloud_plan_bundle_and_vertex_config(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            manifest = _write_manifest(root, "qwen35_0_8b__exp056_storefront_v4_lora_r16_a32_d010")
+            train = _write_train_summary(root, manifest_id=manifest.stem)
+            dev = _write_eval_result(root, label="dev_v2", passed=11, total=12, failure_counts={})
+            protected_eval = _write_eval_result(root, label="eval_v1", passed=12, total=12, failure_counts={})
+            challenge = _write_eval_result(root, label="challenge_v1", passed=22, total=24, failure_counts={})
+            endpoint = _write_eval_result(
+                root,
+                label="endpoint_eval",
+                passed=10,
+                total=12,
+                failure_counts={"prediction_schema_error": 2},
+            )
+            load = _write_load_test(root, label="vllm_stress_c8_r32", success=32, total=32, concurrency=8)
+            output = root / "bundle.json"
+            vertex_config = root / "vertex_custom_job.json"
+            stdout = StringIO()
+
+            with redirect_stdout(stdout):
+                status = main(
+                    [
+                        "mlops",
+                        "dev-cloud-plan",
+                        "--manifest",
+                        str(manifest),
+                        "--train-summary",
+                        str(train),
+                        "--dev-result",
+                        str(dev),
+                        "--eval-result",
+                        str(protected_eval),
+                        "--challenge-result",
+                        str(challenge),
+                        "--endpoint-eval-result",
+                        str(endpoint),
+                        "--endpoint-min-passed",
+                        "10",
+                        "--load-test-result",
+                        str(load),
+                        "--run-id",
+                        "cli-run-123",
+                        "--output",
+                        str(output),
+                        "--vertex-config-output",
+                        str(vertex_config),
+                    ]
+                )
+
+            self.assertEqual(status, 0)
+            self.assertIn("wrote dev cloud plan", stdout.getvalue())
+            bundle = json.loads(output.read_text(encoding="utf-8"))
+            config = json.loads(vertex_config.read_text(encoding="utf-8"))
+            self.assertEqual(bundle["schema_version"], DEV_CLOUD_BUNDLE_SCHEMA_VERSION)
+            self.assertEqual(bundle["promotion_decision"]["decision"], "promote")
+            self.assertEqual(bundle["gcs_sync_plan"]["run_id"], "cli-run-123")
+            self.assertEqual(bundle["vertex_training_job_plan"]["schema_version"], DEV_VERTEX_JOB_SCHEMA_VERSION)
+            self.assertEqual(bundle["dev_endpoint_plan"]["schema_version"], DEV_ENDPOINT_PLAN_SCHEMA_VERSION)
+            self.assertEqual(config["workerPoolSpecs"][0]["containerSpec"]["args"][:3], ["sql", "run-sft", "--manifest"])
 
 
 def _promoted_contract(root: Path):

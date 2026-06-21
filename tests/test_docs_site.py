@@ -98,6 +98,7 @@ class DocsSiteTests(unittest.TestCase):
         self.assertIn("Dev CLI Container", pipeline_html)
         self.assertIn("docker/sqlbench-dev-cli.Dockerfile", pipeline_html)
         self.assertIn("sqlbench-lab-dev-cli:dev", pipeline_html)
+        self.assertIn("mlops dev-cloud-plan", pipeline_html)
         self.assertIn("not a prod serving image", pipeline_html)
         self.assertIn("Dev Cloud Training, Serving, Registry, and Hardening Contracts", pipeline_html)
         self.assertIn("sql_adapter_vertex_training_job:v1", pipeline_html)

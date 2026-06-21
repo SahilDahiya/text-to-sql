@@ -18,20 +18,12 @@ from sqlbench_lab.mlops import (
     EXP056_MANIFEST_PATH,
     EXP056_TRAIN_SUMMARY_PATH,
     build_analyze_eval_command,
-    build_dev_cost_capacity_record,
-    build_dev_endpoint_monitoring_record,
-    build_dev_gcp_vllm_endpoint_plan,
-    build_dev_observability_record,
-    build_dev_promotion_registry_plan,
-    build_dev_vertex_training_job_plan,
+    build_dev_cloud_bundle_from_offline_plan,
     build_endpoint_eval_command,
     build_load_test_command,
-    build_offline_flow_gcs_sync_plan,
     build_offline_flow_plan,
-    build_offline_run_contract,
     build_train_command,
     build_validate_manifest_command,
-    decide_offline_flow_promotion,
     run_repo_cli_command,
     validate_offline_flow_plan,
 )
@@ -261,54 +253,27 @@ class SQLAdapterOfflineDevFlow(FlowSpec):
                 else None
             ),
         )
-        contract = build_offline_run_contract(plan)
-        decision = decide_offline_flow_promotion(plan)
-        gcs_sync_plan = build_offline_flow_gcs_sync_plan(plan, run_id=str(current.run_id))
-        vertex_training_job_plan = build_dev_vertex_training_job_plan(
-            contract,
-            gcs_sync_plan,
-            project_id=str(self.gcp_project),
-            region=str(self.gcp_region),
-            image_uri=str(self.training_image_uri),
-        )
-        dev_endpoint_plan = build_dev_gcp_vllm_endpoint_plan(
-            contract,
-            gcs_sync_plan,
-            project_id=str(self.gcp_project),
-            region=str(self.gcp_region),
-            image_uri=str(self.serving_image_uri),
-        )
-        promotion_registry_plan = build_dev_promotion_registry_plan(
-            contract,
-            gcs_sync_plan,
-            decision,
-            db_id=str(self.dev_db_id),
-        )
-        self.run_contract = contract.to_json_dict()
-        self.promotion_decision = decision.to_json_dict()
-        self.gcs_sync_plan = gcs_sync_plan.to_json_dict()
-        self.vertex_training_job_plan = vertex_training_job_plan.to_json_dict()
-        self.dev_endpoint_plan = dev_endpoint_plan.to_json_dict()
-        self.promotion_registry_plan = promotion_registry_plan.to_json_dict()
-        self.dev_observability_record = build_dev_observability_record(
-            contract,
-            decision,
-            gcs_sync_plan,
-            container_image_uri=str(self.training_image_uri),
-            registry_plan=promotion_registry_plan,
-        ).to_json_dict()
-        self.endpoint_monitoring_record = build_dev_endpoint_monitoring_record(
-            contract,
-            dev_endpoint_plan,
-        ).to_json_dict()
-        self.cost_capacity_record = build_dev_cost_capacity_record(
-            contract,
-            vertex_plan=vertex_training_job_plan,
-            endpoint_plan=dev_endpoint_plan,
+        bundle = build_dev_cloud_bundle_from_offline_plan(
+            plan,
+            run_id=str(current.run_id),
+            gcp_project=str(self.gcp_project),
+            gcp_region=str(self.gcp_region),
+            training_image_uri=str(self.training_image_uri),
+            serving_image_uri=str(self.serving_image_uri),
+            dev_db_id=str(self.dev_db_id),
             endpoint_uptime_hours=float(self.endpoint_uptime_hours),
             training_hourly_cost_usd=float(self.training_gpu_hourly_cost_usd),
             endpoint_hourly_cost_usd=float(self.endpoint_gpu_hourly_cost_usd),
-        ).to_json_dict()
+        )
+        self.run_contract = bundle.run_contract.to_json_dict()
+        self.promotion_decision = bundle.promotion_decision.to_json_dict()
+        self.gcs_sync_plan = bundle.gcs_sync_plan.to_json_dict()
+        self.vertex_training_job_plan = bundle.vertex_training_job_plan.to_json_dict()
+        self.dev_endpoint_plan = bundle.dev_endpoint_plan.to_json_dict()
+        self.promotion_registry_plan = bundle.promotion_registry_plan.to_json_dict()
+        self.dev_observability_record = bundle.dev_observability_record.to_json_dict()
+        self.endpoint_monitoring_record = bundle.endpoint_monitoring_record.to_json_dict()
+        self.cost_capacity_record = bundle.cost_capacity_record.to_json_dict()
         self.next(self.end)
 
     @step

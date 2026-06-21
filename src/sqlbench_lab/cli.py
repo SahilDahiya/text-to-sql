@@ -53,6 +53,71 @@ def main(argv: list[str] | None = None) -> int:
     docs_serve.add_argument("--host", default="127.0.0.1", help="HTTP bind host")
     docs_serve.add_argument("--port", type=int, default=8000, help="HTTP bind port")
 
+    mlops_parser = subparsers.add_parser("mlops", help="SQL adapter MLOps commands")
+    mlops_subparsers = mlops_parser.add_subparsers(dest="mlops_command")
+    dev_cloud_plan = mlops_subparsers.add_parser(
+        "dev-cloud-plan",
+        help="Write the dev cloud training/serving/registry/monitoring plan bundle",
+    )
+    dev_cloud_plan.add_argument(
+        "--manifest",
+        default="experiments/sql/qwen35_0_8b__exp056_storefront_v4_lora_r16_a32_d010.json",
+        help="Path to SQL SFT manifest JSON",
+    )
+    dev_cloud_plan.add_argument(
+        "--train-summary",
+        default="artifacts/sql/qwen35_0_8b__exp056_storefront_v4_lora_r16_a32_d010/train_summary.json",
+        help="Path to train summary JSON",
+    )
+    dev_cloud_plan.add_argument(
+        "--dev-result",
+        default=(
+            "results/sql/qwen35_0_8b__exp056_storefront_v4_lora_r16_a32_d010/"
+            "adapter__storefront_sales_lab_dev_v2__dev_v2.json"
+        ),
+        help="Path to dev eval result JSON",
+    )
+    dev_cloud_plan.add_argument(
+        "--eval-result",
+        default=(
+            "results/sql/qwen35_0_8b__exp056_storefront_v4_lora_r16_a32_d010/"
+            "adapter__storefront_sales_lab_eval_v1__eval_v1.json"
+        ),
+        help="Path to protected eval result JSON",
+    )
+    dev_cloud_plan.add_argument(
+        "--challenge-result",
+        default=(
+            "results/sql/qwen35_0_8b__exp056_storefront_v4_lora_r16_a32_d010/"
+            "adapter__storefront_sales_lab_challenge_v1__challenge_v1.json"
+        ),
+        help="Path to challenge eval result JSON",
+    )
+    dev_cloud_plan.add_argument("--endpoint-eval-result", default="", help="Optional endpoint eval result JSON")
+    dev_cloud_plan.add_argument("--load-test-result", action="append", default=[], help="Optional load-test result JSON")
+    dev_cloud_plan.add_argument("--dev-min-passed", type=int, default=11)
+    dev_cloud_plan.add_argument("--eval-min-passed", type=int, default=12)
+    dev_cloud_plan.add_argument("--challenge-min-passed", type=int, default=22)
+    dev_cloud_plan.add_argument("--endpoint-min-passed", type=int, default=0)
+    dev_cloud_plan.add_argument("--run-id", required=True, help="Stable dev run id for GCS artifact paths")
+    dev_cloud_plan.add_argument("--gcp-project", default="mistri-467901")
+    dev_cloud_plan.add_argument("--gcp-region", default="us-central1")
+    dev_cloud_plan.add_argument(
+        "--training-image-uri",
+        default="us-central1-docker.pkg.dev/mistri-467901/sqlbench/sqlbench-lab-dev-cli:dev",
+    )
+    dev_cloud_plan.add_argument(
+        "--serving-image-uri",
+        default="us-central1-docker.pkg.dev/mistri-467901/sqlbench/sqlbench-vllm:dev",
+    )
+    dev_cloud_plan.add_argument("--dev-db-id", default="storefront_sales_lab")
+    dev_cloud_plan.add_argument("--git-sha")
+    dev_cloud_plan.add_argument("--endpoint-uptime-hours", type=float)
+    dev_cloud_plan.add_argument("--training-hourly-cost-usd", type=float)
+    dev_cloud_plan.add_argument("--endpoint-hourly-cost-usd", type=float)
+    dev_cloud_plan.add_argument("--output", required=True, help="Output bundle JSON path")
+    dev_cloud_plan.add_argument("--vertex-config-output", help="Optional Vertex CustomJobSpec JSON path")
+
     sql_parser = subparsers.add_parser("sql", help="SQL pipeline commands")
     sql_subparsers = sql_parser.add_subparsers(dest="sql_command")
 
@@ -381,6 +446,11 @@ def main(argv: list[str] | None = None) -> int:
             return _run_observe_command(args)
         except (ImportError, ValueError) as exc:
             parser.error(str(exc))
+    if args.command == "mlops":
+        try:
+            return _run_mlops_command(args)
+        except (ImportError, ValueError) as exc:
+            parser.error(str(exc))
     if args.command == "docs":
         try:
             return _run_docs_command(args)
@@ -403,6 +473,61 @@ def _run_docs_command(args: argparse.Namespace) -> int:
     if args.docs_command == "serve":
         return serve_docs_site(args.output, host=args.host, port=args.port)
     raise ValueError("missing docs command")
+
+
+def _run_mlops_command(args: argparse.Namespace) -> int:
+    if args.mlops_command == "dev-cloud-plan":
+        from sqlbench_lab.mlops import (
+            build_dev_cloud_bundle_from_offline_plan,
+            build_offline_flow_plan,
+            validate_offline_flow_plan,
+            write_dev_cloud_bundle,
+        )
+
+        endpoint_eval_result = str(args.endpoint_eval_result).strip() or None
+        endpoint_min_passed_count = args.endpoint_min_passed if args.endpoint_min_passed > 0 else None
+        plan = build_offline_flow_plan(
+            manifest_path=args.manifest,
+            train_summary_path=args.train_summary,
+            dev_result_path=args.dev_result,
+            eval_result_path=args.eval_result,
+            challenge_result_path=args.challenge_result,
+            endpoint_eval_result_path=endpoint_eval_result,
+            load_test_paths=tuple(args.load_test_result),
+            dev_min_passed_count=args.dev_min_passed,
+            eval_min_passed_count=args.eval_min_passed,
+            challenge_min_passed_count=args.challenge_min_passed,
+            endpoint_min_passed_count=endpoint_min_passed_count,
+        )
+        validate_offline_flow_plan(plan)
+        bundle = build_dev_cloud_bundle_from_offline_plan(
+            plan,
+            run_id=args.run_id,
+            gcp_project=args.gcp_project,
+            gcp_region=args.gcp_region,
+            training_image_uri=args.training_image_uri,
+            serving_image_uri=args.serving_image_uri,
+            dev_db_id=args.dev_db_id,
+            git_sha=args.git_sha,
+            endpoint_uptime_hours=args.endpoint_uptime_hours,
+            training_hourly_cost_usd=args.training_hourly_cost_usd,
+            endpoint_hourly_cost_usd=args.endpoint_hourly_cost_usd,
+        )
+        write_dev_cloud_bundle(
+            bundle,
+            output_path=args.output,
+            vertex_config_output_path=args.vertex_config_output,
+        )
+        print(
+            "wrote dev cloud plan "
+            f"experiment={bundle.run_contract.inputs.experiment_id} "
+            f"decision={bundle.promotion_decision.decision} "
+            f"output={args.output}"
+        )
+        if args.vertex_config_output:
+            print(f"wrote Vertex CustomJobSpec config={args.vertex_config_output}")
+        return 0
+    raise ValueError("missing mlops command")
 
 
 def _run_observe_command(args: argparse.Namespace) -> int:
