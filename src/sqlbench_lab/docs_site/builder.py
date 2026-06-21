@@ -601,6 +601,12 @@ RUNBOOK_ROWS: list[dict[str, str]] = [
         "gate": "Compare first@1, pass@N, and selected@1 before deciding whether generation or selection is the bottleneck.",
     },
     {
+        "task": "Evaluate execution-guided repair",
+        "command": "uv run --group training python -m sqlbench_lab.cli sql eval-repair --manifest experiments/sql/<experiment>.json --model adapter --dataset datasets/sql/eval/<eval>.jsonl --max-repair-attempts 1",
+        "output": "results/sql/<experiment>/repair__adapter__<eval>.json",
+        "gate": "Compare first_pass and final_pass without rewriting the one-shot score.",
+    },
+    {
         "task": "Step SQL environment",
         "command": "cd separate_projects/db_sql_agent_env && uv run python -m db_sql_agent_env.cli env-step --dataset ../../datasets/sql/eval/<eval>.jsonl --case-id <case_id> --sql \"SELECT ...\"",
         "output": "Structured JSON with validation, execution, evaluation, reward, and repair observation fields.",
@@ -812,6 +818,12 @@ BLACKSMITH_ROWS: list[dict[str, str]] = [
         "why": "The portfolio target is a DB-specific SQL agent, not only a one-shot adapter. The first agent artifact is a safe environment step that can execute a candidate SQL action and return structured repair feedback.",
         "first_artifact": "Use the extracted db_sql_agent_env env-step command to produce syntax/schema/execution/result observations for one case and one SQL action; later wrap the same contract in OpenEnv with inspect-schema, inspect-values, repair-sql, and final-answer actions.",
         "gate": "The environment step must be read-only, structured, test-covered, and able to explain real schema/syntax failures before any RL or self-healing loop is added.",
+    },
+    {
+        "move": "Execution-Guided Repair Gate",
+        "why": "A consuming agent should be able to send an execution error back for correction, but that must not hide whether the direct generator regressed.",
+        "first_artifact": "Run Exp056 on challenge_v2 with one-shot@1, repair final@1, pass@5, and selected@1 reported as separate artifacts.",
+        "gate": "Promote repair as an endpoint workflow only if final@1 improves on strong execution-blocking failures while eval_v1 one-shot guardrails stay clean.",
     },
     {
         "move": "Fine-Tuning Stop Rule",
@@ -1245,14 +1257,17 @@ def _render_pipeline() -> str:
         </section>
         <section class="panel full">
           <h2>Local Dev Metaflow Flow</h2>
-          <p><code>flows/sql_adapter_offline_dev_flow.py</code> is the first TAP-632 orchestration artifact. It keeps Metaflow thin: the flow validates the manifest through the repo CLI, replays explicit train/eval artifacts, runs failure analysis through the repo CLI, builds the MLOps run contract, and emits the dev promotion decision.</p>
+          <p><code>flows/sql_adapter_offline_dev_flow.py</code> is the TAP-632/TAP-633 orchestration artifact. It keeps Metaflow thin: the flow validates the manifest through the repo CLI, replays explicit train/eval artifacts, optionally gates endpoint eval and load-test artifacts, runs failure analysis through the repo CLI, builds the MLOps run contract, and emits the dev promotion decision.</p>
           <table class="key-table">
             <tr><th>Command</th><td><code>uv run --group mlops python flows/sql_adapter_offline_dev_flow.py run</code></td></tr>
             <tr><th>Default target</th><td>Exp056 replay mode with the promoted train summary and dev_v2, eval_v1, and challenge_v1 result files.</td></tr>
-            <tr><th>Steps</th><td>start, validate_inputs, train_adapter, eval_dev, eval_eval, eval_challenge, decide_dev_promote_or_reject, end.</td></tr>
+            <tr><th>Offline steps</th><td>start, validate_inputs, train_adapter, eval_dev, eval_eval, eval_challenge.</td></tr>
+            <tr><th>Serving steps</th><td>start_temp_dev_endpoint, wait_for_health, endpoint_eval, load_test, stop_temp_dev_endpoint, decide_dev_promote_or_reject, end.</td></tr>
+            <tr><th>Serving replay</th><td>Pass <code>--endpoint-eval-result</code>, <code>--endpoint-min-passed</code>, and <code>--load-test-result</code> to require endpoint quality and concurrency evidence in the final decision.</td></tr>
+            <tr><th>Serving execution</th><td><code>--run-endpoint-eval</code> and <code>--run-load-test</code> call the repo CLI against an explicit <code>--openai-base-url</code> and <code>--openai-model</code>; the flow never starts a hidden GPU server.</td></tr>
             <tr><th>Boundary</th><td>Dev only. The planner rejects non-dev environments and does not define prod paths or prod promotion behavior.</td></tr>
           </table>
-          <div class="callout">Replay mode is intentional for the first slice: it proves orchestration, artifact capture, failure analysis, and promotion logic without requiring a GPU train/eval rerun.</div>
+          <div class="callout">Replay mode is intentional: it proves orchestration, artifact capture, failure analysis, endpoint/load gates, and promotion logic without requiring a GPU train/eval or serving rerun.</div>
         </section>
         <section class="panel full">
           <table class="dense-table">
@@ -1703,6 +1718,14 @@ uv run --group serving vllm serve Qwen/Qwen3.5-0.8B-Base \\
 def _render_evaluation(experiments: list[ExperimentRecord]) -> str:
     latest = experiments[-1] if experiments else None
     failure_rows = _failure_rows(latest) if latest else ""
+    repair_gate_rows = """
+              <tr><th>Fixed checkpoint</th><td>Use Exp056, the promoted full-LoRA storefront adapter. Do not train or change prompt/data during this measurement.</td></tr>
+              <tr><th>One-shot@1</th><td><code>uv run --group training --group observability python -m sqlbench_lab.cli sql eval --manifest experiments/sql/qwen35_0_8b__exp056_storefront_v4_lora_r16_a32_d010.json --model adapter --dataset datasets/sql/eval/storefront_sales_lab_challenge_v2.jsonl --result-label exp064_one_shot_challenge_v2 --mlflow</code></td></tr>
+              <tr><th>Repair final@1</th><td><code>uv run --group training python -m sqlbench_lab.cli sql eval-repair --manifest experiments/sql/qwen35_0_8b__exp056_storefront_v4_lora_r16_a32_d010.json --model adapter --dataset datasets/sql/eval/storefront_sales_lab_challenge_v2.jsonl --max-repair-attempts 1</code></td></tr>
+              <tr><th>pass@5 and selected@1</th><td><code>uv run --group training --group observability python -m sqlbench_lab.cli sql eval-candidates --manifest experiments/sql/qwen35_0_8b__exp056_storefront_v4_lora_r16_a32_d010.json --model adapter --dataset datasets/sql/eval/storefront_sales_lab_challenge_v2.jsonl --candidates 5 --temperature 0.7 --top-p 0.95 --result-label exp064_candidates_challenge_v2 --mlflow</code></td></tr>
+              <tr><th>Guardrail</th><td>Repeat one-shot eval_v1 for Exp056 and require the protected 12/12 behavior to remain the reference. Repair and candidate selection are endpoint workflow evidence, not replacements for the direct SFT score.</td></tr>
+              <tr><th>Readout</th><td>If pass@5 is high and selected@1 is low, the bottleneck is selection. If repair final@1 improves only syntax/schema/execution failures, keep repair narrowly scoped. If neither moves, the generator/data lane needs work.</td></tr>
+    """
     body = f"""
         <section class="page-head compact">
           <p class="eyebrow">Evaluation</p>
@@ -1734,6 +1757,13 @@ def _render_evaluation(experiments: list[ExperimentRecord]) -> str:
           <table class="dense-table">
             <thead><tr><th>Eval</th><th>Score</th><th>Failures</th><th>Analysis</th></tr></thead>
             <tbody>{failure_rows or '<tr><td colspan="4">No eval artifacts discovered.</td></tr>'}</tbody>
+          </table>
+        </section>
+        <section class="panel full">
+          <h2>Execution-Guided Repair Experiment</h2>
+          <p>Prepare this as a separate endpoint workflow gate: one-shot score, repair score, pass@N, and selected@1 are tracked separately so downstream correction cannot mask model-regression risk.</p>
+          <table class="key-table">
+            {repair_gate_rows}
           </table>
         </section>
     """

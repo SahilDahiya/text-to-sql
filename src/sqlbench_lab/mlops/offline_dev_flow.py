@@ -10,6 +10,8 @@ from pathlib import Path
 
 from sqlbench_lab.mlops.run_contract import (
     DEV_ENVIRONMENT,
+    ENDPOINT_EVAL_GATE,
+    LOAD_TEST_GATE,
     OFFLINE_EVAL_GATE,
     SQLAdapterEvalGateConfig,
     SQLAdapterPromotionDecision,
@@ -32,6 +34,7 @@ EXP056_CHALLENGE_RESULT_PATH = f"{EXP056_RESULT_ROOT}/adapter__storefront_sales_
 class SQLAdapterOfflineEvalSpec:
     label: str
     result_path: str
+    gate_type: str = OFFLINE_EVAL_GATE
     protected: bool = False
     required: bool = True
     min_passed_count: int | None = None
@@ -41,7 +44,7 @@ class SQLAdapterOfflineEvalSpec:
         return SQLAdapterEvalGateConfig(
             label=self.label,
             result_path=self.result_path,
-            gate_type=OFFLINE_EVAL_GATE,
+            gate_type=self.gate_type,
             protected=self.protected,
             required=self.required,
             min_passed_count=self.min_passed_count,
@@ -55,6 +58,8 @@ class SQLAdapterOfflineFlowPlan:
     manifest_path: str
     train_summary_path: str
     eval_specs: tuple[SQLAdapterOfflineEvalSpec, ...]
+    endpoint_eval_spec: SQLAdapterOfflineEvalSpec | None = None
+    load_test_paths: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if self.environment != DEV_ENVIRONMENT:
@@ -112,10 +117,13 @@ def build_offline_flow_plan(
     dev_result_path: str,
     eval_result_path: str,
     challenge_result_path: str,
+    endpoint_eval_result_path: str | None = None,
+    load_test_paths: tuple[str, ...] = (),
     environment: str = DEV_ENVIRONMENT,
     dev_min_passed_count: int = 11,
     eval_min_passed_count: int = 12,
     challenge_min_passed_count: int = 22,
+    endpoint_min_passed_count: int | None = None,
 ) -> SQLAdapterOfflineFlowPlan:
     """Build a dev offline flow plan from explicit artifact paths."""
 
@@ -141,6 +149,17 @@ def build_offline_flow_plan(
                 min_passed_count=challenge_min_passed_count,
             ),
         ),
+        endpoint_eval_spec=(
+            SQLAdapterOfflineEvalSpec(
+                label="endpoint_eval",
+                result_path=endpoint_eval_result_path,
+                gate_type=ENDPOINT_EVAL_GATE,
+                min_passed_count=endpoint_min_passed_count,
+            )
+            if endpoint_eval_result_path is not None
+            else None
+        ),
+        load_test_paths=load_test_paths,
     )
 
 
@@ -149,6 +168,9 @@ def validate_offline_flow_plan(plan: SQLAdapterOfflineFlowPlan) -> None:
 
     required_paths = [plan.manifest_path, plan.train_summary_path]
     required_paths.extend(spec.result_path for spec in plan.eval_specs)
+    if plan.endpoint_eval_spec is not None:
+        required_paths.append(plan.endpoint_eval_spec.result_path)
+    required_paths.extend(plan.load_test_paths)
     missing_paths = [path for path in required_paths if not Path(path).exists()]
     if missing_paths:
         raise FileNotFoundError(f"missing offline flow artifact(s): {', '.join(missing_paths)}")
@@ -198,6 +220,74 @@ def build_analyze_eval_command(
     )
 
 
+def build_endpoint_eval_command(
+    manifest_path: str,
+    *,
+    dataset_path: str,
+    openai_base_url: str,
+    openai_model: str,
+    result_label: str,
+    max_new_tokens: int = 128,
+    python_executable: str = sys.executable,
+) -> tuple[str, ...]:
+    return _repo_cli_command(
+        "sql",
+        "eval",
+        "--manifest",
+        manifest_path,
+        "--model",
+        "adapter",
+        "--dataset",
+        dataset_path,
+        "--max-new-tokens",
+        str(max_new_tokens),
+        "--result-label",
+        result_label,
+        "--openai-base-url",
+        openai_base_url,
+        "--openai-model",
+        openai_model,
+        python_executable=python_executable,
+    )
+
+
+def build_load_test_command(
+    manifest_path: str,
+    *,
+    dataset_path: str,
+    openai_base_url: str,
+    openai_model: str,
+    output_path: str,
+    request_count: int,
+    concurrency: int,
+    max_new_tokens: int = 128,
+    python_executable: str = sys.executable,
+) -> tuple[str, ...]:
+    return _repo_cli_command(
+        "sql",
+        "openai-load-test",
+        "--manifest",
+        manifest_path,
+        "--model",
+        "adapter",
+        "--dataset",
+        dataset_path,
+        "--openai-base-url",
+        openai_base_url,
+        "--openai-model",
+        openai_model,
+        "--requests",
+        str(request_count),
+        "--concurrency",
+        str(concurrency),
+        "--max-new-tokens",
+        str(max_new_tokens),
+        "--output",
+        output_path,
+        python_executable=python_executable,
+    )
+
+
 def run_repo_cli_command(command: tuple[str, ...]) -> CLICommandResult:
     """Run a repo CLI command and fail hard on non-zero exit."""
 
@@ -220,11 +310,15 @@ def run_repo_cli_command(command: tuple[str, ...]) -> CLICommandResult:
 def build_offline_run_contract(plan: SQLAdapterOfflineFlowPlan) -> SQLAdapterRunContract:
     """Build the run contract for the offline flow's local artifacts."""
 
+    eval_gates = tuple(spec.to_gate_config() for spec in plan.eval_specs)
+    if plan.endpoint_eval_spec is not None:
+        eval_gates = (*eval_gates, plan.endpoint_eval_spec.to_gate_config())
     return build_sql_adapter_run_contract(
         manifest_path=plan.manifest_path,
         environment=plan.environment,
         train_summary_path=plan.train_summary_path,
-        eval_gates=tuple(spec.to_gate_config() for spec in plan.eval_specs),
+        eval_gates=eval_gates,
+        load_test_paths=plan.load_test_paths,
     )
 
 
@@ -234,7 +328,11 @@ def decide_offline_flow_promotion(plan: SQLAdapterOfflineFlowPlan) -> SQLAdapter
     contract = build_offline_run_contract(plan)
     return decide_sql_adapter_promotion(
         contract,
-        policy=SQLAdapterPromotionPolicy(require_train=True),
+        policy=SQLAdapterPromotionPolicy(
+            require_train=True,
+            require_endpoint_eval=plan.endpoint_eval_spec is not None,
+            require_load_test=bool(plan.load_test_paths),
+        ),
     )
 
 

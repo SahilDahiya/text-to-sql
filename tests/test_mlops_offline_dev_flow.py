@@ -8,7 +8,11 @@ from pathlib import Path
 from sqlbench_lab.mlops import (
     DEV_ENVIRONMENT,
     PROMOTE_DECISION,
+    REJECT_DECISION,
+    build_endpoint_eval_command,
+    build_load_test_command,
     build_offline_flow_plan,
+    build_offline_run_contract,
     build_train_command,
     build_validate_manifest_command,
     decide_offline_flow_promotion,
@@ -54,6 +58,74 @@ class SQLAdapterOfflineDevFlowTests(unittest.TestCase):
                 "--dry-run",
             ),
         )
+        self.assertEqual(
+            build_endpoint_eval_command(
+                "experiments/sql/exp.json",
+                dataset_path="datasets/sql/eval/eval.jsonl",
+                openai_base_url="http://127.0.0.1:8000",
+                openai_model="storefront-sql",
+                result_label="endpoint_eval",
+                python_executable="python",
+            ),
+            (
+                "python",
+                "-m",
+                "sqlbench_lab.cli",
+                "sql",
+                "eval",
+                "--manifest",
+                "experiments/sql/exp.json",
+                "--model",
+                "adapter",
+                "--dataset",
+                "datasets/sql/eval/eval.jsonl",
+                "--max-new-tokens",
+                "128",
+                "--result-label",
+                "endpoint_eval",
+                "--openai-base-url",
+                "http://127.0.0.1:8000",
+                "--openai-model",
+                "storefront-sql",
+            ),
+        )
+        self.assertEqual(
+            build_load_test_command(
+                "experiments/sql/exp.json",
+                dataset_path="datasets/sql/eval/eval.jsonl",
+                openai_base_url="http://127.0.0.1:8000",
+                openai_model="storefront-sql",
+                output_path="artifacts/sql/exp/load.json",
+                request_count=32,
+                concurrency=8,
+                python_executable="python",
+            ),
+            (
+                "python",
+                "-m",
+                "sqlbench_lab.cli",
+                "sql",
+                "openai-load-test",
+                "--manifest",
+                "experiments/sql/exp.json",
+                "--model",
+                "adapter",
+                "--dataset",
+                "datasets/sql/eval/eval.jsonl",
+                "--openai-base-url",
+                "http://127.0.0.1:8000",
+                "--openai-model",
+                "storefront-sql",
+                "--requests",
+                "32",
+                "--concurrency",
+                "8",
+                "--max-new-tokens",
+                "128",
+                "--output",
+                "artifacts/sql/exp/load.json",
+            ),
+        )
 
     def test_plan_fails_fast_when_artifacts_are_missing(self) -> None:
         plan = build_offline_flow_plan(
@@ -89,6 +161,91 @@ class SQLAdapterOfflineDevFlowTests(unittest.TestCase):
             self.assertEqual(decision.decision, PROMOTE_DECISION)
             self.assertEqual(decision.failed_gates, ())
             self.assertIn("eval_v1", decision.passed_gates)
+
+    def test_temp_replay_plan_promotes_with_endpoint_and_load_gates(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            manifest = _write_manifest(root, "qwen35_0_8b__exp056_storefront_v4_lora_r16_a32_d010")
+            train = _write_train_summary(root, manifest_id=manifest.stem)
+            dev = _write_eval_result(root, label="dev_v2", passed=11, total=12)
+            protected_eval = _write_eval_result(root, label="eval_v1", passed=12, total=12)
+            challenge = _write_eval_result(root, label="challenge_v1", passed=22, total=24)
+            endpoint = _write_eval_result(root, label="endpoint_eval", passed=10, total=12)
+            load = _write_load_test(root, label="vllm_stress_c8_r32", success=32, total=32, concurrency=8)
+            plan = build_offline_flow_plan(
+                manifest_path=str(manifest),
+                train_summary_path=str(train),
+                dev_result_path=str(dev),
+                eval_result_path=str(protected_eval),
+                challenge_result_path=str(challenge),
+                endpoint_eval_result_path=str(endpoint),
+                endpoint_min_passed_count=10,
+                load_test_paths=(str(load),),
+            )
+
+            validate_offline_flow_plan(plan)
+            contract = build_offline_run_contract(plan)
+            decision = decide_offline_flow_promotion(plan)
+
+            self.assertEqual(decision.decision, PROMOTE_DECISION)
+            self.assertIn("endpoint_eval", decision.passed_gates)
+            self.assertIn("vllm_stress_c8_r32", decision.passed_gates)
+            self.assertEqual(contract.eval_gates[-1].gate_type, "endpoint_eval")
+            self.assertEqual(contract.load_tests[0].success_count, 32)
+
+    def test_temp_replay_plan_rejects_when_endpoint_gate_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            manifest = _write_manifest(root, "qwen35_0_8b__exp056_storefront_v4_lora_r16_a32_d010")
+            train = _write_train_summary(root, manifest_id=manifest.stem)
+            dev = _write_eval_result(root, label="dev_v2", passed=11, total=12)
+            protected_eval = _write_eval_result(root, label="eval_v1", passed=12, total=12)
+            challenge = _write_eval_result(root, label="challenge_v1", passed=22, total=24)
+            endpoint = _write_eval_result(root, label="endpoint_eval", passed=9, total=12)
+            load = _write_load_test(root, label="vllm_stress_c8_r32", success=32, total=32, concurrency=8)
+            plan = build_offline_flow_plan(
+                manifest_path=str(manifest),
+                train_summary_path=str(train),
+                dev_result_path=str(dev),
+                eval_result_path=str(protected_eval),
+                challenge_result_path=str(challenge),
+                endpoint_eval_result_path=str(endpoint),
+                endpoint_min_passed_count=10,
+                load_test_paths=(str(load),),
+            )
+
+            decision = decide_offline_flow_promotion(plan)
+
+            self.assertEqual(decision.decision, REJECT_DECISION)
+            self.assertIn("endpoint_eval", decision.failed_gates)
+            self.assertIn("endpoint_eval passed_count 9 below required 10", decision.reasons)
+
+    def test_temp_replay_plan_rejects_when_load_gate_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            manifest = _write_manifest(root, "qwen35_0_8b__exp056_storefront_v4_lora_r16_a32_d010")
+            train = _write_train_summary(root, manifest_id=manifest.stem)
+            dev = _write_eval_result(root, label="dev_v2", passed=11, total=12)
+            protected_eval = _write_eval_result(root, label="eval_v1", passed=12, total=12)
+            challenge = _write_eval_result(root, label="challenge_v1", passed=22, total=24)
+            endpoint = _write_eval_result(root, label="endpoint_eval", passed=10, total=12)
+            load = _write_load_test(root, label="vllm_stress_c8_r32", success=31, total=32, concurrency=8)
+            plan = build_offline_flow_plan(
+                manifest_path=str(manifest),
+                train_summary_path=str(train),
+                dev_result_path=str(dev),
+                eval_result_path=str(protected_eval),
+                challenge_result_path=str(challenge),
+                endpoint_eval_result_path=str(endpoint),
+                endpoint_min_passed_count=10,
+                load_test_paths=(str(load),),
+            )
+
+            decision = decide_offline_flow_promotion(plan)
+
+            self.assertEqual(decision.decision, REJECT_DECISION)
+            self.assertIn("vllm_stress_c8_r32", decision.failed_gates)
+            self.assertIn("vllm_stress_c8_r32 success_rate 0.9688 below required 1.0000", decision.reasons)
 
 
 def _write_manifest(root: Path, experiment_id: str) -> Path:
@@ -181,6 +338,36 @@ def _write_eval_result(root: Path, *, label: str, passed: int, total: int) -> Pa
                 "passed_count": passed,
                 "pass_rate": passed / total,
                 "records": records,
+            }
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
+def _write_load_test(root: Path, *, label: str, success: int, total: int, concurrency: int) -> Path:
+    path = root / f"{label}.json"
+    path.write_text(
+        json.dumps(
+            {
+                "manifest_path": "experiments/sql/exp.json",
+                "experiment_id": "exp",
+                "model_variant": "adapter",
+                "eval_dataset": "datasets/sql/eval/eval.jsonl",
+                "openai_base_url": "http://127.0.0.1:8001",
+                "openai_model": "storefront-sql",
+                "request_count": total,
+                "concurrency": concurrency,
+                "max_new_tokens": 128,
+                "success_count": success,
+                "failure_count": total - success,
+                "min_latency_seconds": 1.0,
+                "p50_latency_seconds": 10.0,
+                "p95_latency_seconds": 20.0,
+                "max_latency_seconds": 22.0,
+                "requests_per_second": 0.5,
+                "result_path": str(path),
+                "records": [],
             }
         ),
         encoding="utf-8",
