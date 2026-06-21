@@ -10,6 +10,7 @@ from pathlib import Path
 from sqlbench_lab.cli import main
 from sqlbench_lab.mlops import (
     DEV_CLOUD_BUNDLE_SCHEMA_VERSION,
+    DEV_CLOUD_PUBLISH_SCHEMA_VERSION,
     DEV_COST_CAPACITY_SCHEMA_VERSION,
     DEV_ENDPOINT_MONITORING_SCHEMA_VERSION,
     DEV_ENDPOINT_PLAN_SCHEMA_VERSION,
@@ -225,6 +226,7 @@ class SQLAdapterDevCloudContractTests(unittest.TestCase):
             load = _write_load_test(root, label="vllm_stress_c8_r32", success=32, total=32, concurrency=8)
             output = root / "bundle.json"
             vertex_config = root / "vertex_custom_job.json"
+            publish_dir = root / "publish"
             stdout = StringIO()
 
             with redirect_stdout(stdout):
@@ -251,6 +253,8 @@ class SQLAdapterDevCloudContractTests(unittest.TestCase):
                         "--run-id",
                         "cli-run-123",
                         "--vertex-dry-run",
+                        "--publish-local-dir",
+                        str(publish_dir),
                         "--output",
                         str(output),
                         "--vertex-config-output",
@@ -269,6 +273,13 @@ class SQLAdapterDevCloudContractTests(unittest.TestCase):
             self.assertTrue(bundle["vertex_training_job_plan"]["dry_run"])
             self.assertEqual(bundle["dev_endpoint_plan"]["schema_version"], DEV_ENDPOINT_PLAN_SCHEMA_VERSION)
             self.assertEqual(config["workerPoolSpecs"][0]["containerSpec"]["args"][-1], "--dry-run")
+            publish_record = json.loads((publish_dir / "publish_record.json").read_text(encoding="utf-8"))
+            self.assertEqual(publish_record["schema_version"], DEV_CLOUD_PUBLISH_SCHEMA_VERSION)
+            self.assertFalse(publish_record["published_to_gcs"])
+            self.assertFalse(publish_record["current_pointer_updated"])
+            self.assertTrue((publish_dir / "run_contract.json").is_file())
+            self.assertTrue((publish_dir / "decision.json").is_file())
+            self.assertTrue((publish_dir / "current_pointer.json").is_file())
 
 
 def _promoted_contract(root: Path):
@@ -308,6 +319,9 @@ def _promoted_contract(root: Path):
 
 def _write_manifest(root: Path, experiment_id: str) -> Path:
     path = root / f"{experiment_id}.json"
+    adapter_dir = root / "adapter"
+    adapter_dir.mkdir()
+    (adapter_dir / "adapter_config.json").write_text("{}", encoding="utf-8")
     path.write_text(
         json.dumps(
             {
@@ -335,8 +349,8 @@ def _write_manifest(root: Path, experiment_id: str) -> Path:
                     "post_train_results": f"results/sql/{experiment_id}/adapter.json",
                 },
                 "output_paths": {
-                    "experiment_root": f"artifacts/sql/{experiment_id}",
-                    "adapter_dir": f"artifacts/sql/{experiment_id}/adapter",
+                    "experiment_root": str(root / "experiment"),
+                    "adapter_dir": str(adapter_dir),
                     "train_summary_json": f"artifacts/sql/{experiment_id}/train_summary.json",
                     "eval_summary_json": f"artifacts/sql/{experiment_id}/eval_summary.json",
                 },

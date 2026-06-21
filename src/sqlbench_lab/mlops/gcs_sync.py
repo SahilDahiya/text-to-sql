@@ -17,6 +17,7 @@ DEV_GCS_SYNC_PLAN_SCHEMA_VERSION = "sql_adapter_gcs_sync_plan:v1"
 
 
 class SQLAdapterGCSArtifactKind(StrEnum):
+    ADAPTER_DIR = "adapter_dir"
     MANIFEST = "manifest"
     TRAIN_SUMMARY = "train_summary"
     EVAL_RESULT = "eval_result"
@@ -78,6 +79,12 @@ def build_dev_gcs_sync_plan(
     run_contract_uri = _join_gcs_uri(prefix, "run_contract.json")
     decision_uri = _join_gcs_uri(prefix, "decision.json")
     artifacts = [
+        SQLAdapterGCSArtifact(
+            kind=SQLAdapterGCSArtifactKind.ADAPTER_DIR,
+            label="adapter",
+            local_path=contract.inputs.adapter_dir,
+            gcs_uri=adapter_uri,
+        ),
         SQLAdapterGCSArtifact(
             kind=SQLAdapterGCSArtifactKind.MANIFEST,
             label="manifest",

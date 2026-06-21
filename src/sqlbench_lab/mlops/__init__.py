@@ -50,6 +50,11 @@ from .dev_cloud_bundle import (
     build_dev_cloud_bundle_from_offline_plan,
     write_dev_cloud_bundle,
 )
+from .dev_cloud_publish import (
+    DEV_CLOUD_PUBLISH_SCHEMA_VERSION,
+    SQLAdapterDevCloudPublishRecord,
+    materialize_dev_cloud_bundle,
+)
 from .dev_endpoint import (
     DEV_ENDPOINT_PLAN_SCHEMA_VERSION,
     SQLAdapterDevEndpointPlan,
@@ -117,6 +122,7 @@ __all__ = [
     "CLICommandResult",
     "DEV_GCS_SYNC_PLAN_SCHEMA_VERSION",
     "DEV_CLOUD_BUNDLE_SCHEMA_VERSION",
+    "DEV_CLOUD_PUBLISH_SCHEMA_VERSION",
     "DEV_COST_CAPACITY_SCHEMA_VERSION",
     "DEV_CLI_IMAGE_NAME",
     "DEV_CLI_IMAGE_TAG",
@@ -147,6 +153,7 @@ __all__ = [
     "SQLAdapterGCSSyncPlan",
     "SQLAdapterDevContainerContract",
     "SQLAdapterDevCloudBundle",
+    "SQLAdapterDevCloudPublishRecord",
     "SQLAdapterDevCostCapacityRecord",
     "SQLAdapterDevEndpointMonitoringRecord",
     "SQLAdapterDevEndpointPlan",
@@ -170,6 +177,7 @@ __all__ = [
     "build_load_test_command",
     "build_dev_gcs_sync_plan",
     "build_dev_cloud_bundle_from_offline_plan",
+    "materialize_dev_cloud_bundle",
     "build_dev_cost_capacity_record",
     "build_dev_cli_docker_build_command",
     "build_dev_cli_docker_run_command",

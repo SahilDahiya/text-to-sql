@@ -52,6 +52,7 @@ class SQLAdapterRunInputs:
     adapter_method: str
     train_datasets: tuple[str, ...]
     output_root: str
+    adapter_dir: str
 
 
 @dataclass(frozen=True)
@@ -167,6 +168,7 @@ def build_sql_adapter_run_contract(
         adapter_method=manifest.training_method.method,
         train_datasets=tuple(manifest.train_inputs.train_datasets),
         output_root=manifest.output_paths.experiment_root,
+        adapter_dir=manifest.output_paths.adapter_dir,
     )
     train = _load_train_summary(train_summary_path) if train_summary_path is not None else None
     return SQLAdapterRunContract(

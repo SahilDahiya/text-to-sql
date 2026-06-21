@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 
 from .sql import (
     analyze_sql_eval_result,
@@ -119,6 +120,20 @@ def main(argv: list[str] | None = None) -> int:
         "--vertex-dry-run",
         action="store_true",
         help="Render the Vertex training job with sql run-sft --dry-run",
+    )
+    dev_cloud_plan.add_argument(
+        "--publish-local-dir",
+        help="Directory for generated run contract, decision, registry, and monitoring JSON files",
+    )
+    dev_cloud_plan.add_argument(
+        "--publish-gcs",
+        action="store_true",
+        help="Upload all planned dev cloud artifacts to their GCS URIs with gsutil",
+    )
+    dev_cloud_plan.add_argument(
+        "--update-current-pointer",
+        action="store_true",
+        help="Write dev current and rollback pointers for a promoted bundle",
     )
     dev_cloud_plan.add_argument("--output", required=True, help="Output bundle JSON path")
     dev_cloud_plan.add_argument("--vertex-config-output", help="Optional Vertex CustomJobSpec JSON path")
@@ -485,6 +500,7 @@ def _run_mlops_command(args: argparse.Namespace) -> int:
         from sqlbench_lab.mlops import (
             build_dev_cloud_bundle_from_offline_plan,
             build_offline_flow_plan,
+            materialize_dev_cloud_bundle,
             validate_offline_flow_plan,
             write_dev_cloud_bundle,
         )
@@ -532,6 +548,20 @@ def _run_mlops_command(args: argparse.Namespace) -> int:
         )
         if args.vertex_config_output:
             print(f"wrote Vertex CustomJobSpec config={args.vertex_config_output}")
+        if args.publish_local_dir or args.publish_gcs or args.update_current_pointer:
+            local_publish_dir = args.publish_local_dir or str(Path(args.output).with_suffix("")) + "_publish"
+            publish_record = materialize_dev_cloud_bundle(
+                bundle,
+                local_dir=local_publish_dir,
+                publish_gcs=args.publish_gcs,
+                update_current_pointer=args.update_current_pointer,
+            )
+            print(
+                "materialized dev cloud bundle "
+                f"local_dir={publish_record.local_dir} "
+                f"published_to_gcs={publish_record.published_to_gcs} "
+                f"current_pointer_updated={publish_record.current_pointer_updated}"
+            )
         return 0
     raise ValueError("missing mlops command")
 
