@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 try:
-    from metaflow import FlowSpec, Parameter, step
+    from metaflow import FlowSpec, Parameter, current, step
 except ImportError as exc:  # pragma: no cover - exercised by the runtime command path.
     raise SystemExit(
         "Metaflow is required for this flow. Run with: "
@@ -20,6 +20,7 @@ from sqlbench_lab.mlops import (
     build_analyze_eval_command,
     build_endpoint_eval_command,
     build_load_test_command,
+    build_offline_flow_gcs_sync_plan,
     build_offline_flow_plan,
     build_offline_run_contract,
     build_train_command,
@@ -242,6 +243,7 @@ class SQLAdapterOfflineDevFlow(FlowSpec):
         )
         self.run_contract = build_offline_run_contract(plan).to_json_dict()
         self.promotion_decision = decide_offline_flow_promotion(plan).to_json_dict()
+        self.gcs_sync_plan = build_offline_flow_gcs_sync_plan(plan, run_id=str(current.run_id)).to_json_dict()
         self.next(self.end)
 
     @step

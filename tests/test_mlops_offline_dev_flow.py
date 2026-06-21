@@ -11,6 +11,7 @@ from sqlbench_lab.mlops import (
     REJECT_DECISION,
     build_endpoint_eval_command,
     build_load_test_command,
+    build_offline_flow_gcs_sync_plan,
     build_offline_flow_plan,
     build_offline_run_contract,
     build_train_command,
@@ -246,6 +247,29 @@ class SQLAdapterOfflineDevFlowTests(unittest.TestCase):
             self.assertEqual(decision.decision, REJECT_DECISION)
             self.assertIn("vllm_stress_c8_r32", decision.failed_gates)
             self.assertIn("vllm_stress_c8_r32 success_rate 0.9688 below required 1.0000", decision.reasons)
+
+    def test_temp_replay_plan_builds_dev_gcs_sync_plan(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            manifest = _write_manifest(root, "qwen35_0_8b__exp056_storefront_v4_lora_r16_a32_d010")
+            train = _write_train_summary(root, manifest_id=manifest.stem)
+            dev = _write_eval_result(root, label="dev_v2", passed=11, total=12)
+            protected_eval = _write_eval_result(root, label="eval_v1", passed=12, total=12)
+            challenge = _write_eval_result(root, label="challenge_v1", passed=22, total=24)
+            plan = build_offline_flow_plan(
+                manifest_path=str(manifest),
+                train_summary_path=str(train),
+                dev_result_path=str(dev),
+                eval_result_path=str(protected_eval),
+                challenge_result_path=str(challenge),
+            )
+
+            sync_plan = build_offline_flow_gcs_sync_plan(plan, run_id="metaflow-run-456")
+
+            self.assertEqual(sync_plan.run_id, "metaflow-run-456")
+            self.assertEqual(sync_plan.experiment_id, manifest.stem)
+            self.assertTrue(sync_plan.prefix.endswith(f"/{manifest.stem}/metaflow-run-456"))
+            self.assertTrue(sync_plan.decision_uri.endswith("/decision.json"))
 
 
 def _write_manifest(root: Path, experiment_id: str) -> Path:

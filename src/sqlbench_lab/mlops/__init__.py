@@ -13,6 +13,7 @@ from .offline_dev_flow import (
     build_analyze_eval_command,
     build_endpoint_eval_command,
     build_load_test_command,
+    build_offline_flow_gcs_sync_plan,
     build_offline_flow_plan,
     build_offline_run_contract,
     build_train_command,
@@ -21,6 +22,13 @@ from .offline_dev_flow import (
     default_exp056_offline_flow_plan,
     run_repo_cli_command,
     validate_offline_flow_plan,
+)
+from .gcs_sync import (
+    DEV_GCS_SYNC_PLAN_SCHEMA_VERSION,
+    SQLAdapterGCSArtifact,
+    SQLAdapterGCSArtifactKind,
+    SQLAdapterGCSSyncPlan,
+    build_dev_gcs_sync_plan,
 )
 from .run_contract import (
     DEV_ARTIFACT_BUCKET,
@@ -59,6 +67,7 @@ __all__ = [
     "EXP056_MANIFEST_PATH",
     "EXP056_TRAIN_SUMMARY_PATH",
     "CLICommandResult",
+    "DEV_GCS_SYNC_PLAN_SCHEMA_VERSION",
     "DEV_ARTIFACT_BUCKET",
     "DEV_DATASET_BUCKET",
     "DEV_ENVIRONMENT",
@@ -75,6 +84,9 @@ __all__ = [
     "SUPPORTED_ENVIRONMENTS",
     "INVESTIGATE_DECISION",
     "SQLAdapterEnvironmentConfig",
+    "SQLAdapterGCSArtifact",
+    "SQLAdapterGCSArtifactKind",
+    "SQLAdapterGCSSyncPlan",
     "SQLAdapterOfflineEvalSpec",
     "SQLAdapterOfflineFlowPlan",
     "SQLAdapterEvalGateConfig",
@@ -88,6 +100,8 @@ __all__ = [
     "build_analyze_eval_command",
     "build_endpoint_eval_command",
     "build_load_test_command",
+    "build_dev_gcs_sync_plan",
+    "build_offline_flow_gcs_sync_plan",
     "build_offline_flow_plan",
     "build_offline_run_contract",
     "build_train_command",

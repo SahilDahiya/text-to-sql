@@ -8,6 +8,7 @@ import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+from sqlbench_lab.mlops.gcs_sync import SQLAdapterGCSSyncPlan, build_dev_gcs_sync_plan
 from sqlbench_lab.mlops.run_contract import (
     DEV_ENVIRONMENT,
     ENDPOINT_EVAL_GATE,
@@ -334,6 +335,18 @@ def decide_offline_flow_promotion(plan: SQLAdapterOfflineFlowPlan) -> SQLAdapter
             require_load_test=bool(plan.load_test_paths),
         ),
     )
+
+
+def build_offline_flow_gcs_sync_plan(
+    plan: SQLAdapterOfflineFlowPlan,
+    *,
+    run_id: str,
+) -> SQLAdapterGCSSyncPlan:
+    """Build the dev GCS sync manifest for the offline flow artifacts."""
+
+    contract = build_offline_run_contract(plan)
+    decision = decide_offline_flow_promotion(plan)
+    return build_dev_gcs_sync_plan(contract, decision, run_id=run_id)
 
 
 def _repo_cli_command(

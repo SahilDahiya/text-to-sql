@@ -1270,6 +1270,18 @@ def _render_pipeline() -> str:
           <div class="callout">Replay mode is intentional: it proves orchestration, artifact capture, failure analysis, endpoint/load gates, and promotion logic without requiring a GPU train/eval or serving rerun.</div>
         </section>
         <section class="panel full">
+          <h2>Dev GCS Sync Plan</h2>
+          <p><code>sqlbench_lab.mlops.gcs_sync</code> is the TAP-634 artifact boundary for cloud persistence. It builds a deterministic dev-only sync manifest from the run contract and promotion decision; it does not upload files.</p>
+          <table class="key-table">
+            <tr><th>Schema</th><td><code>sql_adapter_gcs_sync_plan:v1</code></td></tr>
+            <tr><th>Run prefix</th><td><code>gs://mistri-sqlbench-dev-artifacts/sql-adapter-runs/dev/{{experiment_id}}/{{run_id}}/</code></td></tr>
+            <tr><th>Model URI</th><td><code>gs://mistri-sqlbench-dev-models/adapters/{{adapter_name}}/</code></td></tr>
+            <tr><th>Artifacts</th><td>manifest, train summary, eval results, eval analyses, load tests, run contract, and promotion decision.</td></tr>
+            <tr><th>Boundary</th><td>The planner rejects non-dev contracts and never defines prod paths or prod promotion pointers.</td></tr>
+          </table>
+          <div class="callout">The Metaflow flow now exposes <code>gcs_sync_plan</code> as a run artifact after <code>decide_dev_promote_or_reject</code>; real upload remains a later explicit step.</div>
+        </section>
+        <section class="panel full">
           <table class="dense-table">
             <thead>
               <tr><th>#</th><th>Stage</th><th>Artifact</th><th>Command</th><th>Risk Controlled</th></tr>
