@@ -130,6 +130,10 @@ def main(argv: list[str] | None = None) -> int:
     dev_cloud_plan.add_argument("--dev-db-id", default="storefront_sales_lab")
     dev_cloud_plan.add_argument("--git-sha")
     dev_cloud_plan.add_argument("--endpoint-uptime-hours", type=float)
+    dev_cloud_plan.add_argument("--endpoint-logs-uri", default="", help="Optional URI or local reference for endpoint logs")
+    dev_cloud_plan.add_argument("--endpoint-startup-time-seconds", type=float, help="Optional endpoint startup time")
+    dev_cloud_plan.add_argument("--endpoint-gpu-memory-notes", default="", help="Optional GPU/KV-cache notes from serving logs")
+    dev_cloud_plan.add_argument("--endpoint-failure-mode", default="", help="Optional endpoint startup/runtime failure mode")
     dev_cloud_plan.add_argument("--training-hourly-cost-usd", type=float)
     dev_cloud_plan.add_argument("--endpoint-hourly-cost-usd", type=float)
     dev_cloud_plan.add_argument(
@@ -559,6 +563,10 @@ def _run_mlops_command(args: argparse.Namespace) -> int:
             serving_base_model_uri=str(args.serving_base_model_uri).strip() or None,
             serving_target=args.serving_target,
             serving_vllm_extra_args=str(args.serving_vllm_extra_args).strip() or None,
+            endpoint_logs_uri=str(args.endpoint_logs_uri).strip() or None,
+            endpoint_startup_time_seconds=args.endpoint_startup_time_seconds,
+            endpoint_gpu_memory_notes=str(args.endpoint_gpu_memory_notes).strip() or None,
+            endpoint_failure_mode=str(args.endpoint_failure_mode).strip() or None,
         )
         write_dev_cloud_bundle(
             bundle,

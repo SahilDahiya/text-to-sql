@@ -65,6 +65,10 @@ def build_dev_cloud_bundle_from_offline_plan(
     serving_base_model_uri: str | None = None,
     serving_target: str = "gce_gpu_vm",
     serving_vllm_extra_args: str | None = None,
+    endpoint_logs_uri: str | None = None,
+    endpoint_startup_time_seconds: float | None = None,
+    endpoint_gpu_memory_notes: str | None = None,
+    endpoint_failure_mode: str | None = None,
 ) -> SQLAdapterDevCloudBundle:
     """Build all dev cloud/hardening artifacts from one offline flow plan."""
 
@@ -106,7 +110,14 @@ def build_dev_cloud_bundle_from_offline_plan(
         container_image_uri=training_image_uri,
         registry_plan=promotion_registry_plan,
     )
-    endpoint_monitoring_record = build_dev_endpoint_monitoring_record(contract, dev_endpoint_plan)
+    endpoint_monitoring_record = build_dev_endpoint_monitoring_record(
+        contract,
+        dev_endpoint_plan,
+        endpoint_logs_uri=endpoint_logs_uri,
+        startup_time_seconds=endpoint_startup_time_seconds,
+        gpu_memory_notes=endpoint_gpu_memory_notes,
+        failure_mode=endpoint_failure_mode,
+    )
     cost_capacity_record = build_dev_cost_capacity_record(
         contract,
         vertex_plan=vertex_training_job_plan,

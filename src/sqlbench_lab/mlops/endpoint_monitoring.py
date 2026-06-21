@@ -16,8 +16,15 @@ class SQLAdapterDevEndpointMonitoringRecord:
     schema_version: str
     environment: str
     endpoint_id: str
+    serving_target: str
     openai_model: str
     adapter_name: str
+    base_model: str
+    endpoint_image_uri: str
+    endpoint_logs_uri: str | None
+    startup_time_seconds: float | None
+    gpu_memory_notes: str | None
+    failure_mode: str | None
     request_count: int
     success_count: int
     failure_count: int
@@ -52,6 +59,10 @@ def build_dev_endpoint_monitoring_record(
     timeout_count: int | None = None,
     p99_latency_seconds: float | None = None,
     empty_sql_count: int | None = None,
+    endpoint_logs_uri: str | None = None,
+    startup_time_seconds: float | None = None,
+    gpu_memory_notes: str | None = None,
+    failure_mode: str | None = None,
 ) -> SQLAdapterDevEndpointMonitoringRecord:
     """Summarize endpoint eval and load-test evidence for dev monitoring."""
 
@@ -66,8 +77,15 @@ def build_dev_endpoint_monitoring_record(
         schema_version=DEV_ENDPOINT_MONITORING_SCHEMA_VERSION,
         environment=DEV_ENVIRONMENT,
         endpoint_id=endpoint_plan.endpoint_id,
+        serving_target=endpoint_plan.serving_target,
         openai_model=endpoint_plan.openai_model,
         adapter_name=contract.inputs.adapter_name,
+        base_model=contract.inputs.base_model,
+        endpoint_image_uri=endpoint_plan.image_uri,
+        endpoint_logs_uri=_optional_non_empty(endpoint_logs_uri, "endpoint_logs_uri"),
+        startup_time_seconds=_optional_non_negative_float(startup_time_seconds, "startup_time_seconds"),
+        gpu_memory_notes=_optional_non_empty(gpu_memory_notes, "gpu_memory_notes"),
+        failure_mode=_optional_non_empty(failure_mode, "failure_mode"),
         request_count=load.request_count if load is not None else 0,
         success_count=load.success_count if load is not None else 0,
         failure_count=load.failure_count if load is not None else 0,
@@ -97,3 +115,20 @@ def _non_negative_int(value: int, name: str) -> int:
     if value < 0:
         raise ValueError(f"{name} must be non-negative")
     return value
+
+
+def _optional_non_negative_float(value: float | None, name: str) -> float | None:
+    if value is None:
+        return None
+    if value < 0:
+        raise ValueError(f"{name} must be non-negative")
+    return value
+
+
+def _optional_non_empty(value: str | None, name: str) -> str | None:
+    if value is None:
+        return None
+    resolved = value.strip()
+    if not resolved:
+        raise ValueError(f"{name} must be non-empty when provided")
+    return resolved

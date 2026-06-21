@@ -303,9 +303,25 @@ class SQLAdapterDevCloudContractTests(unittest.TestCase):
                 image_uri="vllm:dev",
             )
 
-            record = build_dev_endpoint_monitoring_record(contract, endpoint, timeout_count=1, p99_latency_seconds=21.5)
+            record = build_dev_endpoint_monitoring_record(
+                contract,
+                endpoint,
+                timeout_count=1,
+                p99_latency_seconds=21.5,
+                endpoint_logs_uri="local://vllm/logs",
+                startup_time_seconds=319.02,
+                gpu_memory_notes="KV cache 5.48GiB, 225280 tokens",
+                failure_mode="none",
+            )
 
             self.assertEqual(record.schema_version, DEV_ENDPOINT_MONITORING_SCHEMA_VERSION)
+            self.assertEqual(record.serving_target, "gce_gpu_vm")
+            self.assertEqual(record.base_model, "Qwen/Qwen3.5-0.8B-Base")
+            self.assertEqual(record.endpoint_image_uri, "vllm:dev")
+            self.assertEqual(record.endpoint_logs_uri, "local://vllm/logs")
+            self.assertEqual(record.startup_time_seconds, 319.02)
+            self.assertEqual(record.gpu_memory_notes, "KV cache 5.48GiB, 225280 tokens")
+            self.assertEqual(record.failure_mode, "none")
             self.assertEqual(record.request_count, 32)
             self.assertEqual(record.success_count, 32)
             self.assertEqual(record.failure_count, 0)
@@ -422,6 +438,12 @@ class SQLAdapterDevCloudContractTests(unittest.TestCase):
                         str(endpoint),
                         "--endpoint-min-passed",
                         "10",
+                        "--endpoint-logs-uri",
+                        "local://cli-vllm/logs",
+                        "--endpoint-startup-time-seconds",
+                        "319.02",
+                        "--endpoint-gpu-memory-notes",
+                        "KV cache 5.48GiB, 225280 tokens",
                         "--load-test-result",
                         str(load),
                         "--run-id",
@@ -453,6 +475,12 @@ class SQLAdapterDevCloudContractTests(unittest.TestCase):
             self.assertEqual(bundle["dev_endpoint_plan"]["schema_version"], DEV_ENDPOINT_PLAN_SCHEMA_VERSION)
             self.assertEqual(bundle["dev_endpoint_plan"]["serving_target"], "gce_gpu_vm")
             self.assertTrue(bundle["dev_endpoint_plan"]["requires_gpu_driver_control"])
+            self.assertEqual(bundle["endpoint_monitoring_record"]["endpoint_logs_uri"], "local://cli-vllm/logs")
+            self.assertEqual(bundle["endpoint_monitoring_record"]["startup_time_seconds"], 319.02)
+            self.assertEqual(
+                bundle["endpoint_monitoring_record"]["gpu_memory_notes"],
+                "KV cache 5.48GiB, 225280 tokens",
+            )
             self.assertEqual(config["workerPoolSpecs"][0]["containerSpec"]["args"][-1], "--dry-run")
             self.assertEqual(config["workerPoolSpecs"][0]["machineSpec"], {"machineType": "n1-standard-4"})
             publish_record = json.loads((publish_dir / "publish_record.json").read_text(encoding="utf-8"))

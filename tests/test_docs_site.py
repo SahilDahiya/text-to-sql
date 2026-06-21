@@ -132,6 +132,7 @@ class DocsSiteTests(unittest.TestCase):
         self.assertIn("artifact manifest with file/tree SHA-256 hashes", pipeline_html)
         self.assertIn("sql_adapter_dev_observability:v1", pipeline_html)
         self.assertIn("endpoint_monitoring_record", pipeline_html)
+        self.assertIn("logs URI, startup time, GPU/KV-cache notes, failure mode", pipeline_html)
         self.assertIn("generated SQL character-count", pipeline_html)
         self.assertIn("Token counts are not claimed", pipeline_html)
         self.assertIn("sql_adapter_dev_cost_capacity:v1", pipeline_html)
