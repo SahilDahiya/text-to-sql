@@ -58,6 +58,7 @@ def build_dev_cloud_bundle_from_offline_plan(
     endpoint_uptime_hours: float | None = None,
     training_hourly_cost_usd: float | None = None,
     endpoint_hourly_cost_usd: float | None = None,
+    vertex_dry_run: bool = False,
 ) -> SQLAdapterDevCloudBundle:
     """Build all dev cloud/hardening artifacts from one offline flow plan."""
 
@@ -70,6 +71,7 @@ def build_dev_cloud_bundle_from_offline_plan(
         project_id=gcp_project,
         region=gcp_region,
         image_uri=training_image_uri,
+        dry_run=vertex_dry_run,
     )
     dev_endpoint_plan = build_dev_gcp_vllm_endpoint_plan(
         contract,

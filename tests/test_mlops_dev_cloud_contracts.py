@@ -50,6 +50,8 @@ class SQLAdapterDevCloudContractTests(unittest.TestCase):
             self.assertEqual(plan.command, ("python", "-m", "sqlbench_lab.cli"))
             self.assertEqual(plan.args[:3], ("sql", "run-sft", "--manifest"))
             self.assertTrue(plan.manifest_uri.endswith("/manifest.json"))
+            self.assertEqual(plan.container_manifest_path, contract.inputs.manifest_path)
+            self.assertFalse(plan.dry_run)
             self.assertEqual(plan.to_custom_job_spec()["workerPoolSpecs"][0]["containerSpec"]["args"], list(plan.args))
             self.assertEqual(
                 command,
@@ -64,6 +66,28 @@ class SQLAdapterDevCloudContractTests(unittest.TestCase):
                     "--config=artifacts/dev/vertex_job.yaml",
                 ),
             )
+
+    def test_vertex_training_job_plan_can_render_dry_run_against_container_manifest(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            contract, _decision, gcs_plan = _promoted_contract(Path(tmp_dir))
+
+            plan = build_dev_vertex_training_job_plan(
+                contract,
+                gcs_plan,
+                project_id="mistri-467901",
+                region="us-central1",
+                image_uri="us-central1-docker.pkg.dev/mistri-467901/sqlbench/sqlbench-lab-dev-cli:dev",
+                container_manifest_path="experiments/sql/dev_manifest.json",
+                dry_run=True,
+            )
+
+            self.assertTrue(plan.dry_run)
+            self.assertEqual(plan.container_manifest_path, "experiments/sql/dev_manifest.json")
+            self.assertEqual(
+                plan.args,
+                ("sql", "run-sft", "--manifest", "experiments/sql/dev_manifest.json", "--dry-run"),
+            )
+            self.assertTrue(plan.manifest_uri.startswith("gs://"))
 
     def test_dev_gcp_vllm_endpoint_plan_names_adapter_and_capacity(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -226,6 +250,7 @@ class SQLAdapterDevCloudContractTests(unittest.TestCase):
                         str(load),
                         "--run-id",
                         "cli-run-123",
+                        "--vertex-dry-run",
                         "--output",
                         str(output),
                         "--vertex-config-output",
@@ -241,8 +266,9 @@ class SQLAdapterDevCloudContractTests(unittest.TestCase):
             self.assertEqual(bundle["promotion_decision"]["decision"], "promote")
             self.assertEqual(bundle["gcs_sync_plan"]["run_id"], "cli-run-123")
             self.assertEqual(bundle["vertex_training_job_plan"]["schema_version"], DEV_VERTEX_JOB_SCHEMA_VERSION)
+            self.assertTrue(bundle["vertex_training_job_plan"]["dry_run"])
             self.assertEqual(bundle["dev_endpoint_plan"]["schema_version"], DEV_ENDPOINT_PLAN_SCHEMA_VERSION)
-            self.assertEqual(config["workerPoolSpecs"][0]["containerSpec"]["args"][:3], ["sql", "run-sft", "--manifest"])
+            self.assertEqual(config["workerPoolSpecs"][0]["containerSpec"]["args"][-1], "--dry-run")
 
 
 def _promoted_contract(root: Path):

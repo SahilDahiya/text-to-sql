@@ -36,6 +36,8 @@ class SQLAdapterVertexTrainingJobPlan:
     command: tuple[str, ...]
     args: tuple[str, ...]
     manifest_uri: str
+    container_manifest_path: str
+    dry_run: bool
     output_prefix_uri: str
     run_contract_uri: str
     labels: dict[str, str]
@@ -75,6 +77,8 @@ def build_dev_vertex_training_job_plan(
     accelerator_type: str = "NVIDIA_L4",
     accelerator_count: int = 1,
     replica_count: int = 1,
+    container_manifest_path: str | None = None,
+    dry_run: bool = False,
 ) -> SQLAdapterVertexTrainingJobPlan:
     """Build the dev Vertex custom-job plan without submitting it."""
 
@@ -83,13 +87,19 @@ def build_dev_vertex_training_job_plan(
     resolved_region = _non_empty(region, "region")
     resolved_image = _non_empty(image_uri, "image_uri")
     manifest_uri = _artifact_uri(gcs_plan, SQLAdapterGCSArtifactKind.MANIFEST)
+    resolved_container_manifest_path = _non_empty(
+        container_manifest_path or contract.inputs.manifest_path,
+        "container_manifest_path",
+    )
     display_name = f"sql-adapter-dev-{contract.inputs.experiment_id}-{gcs_plan.run_id}"
-    args = (
+    args = [
         "sql",
         "run-sft",
         "--manifest",
-        manifest_uri,
-    )
+        resolved_container_manifest_path,
+    ]
+    if dry_run:
+        args.append("--dry-run")
     return SQLAdapterVertexTrainingJobPlan(
         schema_version=DEV_VERTEX_JOB_SCHEMA_VERSION,
         environment=DEV_ENVIRONMENT,
@@ -106,8 +116,10 @@ def build_dev_vertex_training_job_plan(
             replica_count=_positive_int(replica_count, "replica_count"),
         ),
         command=("python", "-m", "sqlbench_lab.cli"),
-        args=args,
+        args=tuple(args),
         manifest_uri=manifest_uri,
+        container_manifest_path=resolved_container_manifest_path,
+        dry_run=dry_run,
         output_prefix_uri=gcs_plan.prefix,
         run_contract_uri=gcs_plan.run_contract_uri,
         labels={

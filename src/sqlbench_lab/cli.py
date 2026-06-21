@@ -115,6 +115,11 @@ def main(argv: list[str] | None = None) -> int:
     dev_cloud_plan.add_argument("--endpoint-uptime-hours", type=float)
     dev_cloud_plan.add_argument("--training-hourly-cost-usd", type=float)
     dev_cloud_plan.add_argument("--endpoint-hourly-cost-usd", type=float)
+    dev_cloud_plan.add_argument(
+        "--vertex-dry-run",
+        action="store_true",
+        help="Render the Vertex training job with sql run-sft --dry-run",
+    )
     dev_cloud_plan.add_argument("--output", required=True, help="Output bundle JSON path")
     dev_cloud_plan.add_argument("--vertex-config-output", help="Optional Vertex CustomJobSpec JSON path")
 
@@ -512,6 +517,7 @@ def _run_mlops_command(args: argparse.Namespace) -> int:
             endpoint_uptime_hours=args.endpoint_uptime_hours,
             training_hourly_cost_usd=args.training_hourly_cost_usd,
             endpoint_hourly_cost_usd=args.endpoint_hourly_cost_usd,
+            vertex_dry_run=args.vertex_dry_run,
         )
         write_dev_cloud_bundle(
             bundle,
