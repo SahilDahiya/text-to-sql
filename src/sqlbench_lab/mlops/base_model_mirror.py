@@ -46,15 +46,13 @@ def build_dev_base_model_mirror_plan(
         local_dir=resolved_local_dir,
         gcs_uri=resolved_gcs_uri,
         download_command=(
-            "huggingface-cli",
+            "hf",
             "download",
             resolved_base_model,
             "--revision",
             resolved_revision,
             "--local-dir",
             resolved_local_dir,
-            "--local-dir-use-symlinks",
-            "False",
         ),
         upload_command=("gsutil", "-m", "rsync", "-r", resolved_local_dir, resolved_gcs_uri),
     )

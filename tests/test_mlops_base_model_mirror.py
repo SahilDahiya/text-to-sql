@@ -26,7 +26,7 @@ class SQLAdapterBaseModelMirrorTests(unittest.TestCase):
                 "Qwen_Qwen3.5-0.8B-Base/dc7cdfe2ee4154fa7e30f5b51ca41bfa40174e68/"
             ),
         )
-        self.assertEqual(plan.download_command[:4], ("huggingface-cli", "download", "Qwen/Qwen3.5-0.8B-Base", "--revision"))
+        self.assertEqual(plan.download_command[:4], ("hf", "download", "Qwen/Qwen3.5-0.8B-Base", "--revision"))
         self.assertEqual(plan.upload_command[:4], ("gsutil", "-m", "rsync", "-r"))
 
     def test_base_model_mirror_plan_requires_gcs_uri(self) -> None:
