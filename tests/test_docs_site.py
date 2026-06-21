@@ -102,6 +102,8 @@ class DocsSiteTests(unittest.TestCase):
         self.assertIn("docker/sqlbench-vllm.Dockerfile", pipeline_html)
         self.assertIn("cloudbuild/sqlbench-vllm.yaml", pipeline_html)
         self.assertIn("SQLBENCH_ADAPTER_URI", pipeline_html)
+        self.assertIn("SQLBENCH_BASE_MODEL_URI", pipeline_html)
+        self.assertIn("sql_adapter_dev_base_model_mirror:v1", pipeline_html)
         self.assertIn("mlops dev-cloud-plan", pipeline_html)
         self.assertIn("not a prod serving image", pipeline_html)
         self.assertIn("Dev Cloud Training, Serving, Registry, and Hardening Contracts", pipeline_html)

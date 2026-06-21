@@ -89,6 +89,7 @@ def dev_vllm_serving_container_contract() -> SQLAdapterDevServingContainerContra
             "SQLBENCH_MAX_NUM_SEQS",
             "SQLBENCH_GPU_MEMORY_UTILIZATION",
             "SQLBENCH_MAX_LORA_RANK",
+            "SQLBENCH_BASE_MODEL_URI",
             "SQLBENCH_VLLM_EXTRA_ARGS",
         ),
         exposed_port=8000,

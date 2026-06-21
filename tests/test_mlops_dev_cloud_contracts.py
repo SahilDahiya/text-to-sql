@@ -127,6 +127,7 @@ class SQLAdapterDevCloudContractTests(unittest.TestCase):
 
             self.assertEqual(plan.schema_version, DEV_ENDPOINT_PLAN_SCHEMA_VERSION)
             self.assertEqual(plan.service_account, "sqlbench-dev-serving-sa@mistri-467901.iam.gserviceaccount.com")
+            self.assertIsNone(plan.base_model_uri)
             self.assertEqual(plan.openai_model, f"{contract.inputs.experiment_id}-dev")
             self.assertEqual(plan.environment_variables["SQLBENCH_BASE_MODEL"], contract.inputs.base_model)
             self.assertEqual(plan.environment_variables["SQLBENCH_OPENAI_MODEL"], plan.openai_model)
@@ -137,6 +138,25 @@ class SQLAdapterDevCloudContractTests(unittest.TestCase):
             self.assertIn(f"{contract.inputs.adapter_name}={gcs_plan.adapter_uri}", plan.startup_args)
             self.assertEqual(plan.max_replica_count, 1)
             self.assertEqual(plan.gpu_memory_utilization, 0.75)
+
+    def test_dev_gcp_vllm_endpoint_plan_can_use_mirrored_base_model_uri(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            contract, _decision, gcs_plan = _promoted_contract(Path(tmp_dir))
+
+            plan = build_dev_gcp_vllm_endpoint_plan(
+                contract,
+                gcs_plan,
+                project_id="mistri-467901",
+                region="us-central1",
+                image_uri="us-central1-docker.pkg.dev/mistri-467901/sqlbench/sqlbench-vllm:dev",
+                base_model_uri="gs://mistri-sqlbench-dev-models/base-models/qwen/",
+            )
+
+            self.assertEqual(plan.base_model_uri, "gs://mistri-sqlbench-dev-models/base-models/qwen/")
+            self.assertEqual(
+                plan.environment_variables["SQLBENCH_BASE_MODEL_URI"],
+                "gs://mistri-sqlbench-dev-models/base-models/qwen/",
+            )
 
     def test_dev_promotion_registry_plan_marks_promoted_adapter_current_eligible(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

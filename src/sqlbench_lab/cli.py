@@ -111,6 +111,11 @@ def main(argv: list[str] | None = None) -> int:
         "--serving-image-uri",
         default="us-central1-docker.pkg.dev/mistri-467901/sqlbench/sqlbench-vllm:dev",
     )
+    dev_cloud_plan.add_argument(
+        "--serving-base-model-uri",
+        default="",
+        help="Optional GCS prefix for a mirrored base model used by the dev vLLM endpoint",
+    )
     dev_cloud_plan.add_argument("--dev-db-id", default="storefront_sales_lab")
     dev_cloud_plan.add_argument("--git-sha")
     dev_cloud_plan.add_argument("--endpoint-uptime-hours", type=float)
@@ -540,6 +545,7 @@ def _run_mlops_command(args: argparse.Namespace) -> int:
             vertex_machine_type=args.vertex_machine_type,
             vertex_accelerator_type=args.vertex_accelerator_type,
             vertex_accelerator_count=args.vertex_accelerator_count,
+            serving_base_model_uri=str(args.serving_base_model_uri).strip() or None,
         )
         write_dev_cloud_bundle(
             bundle,

@@ -11,6 +11,7 @@ from google.cloud import storage
 
 def main() -> None:
     base_model = _required_env("SQLBENCH_BASE_MODEL")
+    base_model_uri = os.environ.get("SQLBENCH_BASE_MODEL_URI", "").strip()
     openai_model = _required_env("SQLBENCH_OPENAI_MODEL")
     adapter_name = _required_env("SQLBENCH_ADAPTER_NAME")
     adapter_uri = _required_env("SQLBENCH_ADAPTER_URI")
@@ -24,11 +25,18 @@ def main() -> None:
     adapter_dir = Path("/models/adapters") / adapter_name
     _download_gcs_prefix(adapter_uri, adapter_dir)
     _assert_adapter_materialized(adapter_dir)
+    if base_model_uri:
+        base_model_dir = Path("/models/base") / _safe_name(base_model)
+        _download_gcs_prefix(base_model_uri, base_model_dir)
+        _assert_base_model_materialized(base_model_dir)
+        served_base_model = str(base_model_dir)
+    else:
+        served_base_model = base_model
 
     command = [
         "vllm",
         "serve",
-        base_model,
+        served_base_model,
         "--host",
         host,
         "--port",
@@ -92,6 +100,33 @@ def _assert_adapter_materialized(adapter_dir: Path) -> None:
     missing = [filename for filename in required_files if not (adapter_dir / filename).is_file()]
     if missing:
         raise FileNotFoundError(f"downloaded adapter is missing required files: {', '.join(missing)}")
+
+
+def _assert_base_model_materialized(base_model_dir: Path) -> None:
+    required_files = ("config.json", "tokenizer_config.json")
+    missing = [filename for filename in required_files if not (base_model_dir / filename).is_file()]
+    if missing:
+        raise FileNotFoundError(f"downloaded base model is missing required files: {', '.join(missing)}")
+    weight_files = [
+        path
+        for pattern in ("*.safetensors", "*.bin")
+        for path in base_model_dir.glob(pattern)
+    ]
+    if not weight_files:
+        raise FileNotFoundError("downloaded base model is missing safetensors or bin weight files")
+
+
+def _safe_name(value: str) -> str:
+    safe = []
+    for char in value:
+        if char.isalnum() or char in {"-", "_", "."}:
+            safe.append(char)
+        else:
+            safe.append("_")
+    resolved = "".join(safe).strip("_")
+    if not resolved:
+        raise ValueError("safe model name must not be empty")
+    return resolved
 
 
 def _required_env(name: str) -> str:

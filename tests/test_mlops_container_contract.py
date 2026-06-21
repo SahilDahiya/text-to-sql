@@ -103,6 +103,7 @@ class SQLAdapterContainerContractTests(unittest.TestCase):
         self.assertIn("SQLBENCH_BASE_MODEL", contract.required_environment_variables)
         self.assertIn("SQLBENCH_ADAPTER_URI", contract.required_environment_variables)
         self.assertIn("SQLBENCH_GPU_MEMORY_UTILIZATION", contract.optional_environment_variables)
+        self.assertIn("SQLBENCH_BASE_MODEL_URI", contract.optional_environment_variables)
         self.assertIn("--enable-lora", contract.startup_summary)
 
     def test_dev_vllm_docker_build_command_is_stable(self) -> None:
@@ -133,6 +134,8 @@ class SQLAdapterContainerContractTests(unittest.TestCase):
         self.assertIn("vllm/vllm-openai:v0.22.1", dockerfile_text)
         self.assertIn("google-cloud-storage", dockerfile_text)
         self.assertIn("SQLBENCH_ADAPTER_URI", entrypoint_text)
+        self.assertIn("SQLBENCH_BASE_MODEL_URI", entrypoint_text)
+        self.assertIn("/models/base", entrypoint_text)
         self.assertIn("adapter_model.safetensors", entrypoint_text)
         self.assertIn("vllm", entrypoint_text)
         self.assertIn("docker/sqlbench-vllm.Dockerfile", cloudbuild_text)

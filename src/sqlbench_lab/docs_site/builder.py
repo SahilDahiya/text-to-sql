@@ -1302,7 +1302,7 @@ def _render_pipeline() -> str:
             <tr><th>Image</th><td><code>sqlbench-vllm:dev</code></td></tr>
             <tr><th>Cloud Build</th><td><code>gcloud builds submit --region us-central1 --config cloudbuild/sqlbench-vllm.yaml --substitutions _IMAGE=us-central1-docker.pkg.dev/mistri-467901/sqlbench/sqlbench-vllm:dev .</code></td></tr>
             <tr><th>Required env</th><td><code>SQLBENCH_BASE_MODEL</code>, <code>SQLBENCH_OPENAI_MODEL</code>, <code>SQLBENCH_ADAPTER_NAME</code>, and <code>SQLBENCH_ADAPTER_URI</code>.</td></tr>
-            <tr><th>Base model</th><td>Dev serving may pull the base model from Hugging Face by model ID. Mirroring the base model to GCS is a later soft-prod hardening step for cold-start and network independence.</td></tr>
+            <tr><th>Base model</th><td>Dev serving may pull the base model from Hugging Face by model ID, but live GCP endpoint runs should prefer <code>SQLBENCH_BASE_MODEL_URI</code> after mirroring the exact revision to GCS. The mirror plan is <code>sql_adapter_dev_base_model_mirror:v1</code>.</td></tr>
             <tr><th>Adapter</th><td>The adapter is always read from the dev model bucket because it is run-specific and tenant/database-specific.</td></tr>
             <tr><th>Failure mode</th><td>The entrypoint fails before serving if the adapter GCS prefix is empty or missing <code>adapter_config.json</code> or <code>adapter_model.safetensors</code>.</td></tr>
           </table>

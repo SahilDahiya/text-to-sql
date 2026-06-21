@@ -22,6 +22,7 @@ class SQLAdapterDevEndpointPlan:
     image_uri: str
     service_account: str
     base_model: str
+    base_model_uri: str | None
     adapter_name: str
     adapter_uri: str
     openai_model: str
@@ -61,6 +62,7 @@ def build_dev_gcp_vllm_endpoint_plan(
     max_num_seqs: int = 64,
     max_lora_rank: int = 16,
     gpu_memory_utilization: float = 0.75,
+    base_model_uri: str | None = None,
 ) -> SQLAdapterDevEndpointPlan:
     """Build the temporary dev endpoint plan without provisioning infrastructure."""
 
@@ -87,6 +89,9 @@ def build_dev_gcp_vllm_endpoint_plan(
         "SQLBENCH_MAX_LORA_RANK": str(resolved_max_lora_rank),
         "SQLBENCH_GPU_MEMORY_UTILIZATION": f"{gpu_memory_utilization:.2f}",
     }
+    resolved_base_model_uri = _optional_gcs_uri(base_model_uri, "base_model_uri")
+    if resolved_base_model_uri is not None:
+        environment_variables["SQLBENCH_BASE_MODEL_URI"] = resolved_base_model_uri
     startup_args = (
         "--model",
         contract.inputs.base_model,
@@ -114,6 +119,7 @@ def build_dev_gcp_vllm_endpoint_plan(
         image_uri=_non_empty(image_uri, "image_uri"),
         service_account=_gcp_service_account_email(contract.environment.serving_service_account, resolved_project),
         base_model=contract.inputs.base_model,
+        base_model_uri=resolved_base_model_uri,
         adapter_name=contract.inputs.adapter_name,
         adapter_uri=gcs_plan.adapter_uri,
         openai_model=openai_model,
@@ -149,3 +155,12 @@ def _gcp_service_account_email(value: str, project_id: str) -> str:
     if "@" in resolved:
         return resolved
     return f"{resolved}@{_non_empty(project_id, 'project_id')}.iam.gserviceaccount.com"
+
+
+def _optional_gcs_uri(value: str | None, name: str) -> str | None:
+    if value is None or not value.strip():
+        return None
+    resolved = value.strip().rstrip("/") + "/"
+    if not resolved.startswith("gs://"):
+        raise ValueError(f"{name} must start with gs://")
+    return resolved
