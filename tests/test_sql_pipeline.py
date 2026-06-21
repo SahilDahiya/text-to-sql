@@ -1570,10 +1570,17 @@ class SQLPipelineTests(unittest.TestCase):
             self.assertEqual(summary.request_count, 3)
             self.assertEqual(summary.concurrency, 2)
             self.assertEqual(summary.success_count, 3)
+            self.assertEqual(summary.timeout_count, 0)
+            self.assertEqual(summary.generated_char_count_min, 9)
+            self.assertEqual(summary.generated_char_count_p50, 9)
+            self.assertEqual(summary.generated_char_count_p95, 9)
+            self.assertEqual(summary.generated_char_count_max, 9)
+            self.assertEqual(summary.generated_char_count_mean, 9.0)
             self.assertIsNotNone(summary.p50_latency_seconds)
             self.assertTrue(output_path.exists())
             payload = json.loads(output_path.read_text(encoding="utf-8"))
             self.assertEqual(payload["openai_model"], "sql-lora")
+            self.assertEqual(payload["generated_char_count_mean"], 9.0)
 
     def test_report_sql_prompt_lengths_writes_dataset_statistics(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

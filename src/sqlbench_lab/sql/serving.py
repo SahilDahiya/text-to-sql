@@ -52,10 +52,16 @@ class OpenAILoadTestSummary:
     max_new_tokens: int
     success_count: int
     failure_count: int
+    timeout_count: int
     min_latency_seconds: float | None
     p50_latency_seconds: float | None
     p95_latency_seconds: float | None
     max_latency_seconds: float | None
+    generated_char_count_min: int | None
+    generated_char_count_p50: int | None
+    generated_char_count_p95: int | None
+    generated_char_count_max: int | None
+    generated_char_count_mean: float | None
     requests_per_second: float
     result_path: str | None
     records: tuple[OpenAILoadTestRequestRecord, ...]
@@ -264,7 +270,13 @@ def run_openai_completion_load_test(
     elapsed = time.perf_counter() - started_at
     records.sort(key=lambda record: record.request_index)
     latencies = [record.latency_seconds for record in records if record.success]
+    generated_char_counts = [record.generated_char_count for record in records if record.success]
     success_count = sum(1 for record in records if record.success)
+    timeout_count = sum(
+        1
+        for record in records
+        if not record.success and record.error is not None and "timeout" in record.error.lower()
+    )
     resolved_output_path = Path(output_path) if output_path is not None else None
     summary = OpenAILoadTestSummary(
         manifest_path=str(manifest_path),
@@ -278,10 +290,18 @@ def run_openai_completion_load_test(
         max_new_tokens=max_new_tokens,
         success_count=success_count,
         failure_count=request_count - success_count,
+        timeout_count=timeout_count,
         min_latency_seconds=min(latencies) if latencies else None,
         p50_latency_seconds=_percentile(latencies, 0.50),
         p95_latency_seconds=_percentile(latencies, 0.95),
         max_latency_seconds=max(latencies) if latencies else None,
+        generated_char_count_min=min(generated_char_counts) if generated_char_counts else None,
+        generated_char_count_p50=_percentile_int(generated_char_counts, 0.50),
+        generated_char_count_p95=_percentile_int(generated_char_counts, 0.95),
+        generated_char_count_max=max(generated_char_counts) if generated_char_counts else None,
+        generated_char_count_mean=(
+            sum(generated_char_counts) / len(generated_char_counts) if generated_char_counts else None
+        ),
         requests_per_second=request_count / elapsed if elapsed > 0 else 0.0,
         result_path=str(resolved_output_path) if resolved_output_path is not None else None,
         records=tuple(records),
@@ -396,6 +416,14 @@ def _positive_float(value: float, name: str) -> float:
 
 
 def _percentile(values: list[float], percentile: float) -> float | None:
+    if not values:
+        return None
+    ordered = sorted(values)
+    index = int(round((len(ordered) - 1) * percentile))
+    return ordered[index]
+
+
+def _percentile_int(values: list[int], percentile: float) -> int | None:
     if not values:
         return None
     ordered = sorted(values)

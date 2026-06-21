@@ -131,6 +131,8 @@ class DocsSiteTests(unittest.TestCase):
         self.assertIn("promotion_registry_plan", pipeline_html)
         self.assertIn("sql_adapter_dev_observability:v1", pipeline_html)
         self.assertIn("endpoint_monitoring_record", pipeline_html)
+        self.assertIn("generated SQL character-count", pipeline_html)
+        self.assertIn("Token counts are not claimed", pipeline_html)
         self.assertIn("sql_adapter_dev_cost_capacity:v1", pipeline_html)
         self.assertIn("Commands are documented", runbook_html)
         self.assertIn("Optimize prompt candidate", runbook_html)

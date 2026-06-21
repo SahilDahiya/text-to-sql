@@ -103,10 +103,16 @@ class SQLAdapterLoadTestSummary:
     concurrency: int
     success_count: int
     failure_count: int
+    timeout_count: int
     requests_per_second: float
     p50_latency_seconds: float | None
     p95_latency_seconds: float | None
     max_latency_seconds: float | None
+    generated_char_count_min: int | None
+    generated_char_count_p50: int | None
+    generated_char_count_p95: int | None
+    generated_char_count_max: int | None
+    generated_char_count_mean: float | None
     required: bool = True
     min_success_rate: float = 1.0
 
@@ -330,6 +336,8 @@ def _load_eval_gate(config: SQLAdapterEvalGateConfig) -> SQLAdapterEvalGateSumma
 def _load_load_test(path: str | Path) -> SQLAdapterLoadTestSummary:
     resolved_path = Path(path)
     payload = _load_json_object(resolved_path)
+    records = _records(payload.get("records"))
+    generated_char_counts = _successful_generated_char_counts(records)
     return SQLAdapterLoadTestSummary(
         label=resolved_path.stem,
         path=str(resolved_path),
@@ -337,10 +345,18 @@ def _load_load_test(path: str | Path) -> SQLAdapterLoadTestSummary:
         concurrency=_required_int(payload, "concurrency"),
         success_count=_required_int(payload, "success_count"),
         failure_count=_required_int(payload, "failure_count"),
+        timeout_count=_timeout_count(records),
         requests_per_second=_required_float(payload, "requests_per_second"),
         p50_latency_seconds=_optional_float(payload.get("p50_latency_seconds")),
         p95_latency_seconds=_optional_float(payload.get("p95_latency_seconds")),
         max_latency_seconds=_optional_float(payload.get("max_latency_seconds")),
+        generated_char_count_min=min(generated_char_counts) if generated_char_counts else None,
+        generated_char_count_p50=_percentile_int(generated_char_counts, 0.50),
+        generated_char_count_p95=_percentile_int(generated_char_counts, 0.95),
+        generated_char_count_max=max(generated_char_counts) if generated_char_counts else None,
+        generated_char_count_mean=(
+            sum(generated_char_counts) / len(generated_char_counts) if generated_char_counts else None
+        ),
     )
 
 
@@ -376,6 +392,40 @@ def _records(value: Any) -> list[dict[str, Any]]:
             raise ValueError("records entries must be objects")
         records.append(record)
     return records
+
+
+def _successful_generated_char_counts(records: list[dict[str, Any]]) -> list[int]:
+    counts: list[int] = []
+    for record in records:
+        if not bool(record.get("success")):
+            continue
+        raw_value = record.get("generated_char_count")
+        if raw_value is None:
+            continue
+        count = int(raw_value)
+        if count < 0:
+            raise ValueError("generated_char_count must be non-negative")
+        counts.append(count)
+    return counts
+
+
+def _timeout_count(records: list[dict[str, Any]]) -> int:
+    count = 0
+    for record in records:
+        if bool(record.get("success")):
+            continue
+        error = record.get("error")
+        if isinstance(error, str) and "timeout" in error.lower():
+            count += 1
+    return count
+
+
+def _percentile_int(values: list[int], quantile: float) -> int | None:
+    if not values:
+        return None
+    ordered = sorted(values)
+    index = min(len(ordered) - 1, max(0, int(round((len(ordered) - 1) * quantile))))
+    return ordered[index]
 
 
 def _mapping(value: Any) -> dict[str, Any]:

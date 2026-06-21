@@ -311,6 +311,11 @@ class SQLAdapterDevCloudContractTests(unittest.TestCase):
             self.assertEqual(record.timeout_count, 1)
             self.assertEqual(record.p95_latency_seconds, 20.0)
             self.assertEqual(record.p99_latency_seconds, 21.5)
+            self.assertEqual(record.generated_char_count_min, 100)
+            self.assertEqual(record.generated_char_count_p50, 116)
+            self.assertEqual(record.generated_char_count_p95, 129)
+            self.assertEqual(record.generated_char_count_max, 131)
+            self.assertEqual(record.generated_char_count_mean, 115.5)
             self.assertEqual(record.endpoint_eval_passed_count, 10)
             self.assertEqual(record.schema_failure_count, 2)
 
@@ -597,6 +602,17 @@ def _write_eval_result(
 
 def _write_load_test(root: Path, *, label: str, success: int, total: int, concurrency: int) -> Path:
     path = root / f"{label}.json"
+    records = [
+        {
+            "request_index": index,
+            "case_id": f"eval_{index + 1:03d}",
+            "success": index < success,
+            "latency_seconds": 1.0 + index,
+            "generated_char_count": 100 + index if index < success else 0,
+            "error": None if index < success else "request timed out",
+        }
+        for index in range(total)
+    ]
     path.write_text(
         json.dumps(
             {
@@ -617,7 +633,7 @@ def _write_load_test(root: Path, *, label: str, success: int, total: int, concur
                 "max_latency_seconds": 22.0,
                 "requests_per_second": 0.5,
                 "result_path": str(path),
-                "records": [],
+                "records": records,
             }
         ),
         encoding="utf-8",

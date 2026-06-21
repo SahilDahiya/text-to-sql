@@ -154,6 +154,13 @@ class SQLAdapterMLOpsContractTests(unittest.TestCase):
 
             self.assertEqual(decision.decision, REJECT_DECISION)
             self.assertEqual(contract.inputs.adapter_method, "qlora_sft")
+            load_summary = contract.load_tests[0]
+            self.assertEqual(load_summary.timeout_count, 0)
+            self.assertEqual(load_summary.generated_char_count_min, 100)
+            self.assertEqual(load_summary.generated_char_count_p50, 116)
+            self.assertEqual(load_summary.generated_char_count_p95, 129)
+            self.assertEqual(load_summary.generated_char_count_max, 131)
+            self.assertEqual(load_summary.generated_char_count_mean, 115.5)
             self.assertIn("eval", decision.failed_gates)
             self.assertIn("vllm_eval", decision.failed_gates)
             self.assertIn("vllm_stress_c8_r32", decision.passed_gates)
@@ -289,6 +296,17 @@ def _write_eval_result(
 
 def _write_load_test(root: Path, *, success: int, total: int, concurrency: int) -> Path:
     path = root / f"vllm_stress_c{concurrency}_r{total}.json"
+    records = [
+        {
+            "request_index": index,
+            "case_id": f"eval_{index + 1:03d}",
+            "success": index < success,
+            "latency_seconds": 1.0 + index,
+            "generated_char_count": 100 + index if index < success else 0,
+            "error": None if index < success else "request failed",
+        }
+        for index in range(total)
+    ]
     path.write_text(
         json.dumps(
             {
@@ -309,7 +327,7 @@ def _write_load_test(root: Path, *, success: int, total: int, concurrency: int) 
                 "max_latency_seconds": 22.0,
                 "requests_per_second": 0.5,
                 "result_path": str(path),
-                "records": [],
+                "records": records,
             }
         ),
         encoding="utf-8",
