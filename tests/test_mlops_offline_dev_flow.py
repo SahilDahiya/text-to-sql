@@ -9,6 +9,12 @@ from sqlbench_lab.mlops import (
     DEV_ENVIRONMENT,
     PROMOTE_DECISION,
     REJECT_DECISION,
+    build_dev_cost_capacity_record,
+    build_dev_endpoint_monitoring_record,
+    build_dev_gcp_vllm_endpoint_plan,
+    build_dev_observability_record,
+    build_dev_promotion_registry_plan,
+    build_dev_vertex_training_job_plan,
     build_endpoint_eval_command,
     build_load_test_command,
     build_offline_flow_gcs_sync_plan,
@@ -193,6 +199,68 @@ class SQLAdapterOfflineDevFlowTests(unittest.TestCase):
             self.assertIn("vllm_stress_c8_r32", decision.passed_gates)
             self.assertEqual(contract.eval_gates[-1].gate_type, "endpoint_eval")
             self.assertEqual(contract.load_tests[0].success_count, 32)
+
+    def test_temp_replay_plan_builds_dev_cloud_and_hardening_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            manifest = _write_manifest(root, "qwen35_0_8b__exp056_storefront_v4_lora_r16_a32_d010")
+            train = _write_train_summary(root, manifest_id=manifest.stem)
+            dev = _write_eval_result(root, label="dev_v2", passed=11, total=12)
+            protected_eval = _write_eval_result(root, label="eval_v1", passed=12, total=12)
+            challenge = _write_eval_result(root, label="challenge_v1", passed=22, total=24)
+            endpoint = _write_eval_result(root, label="endpoint_eval", passed=10, total=12)
+            load = _write_load_test(root, label="vllm_stress_c8_r32", success=32, total=32, concurrency=8)
+            plan = build_offline_flow_plan(
+                manifest_path=str(manifest),
+                train_summary_path=str(train),
+                dev_result_path=str(dev),
+                eval_result_path=str(protected_eval),
+                challenge_result_path=str(challenge),
+                endpoint_eval_result_path=str(endpoint),
+                endpoint_min_passed_count=10,
+                load_test_paths=(str(load),),
+            )
+
+            contract = build_offline_run_contract(plan)
+            decision = decide_offline_flow_promotion(plan)
+            gcs_plan = build_offline_flow_gcs_sync_plan(plan, run_id="metaflow-run-123")
+            vertex = build_dev_vertex_training_job_plan(
+                contract,
+                gcs_plan,
+                project_id="mistri-467901",
+                region="us-central1",
+                image_uri="train:dev",
+            )
+            endpoint_plan = build_dev_gcp_vllm_endpoint_plan(
+                contract,
+                gcs_plan,
+                project_id="mistri-467901",
+                region="us-central1",
+                image_uri="vllm:dev",
+            )
+            registry = build_dev_promotion_registry_plan(
+                contract,
+                gcs_plan,
+                decision,
+                db_id="storefront_sales_lab",
+            )
+            observability = build_dev_observability_record(contract, decision, gcs_plan, registry_plan=registry)
+            monitoring = build_dev_endpoint_monitoring_record(contract, endpoint_plan)
+            capacity = build_dev_cost_capacity_record(
+                contract,
+                vertex_plan=vertex,
+                endpoint_plan=endpoint_plan,
+                endpoint_uptime_hours=1.0,
+                training_hourly_cost_usd=1.0,
+                endpoint_hourly_cost_usd=1.0,
+            )
+
+            self.assertEqual(vertex.environment, DEV_ENVIRONMENT)
+            self.assertEqual(endpoint_plan.openai_model, f"{manifest.stem}-dev")
+            self.assertTrue(registry.eligible_for_current)
+            self.assertEqual(observability.decision, PROMOTE_DECISION)
+            self.assertEqual(monitoring.request_count, 32)
+            self.assertEqual(capacity.peak_concurrency, 8)
 
     def test_temp_replay_plan_rejects_when_endpoint_gate_fails(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

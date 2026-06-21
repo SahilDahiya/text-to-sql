@@ -39,6 +39,32 @@ from .container_contract import (
     build_dev_cli_docker_run_command,
     dev_cli_container_contract,
 )
+from .cost_capacity import (
+    DEV_COST_CAPACITY_SCHEMA_VERSION,
+    SQLAdapterDevCostCapacityRecord,
+    build_dev_cost_capacity_record,
+)
+from .dev_endpoint import (
+    DEV_ENDPOINT_PLAN_SCHEMA_VERSION,
+    SQLAdapterDevEndpointPlan,
+    build_dev_gcp_vllm_endpoint_plan,
+)
+from .endpoint_monitoring import (
+    DEV_ENDPOINT_MONITORING_SCHEMA_VERSION,
+    SQLAdapterDevEndpointMonitoringRecord,
+    build_dev_endpoint_monitoring_record,
+)
+from .observability import (
+    DEV_OBSERVABILITY_SCHEMA_VERSION,
+    SQLAdapterDevObservabilityRecord,
+    SQLAdapterEvalObservation,
+    build_dev_observability_record,
+)
+from .promotion_registry import (
+    DEV_PROMOTION_REGISTRY_SCHEMA_VERSION,
+    SQLAdapterDevPromotionRegistryPlan,
+    build_dev_promotion_registry_plan,
+)
 from .run_contract import (
     DEV_ARTIFACT_BUCKET,
     DEV_DATASET_BUCKET,
@@ -67,6 +93,13 @@ from .run_contract import (
     build_sql_adapter_run_contract,
     decide_sql_adapter_promotion,
 )
+from .vertex_job import (
+    DEV_VERTEX_JOB_SCHEMA_VERSION,
+    SQLAdapterVertexMachineSpec,
+    SQLAdapterVertexTrainingJobPlan,
+    build_dev_vertex_training_job_plan,
+    build_gcloud_vertex_custom_job_command,
+)
 
 __all__ = [
     "EXP056_CHALLENGE_RESULT_PATH",
@@ -77,9 +110,15 @@ __all__ = [
     "EXP056_TRAIN_SUMMARY_PATH",
     "CLICommandResult",
     "DEV_GCS_SYNC_PLAN_SCHEMA_VERSION",
+    "DEV_COST_CAPACITY_SCHEMA_VERSION",
     "DEV_CLI_IMAGE_NAME",
     "DEV_CLI_IMAGE_TAG",
     "DEV_CONTAINER_DOCKERFILE",
+    "DEV_ENDPOINT_PLAN_SCHEMA_VERSION",
+    "DEV_ENDPOINT_MONITORING_SCHEMA_VERSION",
+    "DEV_OBSERVABILITY_SCHEMA_VERSION",
+    "DEV_PROMOTION_REGISTRY_SCHEMA_VERSION",
+    "DEV_VERTEX_JOB_SCHEMA_VERSION",
     "DEV_ARTIFACT_BUCKET",
     "DEV_DATASET_BUCKET",
     "DEV_ENVIRONMENT",
@@ -100,8 +139,14 @@ __all__ = [
     "SQLAdapterGCSArtifactKind",
     "SQLAdapterGCSSyncPlan",
     "SQLAdapterDevContainerContract",
+    "SQLAdapterDevCostCapacityRecord",
+    "SQLAdapterDevEndpointMonitoringRecord",
+    "SQLAdapterDevEndpointPlan",
+    "SQLAdapterDevObservabilityRecord",
+    "SQLAdapterDevPromotionRegistryPlan",
     "SQLAdapterOfflineEvalSpec",
     "SQLAdapterOfflineFlowPlan",
+    "SQLAdapterEvalObservation",
     "SQLAdapterEvalGateConfig",
     "SQLAdapterEvalGateSummary",
     "SQLAdapterLoadTestSummary",
@@ -110,12 +155,21 @@ __all__ = [
     "SQLAdapterRunContract",
     "SQLAdapterRunInputs",
     "SQLAdapterTrainSummary",
+    "SQLAdapterVertexMachineSpec",
+    "SQLAdapterVertexTrainingJobPlan",
     "build_analyze_eval_command",
     "build_endpoint_eval_command",
     "build_load_test_command",
     "build_dev_gcs_sync_plan",
+    "build_dev_cost_capacity_record",
     "build_dev_cli_docker_build_command",
     "build_dev_cli_docker_run_command",
+    "build_dev_endpoint_monitoring_record",
+    "build_dev_gcp_vllm_endpoint_plan",
+    "build_dev_observability_record",
+    "build_dev_promotion_registry_plan",
+    "build_dev_vertex_training_job_plan",
+    "build_gcloud_vertex_custom_job_command",
     "build_offline_flow_gcs_sync_plan",
     "build_offline_flow_plan",
     "build_offline_run_contract",

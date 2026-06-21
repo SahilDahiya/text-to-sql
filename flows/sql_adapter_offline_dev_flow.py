@@ -18,6 +18,12 @@ from sqlbench_lab.mlops import (
     EXP056_MANIFEST_PATH,
     EXP056_TRAIN_SUMMARY_PATH,
     build_analyze_eval_command,
+    build_dev_cost_capacity_record,
+    build_dev_endpoint_monitoring_record,
+    build_dev_gcp_vllm_endpoint_plan,
+    build_dev_observability_record,
+    build_dev_promotion_registry_plan,
+    build_dev_vertex_training_job_plan,
     build_endpoint_eval_command,
     build_load_test_command,
     build_offline_flow_gcs_sync_plan,
@@ -54,6 +60,20 @@ class SQLAdapterOfflineDevFlow(FlowSpec):
     load_test_output = Parameter("load-test-output", default="")
     load_test_requests = Parameter("load-test-requests", default=8)
     load_test_concurrency = Parameter("load-test-concurrency", default=4)
+    gcp_project = Parameter("gcp-project", default="mistri-467901")
+    gcp_region = Parameter("gcp-region", default="us-central1")
+    training_image_uri = Parameter(
+        "training-image-uri",
+        default="us-central1-docker.pkg.dev/mistri-467901/sqlbench/sqlbench-lab-dev-cli:dev",
+    )
+    serving_image_uri = Parameter(
+        "serving-image-uri",
+        default="us-central1-docker.pkg.dev/mistri-467901/sqlbench/sqlbench-vllm:dev",
+    )
+    dev_db_id = Parameter("dev-db-id", default="storefront_sales_lab")
+    endpoint_uptime_hours = Parameter("endpoint-uptime-hours", default=0.0)
+    training_gpu_hourly_cost_usd = Parameter("training-gpu-hourly-cost-usd", default=0.0)
+    endpoint_gpu_hourly_cost_usd = Parameter("endpoint-gpu-hourly-cost-usd", default=0.0)
 
     @step
     def start(self):
@@ -241,9 +261,54 @@ class SQLAdapterOfflineDevFlow(FlowSpec):
                 else None
             ),
         )
-        self.run_contract = build_offline_run_contract(plan).to_json_dict()
-        self.promotion_decision = decide_offline_flow_promotion(plan).to_json_dict()
-        self.gcs_sync_plan = build_offline_flow_gcs_sync_plan(plan, run_id=str(current.run_id)).to_json_dict()
+        contract = build_offline_run_contract(plan)
+        decision = decide_offline_flow_promotion(plan)
+        gcs_sync_plan = build_offline_flow_gcs_sync_plan(plan, run_id=str(current.run_id))
+        vertex_training_job_plan = build_dev_vertex_training_job_plan(
+            contract,
+            gcs_sync_plan,
+            project_id=str(self.gcp_project),
+            region=str(self.gcp_region),
+            image_uri=str(self.training_image_uri),
+        )
+        dev_endpoint_plan = build_dev_gcp_vllm_endpoint_plan(
+            contract,
+            gcs_sync_plan,
+            project_id=str(self.gcp_project),
+            region=str(self.gcp_region),
+            image_uri=str(self.serving_image_uri),
+        )
+        promotion_registry_plan = build_dev_promotion_registry_plan(
+            contract,
+            gcs_sync_plan,
+            decision,
+            db_id=str(self.dev_db_id),
+        )
+        self.run_contract = contract.to_json_dict()
+        self.promotion_decision = decision.to_json_dict()
+        self.gcs_sync_plan = gcs_sync_plan.to_json_dict()
+        self.vertex_training_job_plan = vertex_training_job_plan.to_json_dict()
+        self.dev_endpoint_plan = dev_endpoint_plan.to_json_dict()
+        self.promotion_registry_plan = promotion_registry_plan.to_json_dict()
+        self.dev_observability_record = build_dev_observability_record(
+            contract,
+            decision,
+            gcs_sync_plan,
+            container_image_uri=str(self.training_image_uri),
+            registry_plan=promotion_registry_plan,
+        ).to_json_dict()
+        self.endpoint_monitoring_record = build_dev_endpoint_monitoring_record(
+            contract,
+            dev_endpoint_plan,
+        ).to_json_dict()
+        self.cost_capacity_record = build_dev_cost_capacity_record(
+            contract,
+            vertex_plan=vertex_training_job_plan,
+            endpoint_plan=dev_endpoint_plan,
+            endpoint_uptime_hours=float(self.endpoint_uptime_hours),
+            training_hourly_cost_usd=float(self.training_gpu_hourly_cost_usd),
+            endpoint_hourly_cost_usd=float(self.endpoint_gpu_hourly_cost_usd),
+        ).to_json_dict()
         self.next(self.end)
 
     @step

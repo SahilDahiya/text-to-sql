@@ -1295,6 +1295,20 @@ def _render_pipeline() -> str:
           <div class="callout">The image deliberately avoids hidden production behavior: no prod registry, no prod bucket, no automatic upload, and no hidden GPU server startup.</div>
         </section>
         <section class="panel full">
+          <h2>Dev Cloud Training, Serving, Registry, and Hardening Contracts</h2>
+          <p>The remaining dev slices are represented as explicit plan artifacts, not hidden cloud side effects. The Metaflow flow now emits these records after <code>decide_dev_promote_or_reject</code>: <code>vertex_training_job_plan</code>, <code>dev_endpoint_plan</code>, <code>promotion_registry_plan</code>, <code>dev_observability_record</code>, <code>endpoint_monitoring_record</code>, and <code>cost_capacity_record</code>.</p>
+          <table class="key-table">
+            <tr><th>TAP-636</th><td><code>sql_adapter_vertex_training_job:v1</code> builds a Vertex AI Custom Job plan around the dev CLI image, the GCS manifest URI, the dev training service account, and an explicit GPU machine spec. The companion gcloud command uses <code>gcloud ai custom-jobs create --config</code>.</td></tr>
+            <tr><th>TAP-637</th><td><code>sql_adapter_dev_vllm_endpoint:v1</code> records the temporary GCP vLLM endpoint plan: base model, LoRA adapter URI, served OpenAI model name, GPU type/count, max model length, max sequences, and health/completions paths.</td></tr>
+            <tr><th>TAP-638</th><td><code>sql_adapter_dev_promotion_registry:v1</code> records the dev adapter version, metadata URI, current pointer, rollback pointer, run contract URI, and promotion decision. Rejected runs are not eligible for <code>current.json</code>.</td></tr>
+            <tr><th>TAP-642</th><td><code>sql_adapter_dev_observability:v1</code> summarizes experiment ID, adapter, base model, run ID, optional git SHA, container image, train rows/runtime, eval pass/failure counts, decision, and GCS prefix.</td></tr>
+            <tr><th>TAP-643</th><td><code>sql_adapter_dev_endpoint_monitoring:v1</code> records endpoint quality and runtime signals: request count, concurrency, success/error/timeout counts, p50/p95/p99 latency, endpoint pass rate, empty SQL count, and SQL failure buckets.</td></tr>
+            <tr><th>TAP-645</th><td><code>sql_adapter_dev_cost_capacity:v1</code> records training GPU capacity, endpoint GPU capacity, uptime, caller-supplied hourly cost rates, estimated cost, request count, peak concurrency, and RPS.</td></tr>
+            <tr><th>Boundary</th><td>These are dev-only contracts. They do not submit paid jobs, provision endpoints, mutate registry pointers, or upload artifacts unless a later explicit command does that work.</td></tr>
+          </table>
+          <div class="callout">This keeps the Chip Huyen loop concrete without mixing hidden infrastructure actions into replay runs: every cloud/hardening step has a schema, a typed builder, and test coverage before a real GCP side effect is allowed.</div>
+        </section>
+        <section class="panel full">
           <table class="dense-table">
             <thead>
               <tr><th>#</th><th>Stage</th><th>Artifact</th><th>Command</th><th>Risk Controlled</th></tr>
