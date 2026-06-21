@@ -14,6 +14,20 @@ DEV_COST_CAPACITY_SCHEMA_VERSION = "sql_adapter_dev_cost_capacity:v1"
 
 
 @dataclass(frozen=True)
+class SQLAdapterDevCapacityPoint:
+    label: str
+    request_count: int
+    concurrency: int
+    success_count: int
+    failure_count: int
+    timeout_count: int
+    requests_per_second: float
+    p50_latency_seconds: float | None
+    p95_latency_seconds: float | None
+    max_latency_seconds: float | None
+
+
+@dataclass(frozen=True)
 class SQLAdapterDevCostCapacityRecord:
     schema_version: str
     environment: str
@@ -35,6 +49,7 @@ class SQLAdapterDevCostCapacityRecord:
     request_count: int
     peak_concurrency: int | None
     requests_per_second: float | None
+    capacity_points: tuple[SQLAdapterDevCapacityPoint, ...]
     total_estimated_cost_usd: float | None
 
     def to_json_dict(self) -> dict[str, Any]:
@@ -60,6 +75,21 @@ def build_dev_cost_capacity_record(
         else None
     )
     load = contract.load_tests[-1] if contract.load_tests else None
+    capacity_points = tuple(
+        SQLAdapterDevCapacityPoint(
+            label=load_test.label,
+            request_count=load_test.request_count,
+            concurrency=load_test.concurrency,
+            success_count=load_test.success_count,
+            failure_count=load_test.failure_count,
+            timeout_count=load_test.timeout_count,
+            requests_per_second=load_test.requests_per_second,
+            p50_latency_seconds=load_test.p50_latency_seconds,
+            p95_latency_seconds=load_test.p95_latency_seconds,
+            max_latency_seconds=load_test.max_latency_seconds,
+        )
+        for load_test in sorted(contract.load_tests, key=lambda item: (item.concurrency, item.request_count, item.label))
+    )
     training_cost = _cost(training_hours, training_hourly_cost_usd, vertex_plan.machine.accelerator_count if vertex_plan else 1)
     endpoint_cost = _cost(
         endpoint_uptime_hours,
@@ -86,8 +116,9 @@ def build_dev_cost_capacity_record(
         endpoint_hourly_cost_usd=endpoint_hourly_cost_usd,
         endpoint_estimated_cost_usd=endpoint_cost,
         request_count=load.request_count if load is not None else 0,
-        peak_concurrency=load.concurrency if load is not None else None,
+        peak_concurrency=max((point.concurrency for point in capacity_points), default=None),
         requests_per_second=load.requests_per_second if load is not None else None,
+        capacity_points=capacity_points,
         total_estimated_cost_usd=total_cost,
     )
 

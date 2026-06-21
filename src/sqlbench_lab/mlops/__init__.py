@@ -53,6 +53,7 @@ from .base_model_mirror import (
 )
 from .cost_capacity import (
     DEV_COST_CAPACITY_SCHEMA_VERSION,
+    SQLAdapterDevCapacityPoint,
     SQLAdapterDevCostCapacityRecord,
     build_dev_cost_capacity_record,
 )
@@ -185,6 +186,7 @@ __all__ = [
     "SQLAdapterDevCloudBundle",
     "SQLAdapterDevBaseModelMirrorPlan",
     "SQLAdapterDevCloudPublishRecord",
+    "SQLAdapterDevCapacityPoint",
     "SQLAdapterDevCostCapacityRecord",
     "SQLAdapterDevEndpointMonitoringRecord",
     "SQLAdapterDevEndpointPlan",

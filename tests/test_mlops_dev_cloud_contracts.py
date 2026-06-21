@@ -356,6 +356,30 @@ class SQLAdapterDevCloudContractTests(unittest.TestCase):
             self.assertEqual(record.total_estimated_cost_usd, 3.5)
             self.assertEqual(record.request_count, 32)
             self.assertEqual(record.peak_concurrency, 8)
+            self.assertEqual(len(record.capacity_points), 1)
+            self.assertEqual(record.capacity_points[0].label, "vllm_stress_c8_r32")
+
+    def test_dev_cost_capacity_record_tracks_concurrency_ladder_points(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            manifest = _write_manifest(root, "qwen35_0_8b__exp056_storefront_v4_lora_r16_a32_d010")
+            train = _write_train_summary(root, manifest_id=manifest.stem)
+            load_c8 = _write_load_test(root, label="vllm_stress_c8_r32", success=32, total=32, concurrency=8)
+            load_c2 = _write_load_test(root, label="vllm_stress_c2_r12", success=12, total=12, concurrency=2)
+            contract = build_sql_adapter_run_contract(
+                manifest_path=manifest,
+                train_summary_path=train,
+                load_test_paths=(str(load_c8), str(load_c2)),
+            )
+
+            record = build_dev_cost_capacity_record(contract)
+
+            self.assertEqual(record.request_count, 12)
+            self.assertEqual(record.peak_concurrency, 8)
+            self.assertEqual(tuple(point.label for point in record.capacity_points), ("vllm_stress_c2_r12", "vllm_stress_c8_r32"))
+            self.assertEqual(tuple(point.concurrency for point in record.capacity_points), (2, 8))
+            self.assertEqual(tuple(point.request_count for point in record.capacity_points), (12, 32))
+            self.assertEqual(tuple(point.success_count for point in record.capacity_points), (12, 32))
 
     def test_cli_writes_dev_cloud_plan_bundle_and_vertex_config(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
