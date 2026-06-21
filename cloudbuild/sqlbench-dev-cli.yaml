@@ -1,0 +1,11 @@
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - docker/sqlbench-dev-cli.Dockerfile
+      - -t
+      - $_IMAGE
+      - .
+images:
+  - $_IMAGE

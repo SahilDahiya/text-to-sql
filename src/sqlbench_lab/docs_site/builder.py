@@ -1287,6 +1287,7 @@ def _render_pipeline() -> str:
           <table class="key-table">
             <tr><th>Image</th><td><code>sqlbench-lab-dev-cli:dev</code></td></tr>
             <tr><th>Build</th><td><code>docker build -f docker/sqlbench-dev-cli.Dockerfile --build-arg INSTALL_GROUPS=mlops -t sqlbench-lab-dev-cli:dev .</code></td></tr>
+            <tr><th>Cloud Build</th><td><code>gcloud builds submit --region us-central1 --config cloudbuild/sqlbench-dev-cli.yaml --substitutions _IMAGE=us-central1-docker.pkg.dev/mistri-467901/sqlbench/sqlbench-lab-dev-cli:dev .</code></td></tr>
             <tr><th>Smoke</th><td><code>docker run --rm sqlbench-lab-dev-cli:dev sql validate-manifest --manifest experiments/sql/qwen35_0_8b__exp056_storefront_v4_lora_r16_a32_d010.json</code></td></tr>
             <tr><th>Supported commands</th><td>validate manifest, dry-run train, analyze eval, OpenAI-compatible endpoint eval, OpenAI-compatible load test, and docs build.</td></tr>
             <tr><th>Dependency groups</th><td>The default image installs <code>mlops</code>. <code>training</code> and <code>serving</code> are explicit opt-in build groups for heavier GPU workflows.</td></tr>

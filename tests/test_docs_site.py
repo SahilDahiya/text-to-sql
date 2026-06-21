@@ -97,6 +97,7 @@ class DocsSiteTests(unittest.TestCase):
         self.assertIn("gcs_sync_plan", pipeline_html)
         self.assertIn("Dev CLI Container", pipeline_html)
         self.assertIn("docker/sqlbench-dev-cli.Dockerfile", pipeline_html)
+        self.assertIn("cloudbuild/sqlbench-dev-cli.yaml", pipeline_html)
         self.assertIn("sqlbench-lab-dev-cli:dev", pipeline_html)
         self.assertIn("mlops dev-cloud-plan", pipeline_html)
         self.assertIn("not a prod serving image", pipeline_html)
