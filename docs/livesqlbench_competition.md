@@ -70,10 +70,12 @@ checks before any GPU run.
 ## Verified Target Manifest
 
 The pending target manifest is JSONL with one row per task. It must supply the
-target SQL, task split, family, curriculum tier, SQL shape, grounding requirement,
-shortcut status, tags, and `verification.status: pending`. Run `verify-targets`
+target SQL, task split, difficulty, task type, family, curriculum tier, SQL shape,
+grounding requirement, shortcut status, tags, `order_sensitive`,
+`numeric_tolerance`, and `verification.status: pending`. Run `verify-targets`
 against the allowed database environment first. Only its output, with
-`execution_verified`, may be passed to `livesqlbench-import`.
+`execution_verified`, may be passed to `livesqlbench-import`; missing fields are
+errors rather than inferred defaults.
 
 ## Official Runner Boundary
 

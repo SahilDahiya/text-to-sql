@@ -159,34 +159,33 @@ def _postgres_executor(
         except ImportError as exc:
             raise RuntimeError("PostgreSQL evaluation requires the psycopg dependency") from exc
         connector = psycopg.connect
+        database_error = psycopg.Error
     else:
         connector = postgres_connect
+        database_error = Exception
 
     def execute(sql: str) -> tuple[list[tuple[Any, ...]], tuple[str, ...], str | None]:
         if not sql.strip():
             return [], (), "empty SQL prediction"
-        connection = None
+        connection = connector(
+            host=connection_values["PGHOST"],
+            port=int(connection_values["PGPORT"]),
+            user=connection_values["PGUSER"],
+            dbname=connection_values["PGDATABASE"],
+            password=connection_values.get("PGPASSWORD"),
+        )
         try:
-            connection = connector(
-                host=connection_values["PGHOST"],
-                port=int(connection_values["PGPORT"]),
-                user=connection_values["PGUSER"],
-                dbname=connection_values["PGDATABASE"],
-                password=connection_values.get("PGPASSWORD"),
-            )
             with connection.cursor() as cursor:
                 cursor.execute(sql)
                 columns = tuple(description[0] for description in cursor.description or ())
                 rows = [tuple(row) for row in cursor.fetchall()] if cursor.description else []
             connection.rollback()
             return rows, columns, None
-        except Exception as exc:  # psycopg exposes several operational exception classes
-            if connection is not None:
-                connection.rollback()
+        except database_error as exc:
+            connection.rollback()
             return [], (), str(exc)
         finally:
-            if connection is not None:
-                connection.close()
+            connection.close()
 
     return execute
 

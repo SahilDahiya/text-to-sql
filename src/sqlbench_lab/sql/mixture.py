@@ -100,8 +100,6 @@ def _assert_training_invariants(rows: list[SQLTrainExample]) -> None:
             raise ValueError(f"train row is not execution_verified: {row.row_id}")
         if row.metadata.shortcut_status not in {"requires_database", "requires_schema_and_database"}:
             raise ValueError(f"train row does not require database grounding: {row.row_id}")
-        if row.provenance.target_source == "public_payload" and not row.target_sql.strip():
-            raise ValueError(f"prompt-only row cannot be used for training: {row.row_id}")
         if not row.db_path.strip():
             raise ValueError(f"train row is missing database runtime path: {row.row_id}")
 

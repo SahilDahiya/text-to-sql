@@ -9,6 +9,8 @@ from typing import Any
 
 from sqlbench_lab.paths import WORKSPACE_ROOT
 
+from .loaders import load_sql_eval_cases
+
 
 @dataclass(frozen=True)
 class SQLEvalFailureAnalysis:
@@ -64,6 +66,8 @@ def analyze_sql_eval_result(
 ) -> SQLEvalAnalysisSummary:
     resolved_result_path = Path(result_path).resolve()
     payload = json.loads(resolved_result_path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError(f"eval result must be a JSON object: {resolved_result_path}")
     records = payload.get("records", [])
     if not isinstance(records, list):
         raise ValueError(f"eval result records must be a list: {resolved_result_path}")
@@ -71,7 +75,7 @@ def analyze_sql_eval_result(
     failure_counts: dict[str, int] = {}
     for failure in failures:
         failure_counts[failure.failure_type] = failure_counts.get(failure.failure_type, 0) + 1
-    eval_dataset = str(payload.get("eval_dataset", ""))
+    eval_dataset = _required_text(payload, "eval_dataset", resolved_result_path)
     tag_slices = _analyze_tag_slices(records, eval_dataset=eval_dataset, result_path=resolved_result_path)
     resolved_output_path = Path(output_path).resolve() if output_path else _default_analysis_path(resolved_result_path)
     summary = SQLEvalAnalysisSummary(
@@ -164,10 +168,20 @@ def _analyze_failure(record: dict[str, Any]) -> SQLEvalFailureAnalysis:
 
 def _analyze_tag_slices(records: list[dict[str, Any]], *, eval_dataset: str, result_path: Path) -> list[SQLEvalTagSlice]:
     case_metadata = _load_eval_case_metadata(eval_dataset, result_path=result_path)
+    missing_case_ids = sorted(
+        str(record.get("case_id", ""))
+        for record in records
+        if str(record.get("case_id", "")) not in case_metadata
+    )
+    if missing_case_ids:
+        raise ValueError(
+            "eval result references case IDs absent from eval dataset: "
+            + ", ".join(missing_case_ids[:10])
+        )
     slice_counts: dict[str, dict[str, Any]] = {}
     for record in records:
         case_id = str(record.get("case_id", ""))
-        metadata = case_metadata.get(case_id, {})
+        metadata = case_metadata[case_id]
         tags = set(str(tag) for tag in metadata.get("tags", []))
         tags.update({f"db:{record.get('db_id', metadata.get('db_id', ''))}", f"family:{record.get('task_family', metadata.get('task_family', ''))}", f"tier:{record.get('curriculum_tier', metadata.get('curriculum_tier', ''))}"})
         for tag in sorted(tags):
@@ -194,28 +208,31 @@ def _analyze_tag_slices(records: list[dict[str, Any]], *, eval_dataset: str, res
 
 def _load_eval_case_metadata(eval_dataset: str, *, result_path: Path) -> dict[str, dict[str, Any]]:
     if not eval_dataset.strip():
-        return {}
+        raise ValueError(f"eval result is missing eval_dataset: {result_path}")
     raw = Path(eval_dataset)
     candidates = [raw] if raw.is_absolute() else [WORKSPACE_ROOT / raw, result_path.parent / raw]
     eval_path = next((candidate for candidate in candidates if candidate.exists()), None)
     if eval_path is None:
         raise FileNotFoundError(f"eval dataset does not exist for analysis: {eval_dataset}")
     metadata: dict[str, dict[str, Any]] = {}
-    for line_number, line in enumerate(eval_path.read_text(encoding="utf-8").splitlines(), start=1):
-        if not line.strip():
-            continue
-        row = json.loads(line)
-        case_id = str(row.get("case_id", ""))
-        if not case_id or case_id in metadata:
-            raise ValueError(f"invalid or duplicate eval case_id at {eval_path}:{line_number}")
-        row_metadata = row.get("metadata", {})
+    for case in load_sql_eval_cases(eval_path):
+        case_id = case.case_id
+        if case_id in metadata:
+            raise ValueError(f"duplicate eval case_id at {eval_path}: {case_id}")
         metadata[case_id] = {
-            "db_id": row.get("db_id", ""),
-            "task_family": row_metadata.get("task_family", ""),
-            "curriculum_tier": row_metadata.get("curriculum_tier", 0),
-            "tags": row_metadata.get("tags", []),
+            "db_id": case.db_id,
+            "task_family": case.metadata.task_family,
+            "curriculum_tier": case.metadata.curriculum_tier,
+            "tags": case.metadata.tags,
         }
     return metadata
+
+
+def _required_text(payload: dict[str, Any], field: str, path: Path) -> str:
+    value = payload.get(field)
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{field} must be a non-empty string at {path}")
+    return value.strip()
 
 
 def _rows(value: Any) -> list[Any]:

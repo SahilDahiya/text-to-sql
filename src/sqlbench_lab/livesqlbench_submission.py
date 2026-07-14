@@ -152,7 +152,7 @@ def run_submission(
 ) -> None:
     """Run task preparation followed by the official Harbor evaluation."""
 
-    command_runner = runner or _run_command
+    command_runner = _run_command if runner is None else runner
     cli_repo = Path(plan.official_cli_repo)
     command_runner(plan.prepare_command, cli_repo)
     command_runner(plan.run_command, cli_repo)
@@ -165,7 +165,7 @@ def run_prepare(
 ) -> None:
     """Run only the official adapter task-generation command."""
 
-    command_runner = runner or _run_command
+    command_runner = _run_command if runner is None else runner
     command_runner(plan.prepare_command, Path(plan.official_cli_repo))
 
 

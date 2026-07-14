@@ -150,11 +150,15 @@ def test_livesqlbench_adapter_requires_explicit_verified_targets(tmp_path: Path)
                 "target_sql": "SELECT id FROM items",
                 "target_source": "manual_verified",
                 "verification": _verification("train-verification"),
+                "difficulty": "hard",
+                "task_type": "select",
                 "task_family": "filtering",
                 "curriculum_tier": 2,
                 "sql_shape": "select_filter",
                 "grounding_requirement": "requires_schema_and_database",
                 "shortcut_status": "requires_schema_and_database",
+                "order_sensitive": False,
+                "numeric_tolerance": 0.0,
                 "tags": ["filtering"],
             },
             {
@@ -163,11 +167,15 @@ def test_livesqlbench_adapter_requires_explicit_verified_targets(tmp_path: Path)
                 "target_sql": "SELECT id FROM items",
                 "target_source": "manual_verified",
                 "verification": _verification("eval-verification"),
+                "difficulty": "hard",
+                "task_type": "select",
                 "task_family": "joins",
                 "curriculum_tier": 3,
                 "sql_shape": "select_join",
                 "grounding_requirement": "requires_schema_and_database",
                 "shortcut_status": "requires_schema_and_database",
+                "order_sensitive": False,
+                "numeric_tolerance": 0.0,
                 "tags": ["joins"],
             },
         ],
@@ -197,11 +205,15 @@ def test_target_verification_executes_pending_targets_before_import(tmp_path: Pa
             "target_sql": "SELECT id FROM items",
             "target_source": "manual_verified",
             "verification": {"status": "pending"},
+            "difficulty": "hard",
+            "task_type": "select",
             "task_family": "filtering",
             "curriculum_tier": 2,
             "sql_shape": "select_filter",
             "grounding_requirement": "requires_schema_and_database",
             "shortcut_status": "requires_schema_and_database",
+            "order_sensitive": False,
+            "numeric_tolerance": 0.0,
             "tags": ["filtering"],
         }],
     )
@@ -243,6 +255,36 @@ def test_target_verification_executes_pending_targets_before_import(tmp_path: Pa
     assert verified.target_count == 1
     output = json.loads((tmp_path / "verified.jsonl").read_text(encoding="utf-8"))
     assert output["verification"]["status"] == "execution_verified"
+
+
+def test_target_manifest_does_not_infer_scoring_metadata(tmp_path: Path) -> None:
+    package = tmp_path / "package"
+    package.mkdir()
+    _make_task(package, "livesqlbench-demo-1", "demo")
+    target_manifest = _write_jsonl(
+        tmp_path / "targets.jsonl",
+        [{
+            "task_id": "livesqlbench-demo-1",
+            "split": "train",
+            "target_sql": "SELECT id FROM items",
+            "target_source": "manual_verified",
+            "verification": _verification("verification"),
+            "task_family": "filtering",
+            "curriculum_tier": 2,
+            "sql_shape": "select_filter",
+            "grounding_requirement": "requires_schema_and_database",
+            "shortcut_status": "requires_schema_and_database",
+            "tags": ["filtering"],
+        }],
+    )
+    with pytest.raises(ValueError, match="difficulty"):
+        build_livesqlbench_artifacts(
+            package_root=package,
+            target_manifest=target_manifest,
+            source_revision="base-lite-test",
+            train_output=tmp_path / "train.jsonl",
+            eval_output=tmp_path / "eval.jsonl",
+        )
 
 
 def test_mixture_audit_and_sqlite_result_equivalence(tmp_path: Path) -> None:
@@ -304,6 +346,21 @@ def test_postgresql_backend_uses_declared_env_and_result_equivalence(tmp_path: P
     assert calls[0]["host"] == "localhost"
 
 
+def test_postgresql_connection_failure_is_not_recorded_as_sql_failure(tmp_path: Path) -> None:
+    env_file = tmp_path / "db_env.sh"
+    env_file.write_text('PGHOST="localhost"\nPGPORT="5432"\nPGUSER="root"\nPGDATABASE="demo"\n', encoding="utf-8")
+    payload = _eval_row(env_file, "postgres-failure")
+    payload["dialect"] = "postgresql"
+    payload["db_path"] = str(env_file)
+    case = load_sql_eval_cases(_write_jsonl(tmp_path / "eval.jsonl", [payload]))[0]
+
+    def connect(**_kwargs: object) -> object:
+        raise RuntimeError("database unavailable")
+
+    with pytest.raises(RuntimeError, match="database unavailable"):
+        evaluate_postgresql_case(case, predicted_sql="SELECT id FROM items", postgres_connect=connect)
+
+
 def test_failure_mining_requires_four_way_review_and_respects_budget(tmp_path: Path) -> None:
     database = _make_sqlite_db(tmp_path / "items.sqlite")
     eval_path = _write_jsonl(tmp_path / "eval.jsonl", [_eval_row(database)])
@@ -311,7 +368,7 @@ def test_failure_mining_requires_four_way_review_and_respects_budget(tmp_path: P
     result_path.write_text(json.dumps({"scorer_version": "v1", "records": [{"case_id": "case::eval-1", "task_id": "eval-1", "predicted_sql": "SELECT missing FROM items", "passed": False, "prediction_error": "no such column: missing", "gold_error": None, "predicted_rows": [], "gold_rows": []}]}) + "\n", encoding="utf-8")
     review_path = _write_jsonl(
         tmp_path / "review.jsonl",
-        [{"case_id": "case::eval-1", "review_id": "review-1", "scorer_verdict": "correct", "prediction_verdict": "incorrect", "evidence_source": "allowed_eval_case", "reviewer": "human", "verification_id": "verify-eval"}],
+        [{"case_id": "case::eval-1", "review_id": "review-1", "scorer_verdict": "correct", "prediction_verdict": "incorrect", "evidence_source": "allowed_eval_case", "reviewer": "human", "verification_id": "verify-eval", "reviewed_at": "2026-07-14T00:00:00Z"}],
     )
     correction_path = tmp_path / "corrections.jsonl"
     summary = collect_verified_sql_corrections(result_path=result_path, eval_dataset=eval_path, review_path=review_path, output_path=correction_path)
@@ -320,8 +377,23 @@ def test_failure_mining_requires_four_way_review_and_respects_budget(tmp_path: P
     base_path = _write_jsonl(tmp_path / "base.jsonl", [_train_row(database, "base")])
     output_path = build_next_sql_train_mixture(base_train_datasets=[base_path], correction_dataset=correction_path, output_path=tmp_path / "next.jsonl", max_corrections=1)
     assert len(load_sql_train_examples(output_path)) == 2
-    with pytest.raises(ValueError, match="at least 1"):
+    with pytest.raises(ValueError, match="correction budget exceeded"):
         build_next_sql_train_mixture(base_train_datasets=[base_path], correction_dataset=correction_path, output_path=tmp_path / "too-small.jsonl", max_corrections=0)
+
+
+def test_failure_mining_does_not_skip_unreviewed_failures(tmp_path: Path) -> None:
+    database = _make_sqlite_db(tmp_path / "items.sqlite")
+    eval_path = _write_jsonl(tmp_path / "eval.jsonl", [_eval_row(database)])
+    result_path = tmp_path / "result.json"
+    result_path.write_text(json.dumps({"scorer_version": "v1", "records": [{"case_id": "case::eval-1", "passed": False}]}) + "\n", encoding="utf-8")
+    review_path = _write_jsonl(tmp_path / "review.jsonl", [])
+    with pytest.raises(ValueError, match="missing failure review"):
+        collect_verified_sql_corrections(
+            result_path=result_path,
+            eval_dataset=eval_path,
+            review_path=review_path,
+            output_path=tmp_path / "corrections.jsonl",
+        )
 
 
 def test_promotion_rejects_guardrail_regression(tmp_path: Path) -> None:

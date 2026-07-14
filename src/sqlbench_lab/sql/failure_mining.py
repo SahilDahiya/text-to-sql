@@ -33,9 +33,12 @@ def collect_verified_sql_corrections(
     eval_cases = load_sql_eval_cases(eval_dataset)
     cases_by_id = {case.case_id: case for case in eval_cases}
     result_payload = json.loads(result_file.read_text(encoding="utf-8"))
+    if not isinstance(result_payload, dict):
+        raise ValueError(f"eval result must be a JSON object: {result_file}")
     records = result_payload.get("records", [])
     if not isinstance(records, list):
         raise ValueError(f"eval result records must be a list: {result_file}")
+    scorer_version = _required(result_payload, "scorer_version", result_file)
     reviews = _load_reviews(review_path)
     rows: list[dict[str, Any]] = []
     skipped_count = 0
@@ -47,14 +50,13 @@ def collect_verified_sql_corrections(
         case_id = str(record.get("case_id", ""))
         review = reviews.get(case_id)
         if review is None:
-            skipped_count += 1
-            continue
+            raise ValueError(f"missing failure review for failed case_id: {case_id}")
         case = cases_by_id.get(case_id)
         if case is None:
             raise ValueError(f"eval result case_id not found in eval dataset: {case_id}")
         _assert_review_is_trainable(review, case_id)
         failure_type = classify_sql_eval_failure(record)
-        rows.append(_correction_row(case, record, review, failure_type, result_path, eval_dataset))
+        rows.append(_correction_row(case, record, review, failure_type, scorer_version, eval_dataset))
         failure_counts[failure_type] = failure_counts.get(failure_type, 0) + 1
     if not rows:
         raise ValueError("no independently reviewed corrections collected")
@@ -87,8 +89,8 @@ def build_next_sql_train_mixture(
     output_path: str | Path,
     max_corrections: int,
 ) -> Path:
-    if max_corrections < 1:
-        raise ValueError("max_corrections must be at least 1")
+    if max_corrections < 0:
+        raise ValueError("max_corrections must be non-negative")
     base_rows = [row for path in base_train_datasets for row in load_sql_train_examples(path)]
     corrections = load_sql_correction_examples(correction_dataset)
     if len(corrections) > max_corrections:
@@ -134,12 +136,19 @@ def _assert_review_is_trainable(review: dict[str, Any], case_id: str) -> None:
         raise ValueError(f"review is not a model-error/scorer-correct pair: {case_id}")
     if review.get("evidence_source") != "allowed_eval_case":
         raise ValueError(f"review does not cite an allowed eval case: {case_id}")
-    for field in ("review_id", "reviewer", "verification_id"):
+    for field in ("review_id", "reviewer", "verification_id", "reviewed_at"):
         if not isinstance(review.get(field), str) or not review[field].strip():
             raise ValueError(f"review is missing {field}: {case_id}")
 
 
-def _correction_row(case: Any, record: dict[str, Any], review: dict[str, Any], failure_type: str, result_path: str | Path, eval_dataset: str | Path) -> dict[str, Any]:
+def _correction_row(
+    case: Any,
+    record: dict[str, Any],
+    review: dict[str, Any],
+    failure_type: str,
+    scorer_version: str,
+    eval_dataset: str | Path,
+) -> dict[str, Any]:
     return {
         "schema_version": "sql_correction_example:v1",
         "row_id": f"correction::{case.case_id}::{review['review_id']}",
@@ -170,7 +179,7 @@ def _correction_row(case: Any, record: dict[str, Any], review: dict[str, Any], f
         },
         "provenance": {
             "source_package": "livesqlbench-eval-correction",
-            "source_revision": str(record.get("scorer_version", "unknown")),
+            "source_revision": scorer_version,
             "source_task_path": f"{Path(eval_dataset).resolve()}::{case.case_id}",
             "created_by": "sqlbench_lab.failure_mining",
             "teacher_model": None,
@@ -180,7 +189,7 @@ def _correction_row(case: Any, record: dict[str, Any], review: dict[str, Any], f
             "status": "execution_verified",
             "verified_by": review["reviewer"],
             "verification_id": review["verification_id"],
-            "verified_at": str(review.get("reviewed_at", "unspecified")),
+            "verified_at": review["reviewed_at"],
         },
         "review_id": review["review_id"],
     }

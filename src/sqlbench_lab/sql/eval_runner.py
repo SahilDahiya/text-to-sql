@@ -53,18 +53,24 @@ def run_sql_eval(
         eval_paths=[eval_dataset_path],
         require_db_disjoint=manifest.eval_plan.require_db_disjoint,
     )
-    resolved_max_new_tokens = max_new_tokens or manifest.eval_plan.max_new_tokens
+    resolved_max_new_tokens = (
+        manifest.eval_plan.max_new_tokens if max_new_tokens is None else max_new_tokens
+    )
     if resolved_max_new_tokens < 1:
         raise ValueError("max_new_tokens must be at least 1")
     result_path = _eval_result_path(manifest, model_variant, eval_dataset=eval_dataset, result_label=result_label)
     result_path.parent.mkdir(parents=True, exist_ok=True)
     adapter_dir = manifest.resolve_workspace_path(manifest.output_paths.adapter_dir)
-    predict_sql = predictor or _build_hf_predictor(
-        manifest=manifest,
-        model_variant=model_variant,
-        adapter_dir=adapter_dir,
-        max_new_tokens=resolved_max_new_tokens,
-        system_prompt=system_prompt,
+    predict_sql = (
+        predictor
+        if predictor is not None
+        else _build_hf_predictor(
+            manifest=manifest,
+            model_variant=model_variant,
+            adapter_dir=adapter_dir,
+            max_new_tokens=resolved_max_new_tokens,
+            system_prompt=SQL_SYSTEM_PROMPT if system_prompt is None else system_prompt,
+        )
     )
     records = [_evaluate_case(case, model_variant=model_variant, predict_sql=predict_sql) for case in cases]
     passed_count = sum(1 for record in records if record.passed)
@@ -109,7 +115,7 @@ def _build_hf_predictor(
     model_variant: str,
     adapter_dir: Path,
     max_new_tokens: int,
-    system_prompt: str | None,
+    system_prompt: str,
 ) -> Callable[[SQLEvalCase], str]:
     predict_messages = _build_hf_message_predictor(
         manifest=manifest,
@@ -123,7 +129,7 @@ def _build_hf_predictor(
             build_eval_messages(
                 case,
                 prompt_style=manifest.prompt.style,
-                system_prompt=system_prompt or SQL_SYSTEM_PROMPT,
+                system_prompt=system_prompt,
             )
         )
 
