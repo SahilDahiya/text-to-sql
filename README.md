@@ -42,11 +42,26 @@ uv run python -m sqlbench_lab.cli sql livesqlbench-import \
 uv run python -m sqlbench_lab.cli sql validate-train --dataset <train.jsonl>
 uv run python -m sqlbench_lab.cli sql validate-eval --dataset <dev.jsonl>
 uv run python -m sqlbench_lab.cli sql audit-mixture --dataset <train.jsonl>
+uv run python -m sqlbench_lab.cli sql build-review-packet \
+  --iteration iter-001 --phase artifacts --manifest <manifest.json> \
+  --output reviews/iter-001-artifacts.md --conversation conversation.md
+uv run python -m sqlbench_lab.cli sql record-review \
+  --packet reviews/iter-001-artifacts.json --reviewer human \
+  --decision approve --output reviews/iter-001-artifacts-review.json
 uv run python -m sqlbench_lab.cli sql validate-manifest --manifest <manifest.json>
-uv run --group training python -m sqlbench_lab.cli sql run-sft --manifest <manifest.json>
+uv run --group training python -m sqlbench_lab.cli sql run-sft \
+  --manifest <manifest.json> --review reviews/iter-001-artifacts-review.json
 uv run --group training python -m sqlbench_lab.cli sql eval \
   --manifest <manifest.json> --model adapter --dataset <dev.jsonl>
+uv run python -m sqlbench_lab.cli sql build-review-packet \
+  --iteration iter-001 --phase evaluation --manifest <manifest.json> \
+  --result <eval-result.json> --output reviews/iter-001-evaluation.md
 ```
 
 The official runner commands are intentionally separate and are not part of the
 ISFT loop. See `docs/livesqlbench_competition.md`.
+
+The review packet is the human-in-the-loop boundary. It contains the manifest,
+dataset evidence, per-case SQL and execution results, and the optional coding-agent
+conversation. A reviewer can approve, reject, or request extra review before
+training proceeds.

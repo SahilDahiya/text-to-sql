@@ -18,6 +18,8 @@ from .sql import (
     load_sql_eval_cases,
     load_sql_sft_manifest,
     load_sql_train_examples,
+    build_review_packet,
+    record_human_review,
     run_sql_eval,
     run_sql_sft,
     verify_livesqlbench_targets,
@@ -57,8 +59,25 @@ def main(argv: list[str] | None = None) -> int:
     audit_mixture.add_argument("--dataset", action="append", required=True)
     audit_mixture.add_argument("--output")
 
+    review_packet = sql_commands.add_parser("build-review-packet", help="Build human review evidence")
+    review_packet.add_argument("--iteration", required=True)
+    review_packet.add_argument("--phase", choices=["artifacts", "baseline", "evaluation"], required=True)
+    review_packet.add_argument("--manifest", required=True)
+    review_packet.add_argument("--output", required=True)
+    review_packet.add_argument("--result")
+    review_packet.add_argument("--conversation")
+
+    review = sql_commands.add_parser("record-review", help="Record a human review decision")
+    review.add_argument("--packet", required=True)
+    review.add_argument("--reviewer", required=True)
+    review.add_argument("--decision", choices=["approve", "reject", "request_extra_review"], required=True)
+    review.add_argument("--notes", default="")
+    review.add_argument("--extra-question", action="append", default=[])
+    review.add_argument("--output", required=True)
+
     train = sql_commands.add_parser("run-sft", help="Run or dry-run iterative supervised fine-tuning")
     train.add_argument("--manifest", required=True)
+    train.add_argument("--review", required=True)
     train.add_argument("--dry-run", action="store_true")
 
     evaluate = sql_commands.add_parser("eval", help="Run one-shot local SQL evaluation")
@@ -126,8 +145,30 @@ def _run_sql_command(args: argparse.Namespace) -> int:
         summary = audit_sql_mixture(args.dataset, output_path=args.output)
         print(f"audited mixture rows={summary.row_count} fingerprint={summary.fingerprint}")
         return 0
+    if args.sql_command == "build-review-packet":
+        summary = build_review_packet(
+            iteration_id=args.iteration,
+            phase=args.phase,
+            manifest_path=args.manifest,
+            output_path=args.output,
+            result_path=args.result,
+            conversation_path=args.conversation,
+        )
+        print(f"built review packet={summary.packet_id} markdown={summary.markdown_path} json={summary.json_path}")
+        return 0
+    if args.sql_command == "record-review":
+        output = record_human_review(
+            packet_path=args.packet,
+            reviewer=args.reviewer,
+            decision=args.decision,
+            output_path=args.output,
+            notes=args.notes,
+            extra_questions=args.extra_question,
+        )
+        print(f"recorded human review={output}")
+        return 0
     if args.sql_command == "run-sft":
-        summary = run_sql_sft(args.manifest, dry_run=args.dry_run)
+        summary = run_sql_sft(args.manifest, dry_run=args.dry_run, review_path=args.review)
         print(f"completed SQL ISFT experiment={summary.experiment_id} rows={summary.train_row_count} dry_run={summary.dry_run}")
         return 0
     if args.sql_command == "eval":
