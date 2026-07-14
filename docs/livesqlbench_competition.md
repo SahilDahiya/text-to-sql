@@ -13,6 +13,21 @@ target twice against the declared public SQLite database before writing artifact
 
 Run the loop with the external paths supplied by the operator:
 
+To run the complete real one-example-per-lane loop in one command:
+
+```bash
+uv run --no-sync python -m sqlbench_lab.cli loop \
+  --public-data /path/to/livesqlbench_data_sqlite.jsonl \
+  --target-manifest /path/to/targets.jsonl \
+  --db-root /path/to/livesqlbench-base-lite-sqlite \
+  --model-path /path/to/local/model \
+  --output-dir /path/to/first-loop-run
+```
+
+This command does not compare scores or stop after a failed evaluation. It writes
+the prepared train/dev rows, base evaluation, adapter, adapter evaluation, and
+`loop-summary.json` under the output directory.
+
 ```bash
 uv run --no-sync python -m sqlbench_lab.cli prepare \
   --public-data /path/to/livesqlbench_data_sqlite.jsonl \

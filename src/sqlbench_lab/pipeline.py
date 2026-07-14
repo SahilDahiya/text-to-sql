@@ -263,6 +263,61 @@ def run_train(
     return summary
 
 
+def run_loop(
+    *,
+    public_data: str | Path,
+    target_manifest: str | Path,
+    db_root: str | Path,
+    model_path: str | Path,
+    output_dir: str | Path,
+    max_length: int = 8192,
+    max_new_tokens: int = 256,
+) -> dict[str, Any]:
+    """Run one real train/eval loop without making score a pass condition."""
+
+    output_path = Path(output_dir).resolve()
+    output_path.mkdir(parents=True, exist_ok=True)
+    train_dataset = output_path / "train.jsonl"
+    dev_dataset = output_path / "dev.jsonl"
+    adapter_path = output_path / "adapter"
+
+    prepared = prepare(
+        public_data=public_data,
+        target_manifest=target_manifest,
+        db_root=db_root,
+        train_output=train_dataset,
+        dev_output=dev_dataset,
+    )
+    base_eval = run_eval(
+        dataset=dev_dataset,
+        model_path=model_path,
+        output=output_path / "base-eval.json",
+        max_new_tokens=max_new_tokens,
+    )
+    training = run_train(
+        dataset=train_dataset,
+        model_path=model_path,
+        adapter_output=adapter_path,
+        max_length=max_length,
+    )
+    adapter_eval = run_eval(
+        dataset=dev_dataset,
+        model_path=model_path,
+        adapter_path=adapter_path,
+        output=output_path / "adapter-eval.json",
+        max_new_tokens=max_new_tokens,
+    )
+    summary = {
+        "output_dir": str(output_path),
+        "prepare": prepared,
+        "base_eval": base_eval,
+        "training": training,
+        "adapter_eval": adapter_eval,
+    }
+    _write_json(output_path / "loop-summary.json", summary)
+    return summary
+
+
 def _load_tasks(
     public_data: str | Path, db_root: str | Path, task_ids: set[str]
 ) -> dict[str, Task]:

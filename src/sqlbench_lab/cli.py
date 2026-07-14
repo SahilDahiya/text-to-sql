@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 
-from .pipeline import prepare, run_eval, run_train
+from .pipeline import prepare, run_eval, run_loop, run_train
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -18,6 +18,15 @@ def main(argv: list[str] | None = None) -> int:
     prepare_parser.add_argument("--db-root", required=True)
     prepare_parser.add_argument("--train-output", required=True)
     prepare_parser.add_argument("--dev-output", required=True)
+
+    loop_parser = commands.add_parser("loop")
+    loop_parser.add_argument("--public-data", required=True)
+    loop_parser.add_argument("--target-manifest", required=True)
+    loop_parser.add_argument("--db-root", required=True)
+    loop_parser.add_argument("--model-path", required=True)
+    loop_parser.add_argument("--output-dir", required=True)
+    loop_parser.add_argument("--max-length", type=int, default=8192)
+    loop_parser.add_argument("--max-new-tokens", type=int, default=256)
 
     for name in ("eval", "train"):
         command = commands.add_parser(name)
@@ -39,6 +48,16 @@ def main(argv: list[str] | None = None) -> int:
             db_root=args.db_root,
             train_output=args.train_output,
             dev_output=args.dev_output,
+        )
+    elif args.command == "loop":
+        result = run_loop(
+            public_data=args.public_data,
+            target_manifest=args.target_manifest,
+            db_root=args.db_root,
+            model_path=args.model_path,
+            output_dir=args.output_dir,
+            max_length=args.max_length,
+            max_new_tokens=args.max_new_tokens,
         )
     elif args.command == "eval":
         result = run_eval(
