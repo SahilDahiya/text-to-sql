@@ -14,7 +14,7 @@ from .livesqlbench_adapter import (
 from .loaders import load_sql_eval_cases, load_sql_train_examples
 from .manifest import SQLSFTExperimentManifest, load_sql_sft_manifest
 from .models import SQLEvalCase, SQLProvenance, SQLTrainExample, SQLVerification
-from .rendering import build_eval_messages, build_train_messages
+from .rendering import build_eval_messages, build_train_messages, render_sql_sft_prompt
 from .training import SQLSFTTrainingSummary, run_sql_sft, tokenize_sql_sft_messages
 
 __all__ = [
@@ -43,6 +43,7 @@ __all__ = [
     "load_sql_train_examples",
     "run_sql_eval",
     "run_sql_sft",
+    "render_sql_sft_prompt",
     "tokenize_sql_sft_messages",
     "verify_livesqlbench_targets",
 ]

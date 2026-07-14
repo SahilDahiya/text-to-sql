@@ -11,6 +11,8 @@ SQL_SYSTEM_PROMPT = (
     "For SQLite identifiers containing spaces, punctuation, parentheses, percent signs, "
     "hyphens, or question marks, quote the full identifier with backticks."
 )
+
+
 def build_train_messages(
     example: SQLTrainExample,
     *,
@@ -32,6 +34,25 @@ def build_eval_messages(
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": _canonical_user_content(case)},
     ]
+
+
+def render_sql_sft_prompt(messages: list[dict[str, str]]) -> str:
+    """Render the repo-owned base-model SFT and generation prompt format."""
+
+    if len(messages) != 3:
+        raise ValueError("SQL SFT messages must contain system, user, and assistant messages")
+    system_message, user_message, assistant_message = messages
+    if system_message["role"] != "system":
+        raise ValueError("first SQL SFT message must have role=system")
+    if user_message["role"] != "user":
+        raise ValueError("second SQL SFT message must have role=user")
+    if assistant_message["role"] != "assistant":
+        raise ValueError("third SQL SFT message must have role=assistant")
+    return (
+        f"<|system|>\n{system_message['content'].strip()}\n"
+        f"<|user|>\n{user_message['content'].strip()}\n"
+        "<|assistant|>\n"
+    )
 
 
 def _canonical_user_content(example: SQLEvalCase | SQLTrainExample) -> str:

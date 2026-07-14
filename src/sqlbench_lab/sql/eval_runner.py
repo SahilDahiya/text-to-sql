@@ -16,12 +16,11 @@ from .evaluator import evaluate_sql_case
 from .loaders import load_sql_eval_cases
 from .manifest import SQLSFTExperimentManifest, load_sql_sft_manifest
 from .models import SQLEvalCase
-from .rendering import SQL_SYSTEM_PROMPT, build_eval_messages
+from .rendering import SQL_SYSTEM_PROMPT, build_eval_messages, render_sql_sft_prompt
 from .training import (
     _ensure_pad_token,
     _import_training_stack,
     _load_trainable_model,
-    render_sql_sft_prompt,
 )
 
 SQL_MODEL_VARIANTS = {"base", "adapter"}

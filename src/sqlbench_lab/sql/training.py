@@ -9,7 +9,7 @@ from typing import Any
 
 from .loaders import load_sql_train_examples
 from .manifest import SQLLoRAConfig, SQLQuantizationConfig, SQLSFTExperimentManifest, SQLTrainerConfig, load_sql_sft_manifest
-from .rendering import build_train_messages
+from .rendering import build_train_messages, render_sql_sft_prompt
 from .training_types import SQLSFTTrainingSummary
 
 IGNORE_INDEX = -100
@@ -171,25 +171,6 @@ def tokenize_sql_sft_messages(tokenizer: Any, messages: list[dict[str, str]]) ->
     input_ids = prompt_ids + target_ids
     labels = [IGNORE_INDEX] * len(prompt_ids) + target_ids
     return {"input_ids": input_ids, "labels": labels}
-
-
-def render_sql_sft_prompt(messages: list[dict[str, str]]) -> str:
-    """Render the repo-owned base-model SFT prompt format."""
-
-    if len(messages) != 3:
-        raise ValueError("SQL SFT messages must contain system, user, and assistant messages")
-    system_message, user_message, assistant_message = messages
-    if system_message["role"] != "system":
-        raise ValueError("first SQL SFT message must have role=system")
-    if user_message["role"] != "user":
-        raise ValueError("second SQL SFT message must have role=user")
-    if assistant_message["role"] != "assistant":
-        raise ValueError("third SQL SFT message must have role=assistant")
-    return (
-        f"<|system|>\n{system_message['content'].strip()}\n"
-        f"<|user|>\n{user_message['content'].strip()}\n"
-        "<|assistant|>\n"
-    )
 
 
 def _validate_supported_manifest(manifest: SQLSFTExperimentManifest) -> None:
