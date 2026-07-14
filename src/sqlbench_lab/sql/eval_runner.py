@@ -151,11 +151,7 @@ def _build_hf_message_predictor(
         model = model.cuda()
 
     def predict(messages: list[dict[str, str]]) -> str:
-        prompt = _render_generation_prompt(
-            tokenizer,
-            [*messages, {"role": "assistant", "content": ""}],
-            model_variant=model_variant,
-        )
+        prompt = _render_generation_prompt([*messages, {"role": "assistant", "content": ""}])
         encoded = tokenizer(prompt, return_tensors="pt", add_special_tokens=False)
         encoded = {key: value.to(model.device) if hasattr(value, "to") else value for key, value in encoded.items()}
         with torch.no_grad():
@@ -173,9 +169,7 @@ def _build_hf_message_predictor(
     return predict
 
 
-def _render_generation_prompt(tokenizer: object, messages: list[dict[str, str]], *, model_variant: str) -> str:
-    if model_variant == "base" and getattr(tokenizer, "chat_template", None):
-        return str(tokenizer.apply_chat_template(messages[:-1], tokenize=False, add_generation_prompt=True))
+def _render_generation_prompt(messages: list[dict[str, str]]) -> str:
     return render_sql_sft_prompt(messages)
 
 

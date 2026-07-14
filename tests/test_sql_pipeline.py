@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from sqlbench_lab.sql.eval_runner import _render_generation_prompt
 from sqlbench_lab.sql import (
     build_livesqlbench_artifacts,
     evaluate_postgresql_case,
@@ -17,6 +18,8 @@ from sqlbench_lab.sql import (
     run_sql_eval,
     verify_livesqlbench_targets,
 )
+from sqlbench_lab.sql.rendering import build_eval_messages
+from sqlbench_lab.sql.training import render_sql_sft_prompt
 
 
 def _verification(identifier: str = "verify-1") -> dict[str, str]:
@@ -101,6 +104,8 @@ def _make_task(package: Path, name: str, database: str) -> None:
         '[metadata]\ntags = ["postgresql", "livesqlbench", "query"]\ndifficulty = "hard"\ncategory = "text-to-sql"\n',
         encoding="utf-8",
     )
+
+
     (task / "tests" / "task_payload.json").write_text(
         json.dumps({"instance_id": name, "selected_database": database, "query": "List item IDs", "sol_sql": [], "test_cases": [], "category": "Query"}),
         encoding="utf-8",
@@ -110,6 +115,14 @@ def _make_task(package: Path, name: str, database: str) -> None:
         'export PGHOST="postgresql"\nexport PGPORT="5432"\nexport PGUSER="root"\nexport PGDATABASE="demo"\n',
         encoding="utf-8",
     )
+
+
+def test_base_and_adapter_use_the_same_generation_prompt(tmp_path: Path) -> None:
+    database = _make_sqlite_db(tmp_path / "items.sqlite")
+    case = load_sql_eval_cases(_write_jsonl(tmp_path / "eval.jsonl", [_eval_row(database)]))[0]
+    messages = [*build_eval_messages(case), {"role": "assistant", "content": ""}]
+
+    assert _render_generation_prompt(messages) == render_sql_sft_prompt(messages)
 
 
 def test_livesqlbench_adapter_requires_explicit_verified_targets(tmp_path: Path) -> None:
