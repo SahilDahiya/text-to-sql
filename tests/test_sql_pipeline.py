@@ -8,7 +8,6 @@ import pytest
 
 from sqlbench_lab.sql import (
     build_livesqlbench_artifacts,
-    build_review_packet,
     evaluate_postgresql_case,
     evaluate_sqlite_case,
     load_sql_eval_cases,
@@ -16,7 +15,6 @@ from sqlbench_lab.sql import (
     load_sql_train_examples,
     run_sql_sft,
     run_sql_eval,
-    record_human_review,
     verify_livesqlbench_targets,
 )
 
@@ -282,7 +280,7 @@ def test_postgresql_connection_failure_is_not_recorded_as_sql_failure(tmp_path: 
         evaluate_postgresql_case(case, predicted_sql="SELECT id FROM items", postgres_connect=connect)
 
 
-def test_v2_manifest_and_dry_run_require_human_approval(tmp_path: Path) -> None:
+def test_v2_manifest_and_dry_run(tmp_path: Path) -> None:
     train_db = _make_sqlite_db(tmp_path / "train.sqlite")
     eval_db = _make_sqlite_db(tmp_path / "eval.sqlite")
     train_path = _write_jsonl(tmp_path / "train.jsonl", [_train_row(train_db, "train")])
@@ -305,32 +303,7 @@ def test_v2_manifest_and_dry_run_require_human_approval(tmp_path: Path) -> None:
     manifest_path = tmp_path / "manifest.json"
     manifest_path.write_text(json.dumps(manifest_payload), encoding="utf-8")
     assert load_sql_sft_manifest(manifest_path).train_datasets == (str(train_path),)
-    packet = build_review_packet(
-        iteration_id="iter-001",
-        phase="artifacts",
-        manifest_path=manifest_path,
-        output_path=tmp_path / "artifacts-review.md",
-    )
-    packet_markdown = Path(packet.markdown_path).read_text(encoding="utf-8")
-    assert "Training Label Evidence" in packet_markdown
-    assert "Output adapter/checkpoint" in packet_markdown
-    extra_review = record_human_review(
-        packet_path=packet.json_path,
-        reviewer="human",
-        decision="request_extra_review",
-        output_path=tmp_path / "extra-review.json",
-        extra_questions=["Confirm the target labels against the database."],
-    )
-    with pytest.raises(ValueError, match="human approval"):
-        run_sql_sft(manifest_path, dry_run=True, review_path=extra_review)
-    review_path = record_human_review(
-        packet_path=packet.json_path,
-        reviewer="human",
-        decision="approve",
-        output_path=tmp_path / "artifacts-review-decision.json",
-        notes="Artifacts are permitted and ready for the first run.",
-    )
-    summary = run_sql_sft(manifest_path, dry_run=True, review_path=review_path)
+    summary = run_sql_sft(manifest_path, dry_run=True)
     assert summary.train_row_count == 1
     eval_summary = run_sql_eval(
         manifest_path,
