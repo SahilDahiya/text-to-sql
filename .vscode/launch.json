@@ -1,0 +1,31 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug real SQLBench loop",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "sqlbench_lab.cli",
+            "args": [
+                "loop",
+                "--public-data",
+                "/home/dahiy/livesqlbench-base-lite-sqlite/livesqlbench_data_sqlite.jsonl",
+                "--target-manifest",
+                "/home/dahiy/sqlbench-first-loop/targets.jsonl",
+                "--db-root",
+                "/home/dahiy/livesqlbench-base-lite-sqlite",
+                "--model-path",
+                "/home/dahiy/.cache/huggingface/hub/models--Qwen--Qwen3.5-0.8B-Base/snapshots/dc7cdfe2ee4154fa7e30f5b51ca41bfa40174e68",
+                "--output-dir",
+                "/home/dahiy/sqlbench-first-loop/debug-run",
+                "--max-new-tokens",
+                "128"
+            ],
+            "python": "${workspaceFolder}/.venv/bin/python",
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "subProcess": true
+        }
+    ]
+}
