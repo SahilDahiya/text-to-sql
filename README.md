@@ -1,47 +1,36 @@
-# SQLBench Lab
+# LiveSQLBench Competition Workspace
 
-read_when: you are orienting to the repo
+This repository is the training and evaluation control surface for competing on
+LiveSQLBench with iterative supervised fine-tuning.
 
-This repo is being set up as a small, explicit workspace for training and evaluating a
-`Qwen/Qwen3.5-0.8B-Base` SQL student, with LiveSQLBench competition work as the long-term target.
+## Current Direction
 
-The reference repo for structure and discipline is:
+- Train only on permitted public or open-development SQL examples.
+- Keep LiveSQLBench ground truth, test cases, and protected evaluation data outside
+  this repository and outside training.
+- Use one-shot generation as the first measurement lane.
+- Track local execution scores, unseen-database gates, and official LiveSQLBench
+  results as separate measurements.
+- Use the official LiveSQLBench runner for any competition score claim.
 
-- `/home/dahiy/repos/tapasya.mobile/llm`
+The former storefront, BIRD/Spider lab, cloud deployment, serving, web-console,
+experiment-ledger, and generated HTML-docs surfaces are intentionally removed.
+Research notes remain in `blog/`; operating instructions live in `docs/`.
 
-We will borrow its style:
+## Commands
 
-- `uv` first
-- docs before broad implementation
-- manifest-driven experiments
-- protected eval data separated from train data
-- official benchmark tooling for official benchmark claims
-- no silent fallback behavior
+```bash
+uv run python -m sqlbench_lab.cli sql validate-train --dataset <train.jsonl>
+uv run python -m sqlbench_lab.cli sql validate-eval --dataset <dev.jsonl>
+uv run python -m sqlbench_lab.cli sql audit-leakage \
+  --train-dataset <train.jsonl> \
+  --eval-dataset <dev.jsonl> \
+  --require-db-disjoint
+uv run python -m sqlbench_lab.cli sql validate-manifest --manifest <manifest.json>
+uv run --group training python -m sqlbench_lab.cli sql run-sft --manifest <manifest.json>
+uv run --group training python -m sqlbench_lab.cli sql eval \
+  --manifest <manifest.json> --model adapter --dataset <dev.jsonl>
+```
 
-## First Scope
-
-The first scope is intentionally small:
-
-1. make this a valid `uv` Python project
-2. document the SQL training lane
-3. document the LiveSQLBench competition lane
-4. add schemas and strict loaders next
-5. add training/eval code after the contracts are stable
-
-## Current Target
-
-Student:
-
-- `Qwen/Qwen3.5-0.8B-Base`
-
-Training direction:
-
-- LoRA supervised fine-tuning first
-- execution-repair data second
-- tool-use trajectory training third
-
-Competition direction:
-
-- start with LiveSQLBench Base-Lite or Base-Lite-SQLite
-- use official LiveSQLBench tooling for competition claims
-- treat agent mode as the serious path for a 0.8B student
+The official runner commands are intentionally separate and are not part of the
+ISFT loop. See `docs/livesqlbench_competition.md`.

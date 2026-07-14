@@ -1,3 +1,0 @@
-Return only one SQLite SQL statement.
-Use only tables and columns from the schema.
-Use evidence and column value notes to choose filters.

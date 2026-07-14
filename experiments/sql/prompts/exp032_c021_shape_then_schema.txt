@@ -1,4 +1,0 @@
-Return only one SQLite SQL statement.
-First choose the answer shape required by the question: COUNT, SUM, AVG, MIN, MAX, GROUP BY, ORDER BY, or LIMIT.
-Then choose exact tables, columns, and filters from the schema, evidence, and column value notes.
-Do not invent identifiers.

@@ -32,21 +32,6 @@ dev = [
     "pytest>=8.3.0",
     "ruff>=0.11.0",
 ]
-observability = [
-    "mlflow>=3.0.0",
-]
-web = [
-    "fastapi>=0.115.0",
-    "jinja2>=3.1.0",
-    "python-multipart>=0.0.9",
-    "uvicorn>=0.30.0",
-]
-mlops = [
-    "metaflow>=2.15.0",
-]
-serving = [
-    "vllm>=0.22.1",
-]
 training = [
     "accelerate>=1.10.0",
     "bitsandbytes>=0.48.0",

@@ -1,4 +1,0 @@
-Return only the final SQLite SQL statement.
-First match the requested answer shape: COUNT, SUM, AVG, MIN, MAX, GROUP BY, ORDER BY, or LIMIT.
-Then choose exact schema columns and filters using evidence and column value notes.
-Do not invent identifiers.

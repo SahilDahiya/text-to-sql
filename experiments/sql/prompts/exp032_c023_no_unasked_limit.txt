@@ -1,4 +1,0 @@
-Return only the final SQLite SQL statement.
-Use exact schema identifiers only.
-Do not add LIMIT unless the question asks for top, bottom, first, last, highest, lowest, most, least, maximum, or minimum.
-Use evidence and column value notes to ground filters.

@@ -3,10 +3,7 @@
 read_when: you are starting work in this repo or need repo-specific coding rules
 
 ## Start Here
-- Build or read the browser docs first: `uv run python -m sqlbench_lab.cli docs build`,
-  then open `site/index.html`.
-- The tracked docs source is `src/sqlbench_lab/docs_site/builder.py`. Update it before
-  changing generated HTML.
+- Read `README.md` and `docs/livesqlbench_competition.md` before changing the pipeline.
 - `/home/dahiy/repos/tapasya.mobile/llm` is the reference repo for workflow style, not for task semantics.
 - Do not copy the Nietzsche passage task into this repo. This repo is for SQL training and LiveSQLBench work.
 
@@ -54,16 +51,9 @@ read_when: you are starting work in this repo or need repo-specific coding rules
 - If temporary compatibility code is introduced, the same diff must state why it exists and the exact deletion criteria.
 
 ## Docs
-- Browser docs are the primary structured documentation surface.
-- Markdown docs are allowed when they are the clearest form for repo knowledge,
-  experiment planning, training notes, LiveSQLBench notes, or tooling notes.
-- Use browser docs for durable operating surfaces that benefit from navigation,
-  tables, cross-links, and generated experiment indexes.
-- Update `src/sqlbench_lab/docs_site/builder.py` first when browser docs need to
-  reflect behavior, contracts, implementation direction, or experiment interpretation.
-- Rebuild with `uv run python -m sqlbench_lab.cli docs build` after docs-source edits.
-- Add or update tests for new docs pages or required sections in `tests/test_docs_site.py`.
-- Generated `site/` files are browser output and are ignored by git.
+- Markdown is the only durable documentation surface.
+- Keep the competition contract in `docs/livesqlbench_competition.md`.
+- Do not add generated HTML, a docs builder, browser docs, or documentation-only web UI.
 
 ## Experiment Learning Ledger
 - Keep Linear learning issue `TAP-532` current as the practical fine-tuning learning ledger.

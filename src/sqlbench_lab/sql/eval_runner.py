@@ -49,9 +49,6 @@ def run_sql_eval(
     system_prompt: str | None = None,
     result_label: str | None = None,
     predictor: Callable[[SQLEvalCase], str] | None = None,
-    log_mlflow: bool | None = None,
-    mlflow_tracking_uri: str | None = None,
-    mlflow_experiment: str | None = None,
 ) -> SQLEvalRunSummary:
     """Run the manifest smoke eval with result-equivalence scoring."""
 
@@ -95,15 +92,6 @@ def run_sql_eval(
         records=records,
     )
     _write_eval_summary(result_path, summary)
-    _maybe_log_mlflow_eval(
-        manifest=manifest,
-        manifest_path=_resolve_manifest_path(manifest_path),
-        summary=summary,
-        result_path=result_path,
-        explicit=log_mlflow,
-        tracking_uri=mlflow_tracking_uri,
-        experiment_name=mlflow_experiment,
-    )
     return summary
 
 
@@ -119,9 +107,6 @@ def run_sql_candidate_pool_eval(
     system_prompt: str | None = None,
     result_label: str | None = None,
     predictor: SQLCandidatePoolPredictor | None = None,
-    log_mlflow: bool | None = None,
-    mlflow_tracking_uri: str | None = None,
-    mlflow_experiment: str | None = None,
 ) -> SQLCandidatePoolEvalRunSummary:
     """Run SQL eval with N generated candidates per case and non-gold selection."""
 
@@ -190,15 +175,6 @@ def run_sql_candidate_pool_eval(
         records=records,
     )
     _write_candidate_pool_eval_summary(result_path, summary)
-    _maybe_log_mlflow_candidate_pool_eval(
-        manifest=manifest,
-        manifest_path=_resolve_manifest_path(manifest_path),
-        summary=summary,
-        result_path=result_path,
-        explicit=log_mlflow,
-        tracking_uri=mlflow_tracking_uri,
-        experiment_name=mlflow_experiment,
-    )
     return summary
 
 
@@ -728,61 +704,6 @@ def _write_candidate_pool_eval_summary(path: Path, summary: SQLCandidatePoolEval
 
 def _write_repair_eval_summary(path: Path, summary: SQLRepairEvalRunSummary) -> None:
     path.write_text(json.dumps(asdict(summary), indent=2, ensure_ascii=True) + "\n", encoding="utf-8")
-
-
-def _maybe_log_mlflow_eval(
-    *,
-    manifest: SQLSFTExperimentManifest,
-    manifest_path: Path,
-    summary: SQLEvalRunSummary,
-    result_path: Path,
-    explicit: bool | None,
-    tracking_uri: str | None,
-    experiment_name: str | None,
-) -> None:
-    from sqlbench_lab.observability import log_sql_eval_run, mlflow_enabled
-
-    if not mlflow_enabled(explicit):
-        return
-    log_sql_eval_run(
-        manifest=manifest,
-        manifest_path=manifest_path,
-        summary=summary,
-        result_path=result_path,
-        tracking_uri=tracking_uri,
-        experiment_name=experiment_name,
-    )
-
-
-def _maybe_log_mlflow_candidate_pool_eval(
-    *,
-    manifest: SQLSFTExperimentManifest,
-    manifest_path: Path,
-    summary: SQLCandidatePoolEvalRunSummary,
-    result_path: Path,
-    explicit: bool | None,
-    tracking_uri: str | None,
-    experiment_name: str | None,
-) -> None:
-    from sqlbench_lab.observability import log_sql_candidate_pool_eval_run, mlflow_enabled
-
-    if not mlflow_enabled(explicit):
-        return
-    log_sql_candidate_pool_eval_run(
-        manifest=manifest,
-        manifest_path=manifest_path,
-        summary=summary,
-        result_path=result_path,
-        tracking_uri=tracking_uri,
-        experiment_name=experiment_name,
-    )
-
-
-def _resolve_manifest_path(manifest_path: str | Path) -> Path:
-    path = Path(manifest_path)
-    if path.is_absolute():
-        return path
-    return Path.cwd() / path
 
 
 def _strip_code_fence(text: str) -> str:

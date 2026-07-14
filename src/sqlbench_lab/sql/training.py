@@ -28,20 +28,14 @@ def run_sql_sft(
     manifest_path: str | Path,
     *,
     dry_run: bool = False,
-    log_mlflow: bool | None = None,
-    mlflow_tracking_uri: str | None = None,
-    mlflow_experiment: str | None = None,
 ) -> SQLSFTTrainingSummary:
     """Run one minimal manifest-driven SQL LoRA SFT experiment."""
 
     manifest = load_sql_sft_manifest(manifest_path)
     _validate_supported_manifest(manifest)
-    resolved_manifest_path = _resolve_manifest_path(manifest_path)
     train_rows = []
-    train_dataset_counts: dict[str, int] = {}
     for dataset_path in manifest.train_inputs.train_datasets:
         dataset_rows = load_sql_train_examples(dataset_path)
-        train_dataset_counts[dataset_path] = len(dataset_rows)
         train_rows.extend(dataset_rows)
     if not train_rows:
         raise ValueError("SQL SFT training requires at least one train row")
@@ -53,7 +47,7 @@ def run_sql_sft(
     experiment_root = manifest.resolve_workspace_path(manifest.output_paths.experiment_root)
     adapter_dir = manifest.resolve_workspace_path(manifest.output_paths.adapter_dir)
     train_summary_path = manifest.resolve_workspace_path(manifest.output_paths.train_summary_json)
-    smoke_eval_case_count = len(load_sql_eval_cases(manifest.eval_plan.smoke_dataset))
+    load_sql_eval_cases(manifest.eval_plan.smoke_dataset)
     experiment_root.mkdir(parents=True, exist_ok=True)
     train_summary_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -67,19 +61,6 @@ def run_sql_sft(
             dry_run=True,
         )
         _write_summary(dry_run_summary_path, summary)
-        _maybe_log_mlflow(
-            manifest=manifest,
-            manifest_path=resolved_manifest_path,
-            summary=summary,
-            summary_path=dry_run_summary_path,
-            train_dataset_counts=train_dataset_counts,
-            smoke_eval_case_count=smoke_eval_case_count,
-            training_config=_training_config(manifest),
-            lora_config=_lora_config(manifest),
-            explicit=log_mlflow,
-            tracking_uri=mlflow_tracking_uri,
-            experiment_name=mlflow_experiment,
-        )
         return summary
 
     torch, transformers, peft = _import_training_stack()
@@ -148,19 +129,6 @@ def run_sql_sft(
         training_metrics=training_metrics,
     )
     _write_summary(train_summary_path, summary)
-    _maybe_log_mlflow(
-        manifest=manifest,
-        manifest_path=resolved_manifest_path,
-        summary=summary,
-        summary_path=train_summary_path,
-        train_dataset_counts=train_dataset_counts,
-        smoke_eval_case_count=smoke_eval_case_count,
-        training_config=training_config,
-        lora_config=lora_config,
-        explicit=log_mlflow,
-        tracking_uri=mlflow_tracking_uri,
-        experiment_name=mlflow_experiment,
-    )
     return summary
 
 
@@ -449,45 +417,6 @@ def _training_metrics(train_output: Any) -> dict[str, float]:
         if isinstance(value, int | float):
             metrics[str(key)] = float(value)
     return metrics
-
-
-def _maybe_log_mlflow(
-    *,
-    manifest: SQLSFTExperimentManifest,
-    manifest_path: Path,
-    summary: SQLSFTTrainingSummary,
-    summary_path: Path,
-    train_dataset_counts: dict[str, int],
-    smoke_eval_case_count: int,
-    training_config: dict[str, Any],
-    lora_config: dict[str, Any],
-    explicit: bool | None,
-    tracking_uri: str | None,
-    experiment_name: str | None,
-) -> None:
-    from sqlbench_lab.observability import log_sql_sft_run, mlflow_enabled
-
-    if not mlflow_enabled(explicit):
-        return
-    log_sql_sft_run(
-        manifest=manifest,
-        manifest_path=manifest_path,
-        summary=summary,
-        summary_path=summary_path,
-        train_dataset_counts=train_dataset_counts,
-        smoke_eval_case_count=smoke_eval_case_count,
-        training_config=training_config,
-        lora_config=lora_config,
-        tracking_uri=tracking_uri,
-        experiment_name=experiment_name,
-    )
-
-
-def _resolve_manifest_path(manifest_path: str | Path) -> Path:
-    path = Path(manifest_path)
-    if path.is_absolute():
-        return path
-    return Path.cwd() / path
 
 
 def _dry_run_summary_path(train_summary_path: Path) -> Path:

@@ -1,3 +1,0 @@
-Return only one SQLite SQL statement.
-When the question contains a literal value or condition, pick the filter column using evidence first, then column value notes, then schema names.
-Use exact schema identifiers. Avoid unrelated tables and columns.

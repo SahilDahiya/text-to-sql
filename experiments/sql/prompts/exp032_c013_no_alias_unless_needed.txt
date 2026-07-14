@@ -1,4 +1,0 @@
-Return only the final SQLite query.
-Use direct table and column names unless a join requires aliases.
-Do not reference an alias or column unless it is defined in the query and present in the schema.
-Ground filters using evidence and column value notes.

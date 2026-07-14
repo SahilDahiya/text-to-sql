@@ -1,3 +1,0 @@
-Return SQL only.
-If wording is ambiguous, prefer the exact schema column that most directly matches the question and ignore unrelated tables.
-Do not add joins, filters, ordering, or limits unless required by the question or evidence.
