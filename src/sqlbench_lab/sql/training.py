@@ -176,7 +176,7 @@ def _train_with_transformers_trainer(
         train_dataset=_SQLSFTDataset(encoded_examples),
         data_collator=_SQLSFTDataCollator(pad_token_id=_pad_token_id(tokenizer), torch_module=torch_module),
     )
-    train_output = trainer.train(resume_from_checkpoint=_resume_checkpoint(adapter_dir, training_config))
+    train_output = trainer.train()
     return model, train_output
 
 
@@ -229,25 +229,8 @@ def _train_with_trl_sft_trainer(
     if not initial_adapter_loaded:
         trainer_kwargs["peft_config"] = _peft_lora_config(peft, lora_config)
     trainer = trl.SFTTrainer(**trainer_kwargs)
-    train_output = trainer.train(resume_from_checkpoint=_resume_checkpoint(adapter_dir, training_config))
+    train_output = trainer.train()
     return trainer.model, train_output
-
-
-def _resume_checkpoint(adapter_dir: Path, training_config: dict[str, Any]) -> str | None:
-    if not training_config["auto_resume_from_checkpoint"]:
-        return None
-    checkpoints = []
-    for path in adapter_dir.glob("checkpoint-*"):
-        if not path.is_dir():
-            continue
-        try:
-            step = int(path.name.rsplit("-", maxsplit=1)[-1])
-        except ValueError:
-            continue
-        checkpoints.append((step, path))
-    if not checkpoints:
-        return None
-    return str(max(checkpoints)[1])
 
 
 def _trl_prompt_completion_rows(
@@ -335,7 +318,6 @@ def _training_config(manifest: SQLSFTExperimentManifest) -> dict[str, Any]:
         "save_strategy": manifest.trainer.save_strategy,
         "save_steps": manifest.trainer.save_steps,
         "save_total_limit": manifest.trainer.save_total_limit,
-        "auto_resume_from_checkpoint": manifest.trainer.auto_resume_from_checkpoint,
         "prompt_style": manifest.prompt.style,
         "initial_adapter_dir": manifest.student.initial_adapter_dir,
         "method": manifest.training_method.method,

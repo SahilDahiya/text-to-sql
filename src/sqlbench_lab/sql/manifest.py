@@ -25,7 +25,6 @@ class SQLTrainingMethodConfig:
     method: str
     loss_target: str
     stage: str
-    notes: str | None
 
 
 @dataclass(frozen=True)
@@ -56,7 +55,6 @@ class SQLTrainerConfig:
     save_strategy: str
     save_steps: int | None
     save_total_limit: int | None
-    auto_resume_from_checkpoint: bool
 
 
 @dataclass(frozen=True)

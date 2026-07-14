@@ -197,7 +197,6 @@ def _evaluate_case(
         model_variant=model_variant,
         predicted_sql=predicted_sql,
         passed=result.passed,
-        primary_failure_type="passed" if result.passed else "failed",
         prediction_error=result.prediction_error,
         gold_error=result.gold_error,
         predicted_rows=result.predicted_rows,

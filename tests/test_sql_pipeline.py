@@ -15,6 +15,7 @@ from sqlbench_lab.sql import (
     load_sql_sft_manifest,
     load_sql_train_examples,
     run_sql_sft,
+    run_sql_eval,
     record_human_review,
     verify_livesqlbench_targets,
 )
@@ -292,11 +293,11 @@ def test_v2_manifest_and_dry_run_require_human_approval(tmp_path: Path) -> None:
         "schema_version": "sql_sft_experiment:v2",
         "experiment_id": "exp-test-v2",
         "student": {"model_family": "qwen", "base_model": "Qwen/Qwen2.5-1.5B", "adapter_name": "adapter"},
-        "training_method": {"method": "lora_sft", "loss_target": "assistant_sql_only", "stage": "direct_sql_sft", "notes": None},
+        "training_method": {"method": "lora_sft", "loss_target": "assistant_sql_only", "stage": "direct_sql_sft"},
         "prompt": {"style": "canonical_chat"},
         "train_inputs": {"train_datasets": [str(train_path)]},
         "eval_plan": {"target_dataset": str(eval_path), "baseline_results": str(tmp_path / "base.json"), "post_train_results": str(tmp_path / "post.json"), "scorer_version": "sql-eval-v2", "max_new_tokens": 128},
-        "trainer": {"backend": "transformers_trainer", "num_train_epochs": 1.0, "per_device_train_batch_size": 1, "gradient_accumulation_steps": 1, "learning_rate": 0.0002, "logging_steps": 1, "attn_implementation": None, "packing": False, "packing_strategy": "bfd", "max_length": None, "bf16": None, "tf32": None, "gradient_checkpointing": False, "save_strategy": "no", "save_steps": None, "save_total_limit": None, "auto_resume_from_checkpoint": False},
+        "trainer": {"backend": "transformers_trainer", "num_train_epochs": 1.0, "per_device_train_batch_size": 1, "gradient_accumulation_steps": 1, "learning_rate": 0.0002, "logging_steps": 1, "attn_implementation": None, "packing": False, "packing_strategy": "bfd", "max_length": None, "bf16": None, "tf32": None, "gradient_checkpointing": False, "save_strategy": "no", "save_steps": None, "save_total_limit": None},
         "lora": {"r": 8, "lora_alpha": 16, "lora_dropout": 0.05, "bias": "none", "target_modules": ["q_proj"]},
         "quantization": {"mode": "none", "bnb_4bit_quant_type": "nf4", "bnb_4bit_use_double_quant": True, "bnb_4bit_compute_dtype": "bfloat16", "device_map": None, "prepare_model_for_kbit_training": False},
         "output_paths": {"experiment_root": str(tmp_path / "experiment"), "adapter_dir": str(tmp_path / "adapter"), "train_summary_json": str(tmp_path / "train-summary.json"), "eval_summary_json": str(tmp_path / "eval-summary.json")},
@@ -331,3 +332,9 @@ def test_v2_manifest_and_dry_run_require_human_approval(tmp_path: Path) -> None:
     )
     summary = run_sql_sft(manifest_path, dry_run=True, review_path=review_path)
     assert summary.train_row_count == 1
+    eval_summary = run_sql_eval(
+        manifest_path,
+        model_variant="base",
+        predictor=lambda case: case.gold_sql,
+    )
+    assert eval_summary.passed_count == 1

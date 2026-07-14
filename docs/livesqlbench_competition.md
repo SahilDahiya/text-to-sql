@@ -20,7 +20,7 @@ git and is referenced by absolute or explicitly configured paths.
 
 ## Canonical Loop
 
-1. Assemble a versioned, allowed training mixture.
+1. Assemble a versioned, allowed training set.
 2. Import only explicit, execution-verified targets from the external task package and validate every row against the v2 train schema.
 3. Validate the local development dataset.
 4. Generate a review packet containing the manifest, dataset evidence, and the
@@ -28,7 +28,7 @@ git and is referenced by absolute or explicitly configured paths.
 5. Human reviews the packet and approves, rejects, or requests extra review.
 6. Train one direct-SQL ISFT continuation only after approval.
 7. Run one-shot local evaluation and generate a per-case evidence packet.
-8. Human reviews the results and decides the next mixture change with the agent.
+8. Human reviews the results and decides the next training-set change with the agent.
 9. Record the experiment and decision in Linear issue `TAP-532`.
 10. Use the official LiveSQLBench runner separately when explicitly requested.
 

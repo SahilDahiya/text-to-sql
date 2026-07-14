@@ -14,7 +14,6 @@ class SQLCaseEvalRecord:
     model_variant: str
     predicted_sql: str
     passed: bool
-    primary_failure_type: str
     prediction_error: str | None
     gold_error: str | None
     predicted_rows: list[tuple[Any, ...]]
@@ -34,7 +33,6 @@ class SQLEvalRunSummary:
     eval_dataset: str
     dataset_fingerprint: str
     eval_db_ids: tuple[str, ...]
-    db_disjoint_verified: bool
     scorer_version: str
     generation_config: dict[str, Any]
     result_path: str
