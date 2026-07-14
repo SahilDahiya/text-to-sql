@@ -31,6 +31,13 @@ from .sql import (
     run_sql_eval_with_repair,
     run_sql_sft,
 )
+from .livesqlbench_submission import (
+    LiveSQLBenchSubmissionConfig,
+    build_submission_plan,
+    run_prepare,
+    run_submission,
+    write_submission_plan,
+)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -502,6 +509,28 @@ def main(argv: list[str] | None = None) -> int:
         help="Collect only syntax/schema/runtime/empty prediction repair candidates",
     )
 
+    livesqlbench_prepare = sql_subparsers.add_parser(
+        "livesqlbench-prepare",
+        help="Prepare public tasks with the official LiveSQLBench-CLI adapter",
+    )
+    _add_livesqlbench_arguments(livesqlbench_prepare)
+    livesqlbench_prepare.add_argument(
+        "--manifest-output",
+        required=True,
+        help="Output JSON manifest recording the official checkout, inputs, and commands",
+    )
+
+    livesqlbench_run = sql_subparsers.add_parser(
+        "livesqlbench-run",
+        help="Prepare and run public tasks through the official LiveSQLBench Harbor lane",
+    )
+    _add_livesqlbench_arguments(livesqlbench_run)
+    livesqlbench_run.add_argument(
+        "--manifest-output",
+        required=True,
+        help="Output JSON manifest recording the official checkout, inputs, and commands",
+    )
+
     args = parser.parse_args(argv)
     if args.version:
         from . import __version__
@@ -511,7 +540,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "sql":
         try:
             return _run_sql_command(args)
-        except (ImportError, ValueError) as exc:
+        except (ImportError, OSError, ValueError) as exc:
             parser.error(str(exc))
     if args.command == "observe":
         try:
@@ -1041,7 +1070,54 @@ def _run_sql_command(args: argparse.Namespace) -> int:
         if failure_counts:
             print(f"failure_counts: {failure_counts}")
         return 0
+    if args.sql_command in {"livesqlbench-prepare", "livesqlbench-run"}:
+        config = _livesqlbench_config(args)
+        plan = build_submission_plan(config)
+        manifest_path = write_submission_plan(plan, args.manifest_output)
+        print(
+            "prepared LiveSQLBench official submission lane "
+            f"commit={plan.official_cli_commit} output={plan.output_dir} manifest={manifest_path}"
+        )
+        if args.sql_command == "livesqlbench-run":
+            run_submission(plan)
+            print(f"completed LiveSQLBench official submission lane output={plan.output_dir}")
+        else:
+            run_prepare(plan)
+            print(f"completed LiveSQLBench task preparation output={plan.output_dir}")
+        return 0
     raise ValueError("missing SQL command")
+
+
+def _add_livesqlbench_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--cli-repo", required=True, help="Path to the official LiveSQLBench-CLI checkout")
+    parser.add_argument("--data-root", required=True, help="Public LiveSQLBench task data directory")
+    parser.add_argument("--data-jsonl", required=True, help="Public LiveSQLBench task JSONL")
+    parser.add_argument("--eval-src-dir", required=True, help="Official evaluation/src directory")
+    parser.add_argument("--db-dump-root", required=True, help="PostgreSQL dump directory for the selected release")
+    parser.add_argument("--output-dir", required=True, help="Generated Harbor task directory")
+    parser.add_argument("--agent-image", default="livesqlbench-main-openhands:latest")
+    parser.add_argument("--agent", default="codex", help="Harbor agent name")
+    parser.add_argument("--model", help="Optional model id passed to Harbor")
+    parser.add_argument("--trials", type=int, default=1, help="Harbor trials per task")
+    parser.add_argument("--limit", type=int, help="Prepare only the first N public tasks")
+    parser.add_argument("--force", action="store_true", help="Overwrite existing generated task directories")
+
+
+def _livesqlbench_config(args: argparse.Namespace) -> LiveSQLBenchSubmissionConfig:
+    return LiveSQLBenchSubmissionConfig(
+        cli_repo=Path(args.cli_repo).resolve(),
+        data_root=Path(args.data_root).resolve(),
+        data_jsonl=Path(args.data_jsonl).resolve(),
+        eval_src_dir=Path(args.eval_src_dir).resolve(),
+        db_dump_root=Path(args.db_dump_root).resolve(),
+        output_dir=Path(args.output_dir).resolve(),
+        agent_image=args.agent_image,
+        agent=args.agent,
+        model=args.model,
+        trials=args.trials,
+        limit=args.limit,
+        force=args.force,
+    )
 
 
 def _read_prompt_file(path: str | None) -> str | None:

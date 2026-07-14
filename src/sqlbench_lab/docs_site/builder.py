@@ -122,6 +122,13 @@ PIPELINE_STAGES: list[dict[str, str]] = [
         "risk": "Optimizing repair behavior before the first shot is strong.",
     },
     {
+        "stage": "Iterative SFT",
+        "job": "Continue supervised fine-tuning from the best gated adapter with new open-dev labeled rows, never with hidden benchmark rows.",
+        "artifact": "student.initial_adapter_dir -> artifacts/sql/<next_experiment>/adapter",
+        "command": "uv run python -m sqlbench_lab.cli sql run-sft --manifest experiments/sql/<next>.json",
+        "risk": "Checkpoint drift, train/eval contamination, or accepting a continuation run that only improves the prompt-dev slice.",
+    },
+    {
         "stage": "Smoke Eval",
         "job": "Run fast result-equivalence evals after each adapter.",
         "artifact": "results/sql/<experiment>/adapter__*.json",
@@ -429,6 +436,12 @@ HISTORY_ROWS: list[dict[str, str]] = [
         "signal": "Exp058 added per-tag eval slicing and showed Exp056 failures concentrated in join_path, return_ratio, and grouped_ranking slices despite 22/24 challenge_v1. Exp063 introduced challenge_v2 with alias-ownership, boundary, and anti-join contrast cases; the promoted Exp056 adapter scored 8/15, with anti_join/left_join_predicate at 1/5, boundary_semantics at 4/6, and alias_ownership at 3/4. The train ladder kept the Exp056 recipe fixed: Exp059 added 12 alias contrast rows and reached 9/15 challenge_v2 while preserving 12/12 eval_v1; Exp060 and Exp061 improved targeted slices but regressed eval_v1 to 11/12. Exp062 combined all three into train_v5 with 236 rows and reached 12/15 challenge_v2, but also regressed eval_v1 to 11/12.",
         "lesson": "Same-DB diversification should include adversarial near-neighbor examples and sliced gates, but promotion still requires a clean protected eval gate. Aggregate same-DB scores can hide that the model memorized common shapes but still confuses predicate ownership, inclusive/exclusive operators, anti-join semantics, and SQL alias validity. Exp062 is a rejected ablation, not a promoted replacement for Exp056.",
     },
+    {
+        "phase": "Exp065 iterative SFT",
+        "focus": "Continue from the promoted Exp056 adapter with 12 execution-checked rows targeting its challenge_v2 schema-ownership and anti-join failures.",
+        "signal": "The 212-row train file passed exact question/SQL overlap checks against dev_v2, eval_v1, and challenge_v2, and every new SQL executed on the local same-DB fixture. Exp065 trained one continuation epoch from Exp056 at 1e-4 with train_loss 0.02794. It improved dev_v2 from 11/12 to 12/12 and challenge_v2 from 8/15 to 10/15, but regressed the protected eval_v1 from 12/12 to 11/12; the eval failure was an invalid shipment alias, while challenge failures remained in anti-join and predicate composition cases.",
+        "lesson": "Reject Exp065 and keep Exp056 promoted. Failure-targeted iterative SFT can improve a challenge slice while damaging protected behavior, so challenge gains never override a held-out eval regression. Do not continue from the rejected checkpoint; the next iteration must start from Exp056 and isolate the schema/anti-join curriculum more narrowly.",
+    },
 ]
 
 SERVING_STRESS_ROWS: list[dict[str, str]] = [
@@ -595,6 +608,12 @@ RUNBOOK_ROWS: list[dict[str, str]] = [
         "gate": "No silent trainer truncation becomes the actual experiment.",
     },
     {
+        "task": "Continue best adapter",
+        "command": "Set student.initial_adapter_dir in experiments/sql/<next>.json to artifacts/sql/<best_experiment>/adapter, then run uv run --group training --group observability python -m sqlbench_lab.cli sql run-sft --manifest experiments/sql/<next>.json --mlflow",
+        "output": "A new adapter directory and train_summary.json with initial_adapter_loaded=true.",
+        "gate": "The source adapter must have passed its frozen eval gates, and the new train data must be open development data with leakage audit output.",
+    },
+    {
         "task": "Evaluate candidate pool",
         "command": "uv run --group training --group observability python -m sqlbench_lab.cli sql eval-candidates --manifest experiments/sql/<experiment>.json --model adapter --dataset datasets/sql/eval/<eval>.jsonl --candidates 5 --result-label <label> --mlflow",
         "output": "results/sql/<experiment>/candidates__*.json",
@@ -679,6 +698,55 @@ RESEARCH_PAPER_ROWS: list[dict[str, str]] = [
         "theme": "Live benchmark ladder with Base-Lite, Base-Full, Large, and agent-oriented releases.",
         "use": "Keep official score claims isolated from local BIRD/Spider lab scores; move from lite to full to large only after local gates.",
         "priority": "Now",
+    },
+    {
+        "paper": "SPFT-SQL",
+        "source": "https://arxiv.org/abs/2509.03937",
+        "theme": "Verification-based iterative fine-tuning followed by self-play with error-driven contrast.",
+        "use": "Use only the supervised verification loop now: synthesize or collect candidate labeled rows from open data, validate targets with execution, then continue from the best adapter. Defer self-play.",
+        "priority": "Now",
+    },
+    {
+        "paper": "STaR-SQL",
+        "source": "https://arxiv.org/abs/2502.13550",
+        "theme": "Self-taught rationale generation with fine-tuning on rationales that lead to correct SQL outcomes.",
+        "use": "Mine the filtering rule, not the full rationale product: only accept self-generated supervised examples when execution confirms the final SQL, and keep rationale-bearing rows separate from SQL-only rows.",
+        "priority": "Now",
+    },
+    {
+        "paper": "CoTE-SQL",
+        "source": "https://arxiv.org/abs/2606.15598",
+        "theme": "Self-enhanced reasoning traces, modular decomposition, example retrieval, and error-aware revision from execution feedback.",
+        "use": "Turn open-dev failures into structured repair/reasoning examples only when the final SQL is execution-verified; keep reasoning traces separate from SQL-only inference contracts.",
+        "priority": "Now",
+    },
+    {
+        "paper": "Schema on the Inside",
+        "source": "https://arxiv.org/abs/2603.24023",
+        "theme": "Two-phase supervised fine-tuning that internalizes a domain schema to cut prompt length and improve local inference.",
+        "use": "Relevant for a domain-specialized LiveSQLBench/open-dev adapter only when the DB set is fixed. Do not apply it to hidden or changing benchmark databases.",
+        "priority": "Near",
+    },
+    {
+        "paper": "Reinforcing Code Generation",
+        "source": "https://arxiv.org/abs/2506.06093",
+        "theme": "GRPO with database execution rewards rather than pure text-code supervised pairs.",
+        "use": "Reference only for why execution feedback matters. It is not the current lane because this repo is doing iterative supervised fine-tuning, not online RL.",
+        "priority": "Reference",
+    },
+    {
+        "paper": "FINER-SQL",
+        "source": "https://arxiv.org/abs/2605.03465",
+        "theme": "Small-model GRPO with dense execution, memory, and atomic-operation rewards instead of sparse pass/fail rewards.",
+        "use": "Reference only for feedback design. Convert feedback into supervised labels first; do not add GRPO until the supervised loop has plateaued and reward data exists.",
+        "priority": "Reference",
+    },
+    {
+        "paper": "Progress-SQL",
+        "source": "https://arxiv.org/abs/2606.06825",
+        "theme": "Multi-turn SQL refinement rewards that score improvement from initial SQL to final SQL, not only final correctness.",
+        "use": "Reference only for what to log in supervised repair rows: first SQL, feedback, revised SQL, execution status, and result-equivalence delta.",
+        "priority": "Reference",
     },
     {
         "paper": "Text-to-SQL Empowered by Large Language Models / DAIL-SQL",
@@ -814,6 +882,12 @@ BLACKSMITH_ROWS: list[dict[str, str]] = [
         "gate": "Hold out whole synthetic DBs plus BIRD train DBs; promote only if unseen DB accuracy rises, not just same-template accuracy.",
     },
     {
+        "move": "Verified Iterative Supervised Fine-Tuning Data Factory",
+        "why": "Recent iterative Text-to-SQL work gets leverage from verified supervised examples, not blind retraining on every failure. Open-dev failures should become train rows only after execution, provenance, and leakage checks.",
+        "first_artifact": "Add a pipeline that converts open-dev failed cases into candidate SQL, repair SQL, negative SQL, execution feedback, and accepted supervised SFT rows with source_adapter and verifier metadata.",
+        "gate": "A continuation adapter must improve the target open-dev bucket and preserve frozen seen, unseen, and official-runner guardrails before it becomes the next source adapter.",
+    },
+    {
         "move": "LiveSQLBench Agent Skeleton",
         "why": "The portfolio target is a DB-specific SQL agent, not only a one-shot adapter. The first agent artifact is a safe environment step that can execute a candidate SQL action and return structured repair feedback.",
         "first_artifact": "Use the extracted db_sql_agent_env env-step command to produce syntax/schema/execution/result observations for one case and one SQL action; later wrap the same contract in OpenEnv with inspect-schema, inspect-values, repair-sql, and final-answer actions.",
@@ -873,8 +947,8 @@ TRAINING_PIPELINE_ROWS: list[dict[str, str]] = [
     {
         "stage": "Training Method",
         "basic": "Start with SFT and LoRA on a small model.",
-        "advanced": "Compare full fine-tune, LoRA, QLoRA, DoRA, DPO/ORPO/KTO, reward modeling, GRPO only when data supports it.",
-        "repo": "Current lane remains direct one-shot SFT; repair/preference/RL wait until one-shot plateaus.",
+        "advanced": "Compare full fine-tune, LoRA, QLoRA, DoRA, and supervised repair/correction SFT first; preference/RL methods only after supervised labels plateau.",
+        "repo": "Current lane is gated iterative supervised fine-tuning through initial_adapter_dir; repair/preference/RL wait until verified supervised datasets and reward logs exist.",
     },
     {
         "stage": "Runtime Recipe",
@@ -903,8 +977,8 @@ TRAINING_PIPELINE_ROWS: list[dict[str, str]] = [
     {
         "stage": "Feedback And Next Data",
         "basic": "Read failures and add targeted examples.",
-        "advanced": "Collect repair rows, preference pairs, negative candidates, SQL-to-text examples, and active-learning queues.",
-        "repo": "Failures decide data. Do not add broad rows when one schema/value skill is missing.",
+        "advanced": "Collect supervised repair rows, negative candidates for later contrast, SQL-to-text examples, and active-learning queues.",
+        "repo": "Failures decide data, but only verified open-dev failures become training rows. Do not add broad rows when one schema/value skill is missing.",
     },
 ]
 
@@ -1182,7 +1256,7 @@ def _render_home(experiments: list[ExperimentRecord]) -> str:
         _metric_card("Tracked experiments", str(len(experiments)), "Manifests under experiments/sql"),
         _metric_card("Latest run", f"Exp{latest.number:03d}" if latest else "None", latest.experiment_id if latest else ""),
         _metric_card("Latest best eval", latest_score, "Local result-equivalence score, not official benchmark"),
-        _metric_card("Current mode", "One-shot SFT", "No repair-stage training in the active plan"),
+        _metric_card("Current mode", "Iterative Supervised FT", "Continuation SFT runs from gated adapters for competition prep"),
     ]
     body = f"""
         <section class="page-head">
@@ -1194,19 +1268,17 @@ def _render_home(experiments: list[ExperimentRecord]) -> str:
         <section class="grid two">
           <article class="panel">
             <h2>Operating Question</h2>
-            <p>Can a small Qwen adapter learn one-shot text-to-SQL on real Spider/BIRD style data, then generalize across held-out databases well enough to justify LiveSQLBench runs?</p>
-            <div class="callout">Current evidence says schema naming and value grounding dominate. Exp031 added compact profile metadata, preserved 40/40 on both seen labs, and moved the fixed DB-disjoint restaurant plus airline holdout from 5/50 to 7/50.</div>
+            <p>Can a small Qwen adapter improve through gated continuation runs while preserving clean train/eval boundaries strongly enough to enter LiveSQLBench with the official runner?</p>
+            <div class="callout">The competition lane is iterative supervised fine-tuning: train on verified open development labels, continue only from adapters that pass frozen gates, and keep hidden or protected LiveSQLBench data measurement-only. Historical anchor: Exp031 added compact profile metadata, moved restaurant plus airline as prompt-dev from 5/50 to 7/50, and left works_cycles plus public_review_platform as a fresh unseen gate.</div>
           </article>
           <article class="panel">
             <h2>Next Useful Move</h2>
             <ol class="tight">
-              <li>Run Exp036 as the broad-data model-path blacksmith move: BIRD train minus both unseen gates, profile notes, compact train-only schema linking, and token-budget filtering.</li>
-              <li>Then run Exp037 with Qwen2.5-Coder-1.5B on the exact same data and gates.</li>
-              <li>Try Exp038 with Qwen2.5-Coder-3B only after the 1.5B run proves the model-family move is worth the extra memory.</li>
-              <li>Keep restaurant plus airline as prompt-dev; keep works_cycles plus public_review_platform as the fresh unseen gate.</li>
-              <li>Compare Exp036, Exp037, and Exp038 one-shot against Exp031 and Exp034 before any candidate-pool work.</li>
-              <li>Do not mix repair or agent loops into the current score.</li>
-              <li>Promote only stable one-shot behavior toward LiveSQLBench.</li>
+              <li>Install or vendor the official LiveSQLBench runner stack outside hidden-data paths and keep its outputs separate from local lab scores.</li>
+              <li>Create the first competition continuation manifest with <code>student.initial_adapter_dir</code> pointing at the best frozen adapter.</li>
+              <li>Train only on open development rows, generated failure curricula, or public BIRD/Spider-derived data that passes leakage audit.</li>
+              <li>After each continuation run, evaluate seen labs, unseen DB gates, candidate pass@N, and the LiveSQLBench official runner separately.</li>
+              <li>Promote a continuation adapter only when it improves the target slice without regressing frozen guardrails.</li>
             </ol>
           </article>
         </section>
@@ -1214,7 +1286,7 @@ def _render_home(experiments: list[ExperimentRecord]) -> str:
           <h2>System Map</h2>
           <div class="system-map">
             {_system_node("Data", "Import, validate, audit leakage", "evaluation.html")}
-            {_system_node("Training", "Manifest-driven TRL/LoRA SFT", "training.html")}
+            {_system_node("Training", "Manifest-driven iterative SFT", "training.html")}
             {_system_node("Eval", "Result equivalence plus failure taxonomy", "evaluation.html")}
             {_system_node("Observability", "MLflow and artifact trails", "observability.html")}
             {_system_node("LiveSQLBench", "Lite to Full to Large gates", "livesqlbench.html")}
@@ -1348,8 +1420,8 @@ def _render_training(experiments: list[ExperimentRecord]) -> str:
     body = f"""
         <section class="page-head compact">
           <p class="eyebrow">Training</p>
-          <h1>One-shot text-to-SQL experiments, ordered by intervention.</h1>
-          <p class="lead">Use this page to compare what changed, what moved, and what regressed. It intentionally foregrounds eval behavior over training loss.</p>
+          <h1>Text-to-SQL experiments, ordered by intervention and checkpoint lineage.</h1>
+          <p class="lead">Use this page to compare what changed, what moved, and what regressed. Competition training uses iterative supervised fine-tuning through explicit initial_adapter_dir lineage, with eval behavior ahead of loss.</p>
         </section>
         <section class="panel full">
           <h2>Recent Experiment Ledger</h2>
@@ -1361,9 +1433,9 @@ def _render_training(experiments: list[ExperimentRecord]) -> str:
           </table>
         </section>
         <section class="grid three">
-          {_principle_card("Do One Thing Properly", "Active scope is direct one-shot SQL generation. Repair rows can be collected, but repair-stage SFT is deferred.")}
+          {_principle_card("Iterate With Lineage", "Every continuation run names its source adapter through student.initial_adapter_dir and earns promotion through frozen eval gates.")}
           {_principle_card("Small DB Labs First", "Use one or two DBs to isolate schema/value failures, then expand and measure when transfer starts.")}
-          {_principle_card("Holdout Discipline", "As DB count grows, keep unseen DBs untouched by training and report seen-DB and unseen-DB performance separately.")}
+          {_principle_card("Holdout Discipline", "Open development rows may drive training; hidden or protected benchmark rows remain measurement-only. Report seen-DB, unseen-DB, and official-runner scores separately.")}
         </section>
     """
     return _page("Training", "training", body)
@@ -1474,11 +1546,11 @@ def _render_research() -> str:
         <section class="grid two">
           <article class="panel">
             <h2>Immediate Read</h2>
-            <p>Exp034 confirmed that small one-shot SFT changes are not enough. The active model-path blacksmith sequence is Exp036 then Exp037: first measure broad BIRD training coverage on Qwen3.5-0.8B, then keep the same data boundary and switch only to Qwen2.5-Coder-1.5B.</p>
+            <p>Small one-shot SFT changes were not enough. The active competition move is iterative supervised fine-tuning: collect open-dev failures, verify target SQL, build targeted continuation data, continue from the best gated adapter, and reject checkpoint drift through frozen guardrails.</p>
           </article>
           <article class="panel">
             <h2>Research Boundary</h2>
-            <p>Current scope is one-shot model quality. Candidate selection, repair, and agent workflows remain separate lanes and are not part of the active Exp036 measurement boundary.</p>
+            <p>Current scope is competition readiness through supervised continuation runs. Direct generation, repair, candidate selection, and official LiveSQLBench agent/CLI runs are separate measurement lanes, even when the training loop uses their open-dev failures to create the next SFT artifact.</p>
           </article>
         </section>
         <section class="panel full">
@@ -1850,21 +1922,65 @@ def _render_livesqlbench() -> str:
     body = """
         <section class="page-head compact">
           <p class="eyebrow">LiveSQLBench</p>
-          <h1>Compete only after local gates prove one-shot behavior is stable.</h1>
+          <h1>Compete with iterative supervised fine-tuning, but keep official scoring isolated.</h1>
+          <p class="lead">LiveSQLBench is the competition lane. The supervised training loop can iterate on verified open development labels; hidden test data and official-runner results stay measurement-only.</p>
         </section>
         <section class="grid three">
           <article class="panel">
             <h2>Base-Lite</h2>
-            <p><strong>18 DBs / 270 tasks.</strong> First official target after local DB expansion and unseen-DB gates.</p>
+            <p><strong>18 DBs / 270 tasks.</strong> First target for runner setup, smoke evaluation, and open-dev failure mining.</p>
           </article>
           <article class="panel">
             <h2>Base-Full v1</h2>
-            <p><strong>22 new DBs / 600 tasks.</strong> Validates whether the adapter handles fresh DBs, not just extra queries.</p>
+            <p><strong>22 new DBs / 600 tasks.</strong> Main Base target for competition reporting and continuation-run promotion.</p>
           </article>
           <article class="panel">
             <h2>Large-v1</h2>
-            <p><strong>18 industrial-scale DBs / 480 tasks.</strong> Requires stronger inference throughput and likely cloud GPU support.</p>
+            <p><strong>18 industrial-scale DBs / 480 tasks.</strong> Long-context target with around 1K-column databases; do not start here.</p>
           </article>
+        </section>
+        <section class="panel full">
+          <h2>Iterative Supervised Fine-Tuning Loop</h2>
+          <ol class="tight columns">
+            <li>Run the official LiveSQLBench CLI or agent stack on the current adapter and store the result as an official-runner artifact.</li>
+            <li>Analyze only open development failures into syntax, schema, value-grounding, join-path, JSON, CRUD, and context-rule buckets.</li>
+            <li>Build a targeted supervised train shard from open dev rows, public training data, synthetic variants, or generated repair rows with provenance.</li>
+            <li>Create a new manifest whose <code>student.initial_adapter_dir</code> points at the best gated adapter.</li>
+            <li>Train one conservative continuation step, then run frozen local guardrails, unseen DB gates, and the official runner again.</li>
+            <li>Reject the checkpoint if it only improves the mined slice, regresses frozen guardrails, or blurs official and local score labels.</li>
+          </ol>
+        </section>
+        <section class="panel full">
+          <h2>Official Tooling Surface</h2>
+          <table class="key-table">
+            <tr><th>CLI agent stack</th><td>Use LiveSQLBench-CLI for terminal-agent evaluation against PostgreSQL-backed tasks.</td></tr>
+            <tr><th>Agent framework</th><td>Use LiveSQLBench-Agent when the target is a tool-using text-to-SQL agent rather than direct SQL generation.</td></tr>
+            <tr><th>SQLite track</th><td>Use Base-Lite-SQLite for local accessibility, but label it separately from PostgreSQL Base scores.</td></tr>
+            <tr><th>Verification</th><td>Public claims require official-runner outputs; repo result-equivalence outputs remain local evidence.</td></tr>
+          </table>
+        </section>
+        <section class="panel full">
+          <h2>Submission Boundary</h2>
+          <table class="key-table">
+            <tr><th>Website score</th><td>No GT/test-case package is needed to run or submit a model/agent for website scoring. Use the public task data, database environment, and official CLI/Agent pipeline.</td></tr>
+            <tr><th>Verified badge</th><td>Verified leaderboard entries may require submitting the runnable codebase or pipeline for BIRD-team evaluation.</td></tr>
+            <tr><th>Local supervised iteration</th><td>GT/test cases are only needed when we want to locally score open-dev rows or convert open-dev failures into supervised training labels.</td></tr>
+            <tr><th>Leakage rule</th><td>Hidden-test GT and protected official scoring artifacts never enter training. Open-dev GT may be used only when the release rules allow supervised open-dev training.</td></tr>
+          </table>
+        </section>
+        <section class="panel full">
+          <h2>Implemented Submission Path</h2>
+          <p>The repo now wraps the pinned public LiveSQLBench-CLI checkout. It validates that the input JSONL is public, records the checkout commit, generates Harbor tasks with the official adapter, and then runs the official Harbor agent lane. Preparation and scoring are separate commands so the generated task tree and official-runner artifacts can be inspected independently.</p>
+          <pre><code>uv run python -m sqlbench_lab.cli sql livesqlbench-prepare \\
+  --cli-repo artifacts/private/livesqlbench/public/livesqlbench/LiveSQLBench-CLI \\
+  --data-root artifacts/private/livesqlbench/public/livesqlbench-base-lite \\
+  --data-jsonl artifacts/private/livesqlbench/public/livesqlbench-base-lite/livesqlbench_data.jsonl \\
+  --eval-src-dir artifacts/private/livesqlbench/public/livesqlbench/evaluation/src \\
+  --db-dump-root artifacts/private/livesqlbench/public/livesqlbench/evaluation/postgre_table_dumps \\
+  --output-dir artifacts/private/livesqlbench/official_open_dev_package/harbor_tasks \\
+  --limit 1 \\
+  --manifest-output artifacts/private/livesqlbench/official_open_dev_package/submission.json</code></pre>
+          <p>Use <code>sql livesqlbench-run</code> with the same inputs after the task tree and Docker images are ready. This command requires Docker, PostgreSQL dump images, the official evaluator assets, and the Harbor agent credentials or endpoint configuration. It does not accept GT/test-case input.</p>
         </section>
         <section class="panel full">
           <h2>Promotion Gates</h2>
@@ -1874,6 +1990,7 @@ def _render_livesqlbench() -> str:
             <li>MLflow has train, eval, manifest, and artifact references for the candidate.</li>
             <li>Official runner is used for any public LiveSQLBench number.</li>
             <li>No hidden/protected benchmark data enters train artifacts.</li>
+            <li>Continuation manifests preserve adapter lineage through <code>initial_adapter_dir</code>.</li>
           </ol>
         </section>
     """
