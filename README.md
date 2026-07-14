@@ -41,7 +41,6 @@ uv run python -m sqlbench_lab.cli sql livesqlbench-import \
 ```bash
 uv run python -m sqlbench_lab.cli sql validate-train --dataset <train.jsonl>
 uv run python -m sqlbench_lab.cli sql validate-eval --dataset <dev.jsonl>
-uv run python -m sqlbench_lab.cli sql audit-mixture --dataset <train.jsonl>
 uv run python -m sqlbench_lab.cli sql build-review-packet \
   --iteration iter-001 --phase artifacts --manifest <manifest.json> \
   --output reviews/iter-001-artifacts.md --conversation conversation.md

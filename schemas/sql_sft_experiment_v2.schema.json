@@ -4,7 +4,7 @@
   "title": "SQL SFT Experiment v2",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "experiment_id", "student", "training_method", "mixture", "train_inputs", "eval_plan", "output_paths"],
+  "required": ["schema_version", "experiment_id", "student", "training_method", "train_inputs", "eval_plan", "output_paths"],
   "properties": {
     "schema_version": {"const": "sql_sft_experiment:v2"},
     "experiment_id": {"type": "string", "minLength": 1},
@@ -29,16 +29,6 @@
       }
     },
     "prompt": {"type": "object", "additionalProperties": false, "required": ["style"], "properties": {"style": {"enum": ["canonical_chat", "premsql_text"]}}},
-    "mixture": {
-      "type": "object", "additionalProperties": false,
-      "required": ["dataset_id", "source_package", "source_revision", "fingerprint"],
-      "properties": {
-        "dataset_id": {"type": "string", "minLength": 1},
-        "source_package": {"type": "string", "minLength": 1},
-        "source_revision": {"type": "string", "minLength": 1},
-        "fingerprint": {"type": "string", "minLength": 1}
-      }
-    },
     "train_inputs": {"type": "object", "additionalProperties": false, "required": ["train_datasets"], "properties": {"train_datasets": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}}},
     "eval_plan": {
       "type": "object", "additionalProperties": false,

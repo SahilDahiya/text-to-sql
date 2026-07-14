@@ -7,7 +7,6 @@ from pathlib import Path
 import pytest
 
 from sqlbench_lab.sql import (
-    audit_sql_mixture,
     build_livesqlbench_artifacts,
     build_review_packet,
     evaluate_postgresql_case,
@@ -211,12 +210,9 @@ def test_target_verification_executes_pending_targets_before_import(tmp_path: Pa
     assert output["verification"]["status"] == "execution_verified"
 
 
-def test_mixture_audit_and_sqlite_result_equivalence(tmp_path: Path) -> None:
+def test_sqlite_result_equivalence(tmp_path: Path) -> None:
     database = _make_sqlite_db(tmp_path / "items.sqlite")
-    train_path = _write_jsonl(tmp_path / "train.jsonl", [_train_row(database)])
     eval_path = _write_jsonl(tmp_path / "eval.jsonl", [_eval_row(database)])
-    audit = audit_sql_mixture([train_path])
-    assert audit.row_count == 1
     case = load_sql_eval_cases(eval_path)[0]
     result = evaluate_sqlite_case(case, predicted_sql="SELECT id FROM items ORDER BY id")
     assert result.passed is True
@@ -285,21 +281,19 @@ def test_postgresql_connection_failure_is_not_recorded_as_sql_failure(tmp_path: 
         evaluate_postgresql_case(case, predicted_sql="SELECT id FROM items", postgres_connect=connect)
 
 
-def test_v2_manifest_and_dry_run_enforce_mixture_fingerprint_and_holdout(tmp_path: Path) -> None:
+def test_v2_manifest_and_dry_run_require_human_approval(tmp_path: Path) -> None:
     train_db = _make_sqlite_db(tmp_path / "train.sqlite")
     eval_db = _make_sqlite_db(tmp_path / "eval.sqlite")
     train_path = _write_jsonl(tmp_path / "train.jsonl", [_train_row(train_db, "train")])
     eval_payload = _eval_row(eval_db, "eval")
     eval_payload["gold_sql"] = "SELECT id FROM items"
     eval_path = _write_jsonl(tmp_path / "eval.jsonl", [eval_payload])
-    fingerprint = audit_sql_mixture([train_path]).fingerprint
     manifest_payload = {
         "schema_version": "sql_sft_experiment:v2",
         "experiment_id": "exp-test-v2",
         "student": {"model_family": "qwen", "base_model": "Qwen/Qwen2.5-1.5B", "adapter_name": "adapter"},
         "training_method": {"method": "lora_sft", "loss_target": "assistant_sql_only", "stage": "direct_sql_sft", "notes": None},
         "prompt": {"style": "canonical_chat"},
-        "mixture": {"dataset_id": "mixture-test", "source_package": "test-package", "source_revision": "test-revision", "fingerprint": fingerprint},
         "train_inputs": {"train_datasets": [str(train_path)]},
         "eval_plan": {"target_dataset": str(eval_path), "baseline_results": str(tmp_path / "base.json"), "post_train_results": str(tmp_path / "post.json"), "scorer_version": "sql-eval-v2", "max_new_tokens": 128},
         "trainer": {"backend": "transformers_trainer", "num_train_epochs": 1.0, "per_device_train_batch_size": 1, "gradient_accumulation_steps": 1, "learning_rate": 0.0002, "logging_steps": 1, "attn_implementation": None, "packing": False, "packing_strategy": "bfd", "max_length": None, "bf16": None, "tf32": None, "gradient_checkpointing": False, "save_strategy": "no", "save_steps": None, "save_total_limit": None, "auto_resume_from_checkpoint": False},
@@ -309,7 +303,7 @@ def test_v2_manifest_and_dry_run_enforce_mixture_fingerprint_and_holdout(tmp_pat
     }
     manifest_path = tmp_path / "manifest.json"
     manifest_path.write_text(json.dumps(manifest_payload), encoding="utf-8")
-    assert load_sql_sft_manifest(manifest_path).mixture.fingerprint == fingerprint
+    assert load_sql_sft_manifest(manifest_path).train_inputs.train_datasets == (str(train_path),)
     packet = build_review_packet(
         iteration_id="iter-001",
         phase="artifacts",

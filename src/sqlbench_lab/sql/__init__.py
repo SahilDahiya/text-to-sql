@@ -13,7 +13,6 @@ from .livesqlbench_adapter import (
 )
 from .loaders import load_sql_eval_cases, load_sql_train_examples
 from .manifest import SQLSFTExperimentManifest, load_sql_sft_manifest
-from .mixture import SQLMixtureAuditSummary, audit_sql_mixture
 from .models import SQLEvalCase, SQLProvenance, SQLTrainExample, SQLVerification
 from .rendering import build_eval_messages, build_train_messages
 from .review import ReviewPacketSummary, build_review_packet, record_human_review
@@ -24,7 +23,6 @@ __all__ = [
     "SQLEvalCase",
     "SQLEvalRunSummary",
     "SQLEvaluationResult",
-    "SQLMixtureAuditSummary",
     "SQLProvenance",
     "SQLSFTExperimentManifest",
     "SQLSFTTrainingSummary",
@@ -34,7 +32,6 @@ __all__ = [
     "LiveSQLBenchImportSummary",
     "LiveSQLBenchTask",
     "LiveSQLBenchVerificationSummary",
-    "audit_sql_mixture",
     "build_livesqlbench_artifacts",
     "build_eval_messages",
     "build_train_messages",

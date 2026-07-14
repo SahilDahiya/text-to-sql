@@ -12,7 +12,6 @@ from typing import Any
 
 from .loaders import load_sql_eval_cases, load_sql_train_examples
 from .manifest import load_sql_sft_manifest
-from .mixture import audit_sql_mixture
 
 REVIEW_DECISIONS = {"approve", "reject", "request_extra_review"}
 REVIEW_PHASES = {"artifacts", "baseline", "evaluation"}
@@ -42,7 +41,6 @@ def build_review_packet(
     manifest_file = Path(manifest_path).resolve()
     manifest = load_sql_sft_manifest(manifest_file)
     train_files = tuple(manifest.resolve_workspace_path(path) for path in manifest.train_inputs.train_datasets)
-    train_audit = audit_sql_mixture(train_files)
     eval_file = manifest.resolve_workspace_path(manifest.eval_plan.target_dataset)
     eval_cases = load_sql_eval_cases(eval_file)
     train_rows = [row for path in train_files for row in load_sql_train_examples(path)]
@@ -61,8 +59,7 @@ def build_review_packet(
         "train_sha256": {str(path): _sha256(path) for path in train_files},
         "eval_dataset": str(eval_file),
         "eval_sha256": _sha256(eval_file),
-        "train_row_count": train_audit.row_count,
-        "train_fingerprint": train_audit.fingerprint,
+        "train_row_count": len(train_rows),
         "eval_case_count": len(eval_cases),
         "initial_adapter_dir": (
             str(manifest.resolve_workspace_path(manifest.student.initial_adapter_dir))
@@ -176,7 +173,6 @@ def _render_markdown(
         "## Artifact Evidence",
         f"- Manifest: `{payload['manifest_path']}`",
         f"- Train rows: {payload['train_row_count']}",
-        f"- Train fingerprint: `{payload['train_fingerprint']}`",
         f"- Eval cases: {payload['eval_case_count']}",
         f"- Initial adapter: `{payload['initial_adapter_dir'] or 'none'}`",
         f"- Output adapter/checkpoint: `{payload['adapter_dir']}`",
@@ -231,7 +227,7 @@ def _render_markdown(
             )
     if conversation is not None:
         lines.extend(["", "## Coding-Agent Conversation", "", conversation])
-    lines.extend(["", "## Review Checklist", "- Are the train labels permitted and verified?", "- Are the generated SQL and execution results understood?", "- Should the next iteration change the mixture?", "- Is extra review needed before proceeding?"])
+    lines.extend(["", "## Review Checklist", "- Are the train labels permitted and verified?", "- Are the generated SQL and execution results understood?", "- Should the next iteration change the training set?", "- Is extra review needed before proceeding?"])
     return "\n".join(lines) + "\n"
 
 

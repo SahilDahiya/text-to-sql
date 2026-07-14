@@ -13,7 +13,6 @@ from .livesqlbench_submission import (
     write_submission_plan,
 )
 from .sql import (
-    audit_sql_mixture,
     build_livesqlbench_artifacts,
     load_sql_eval_cases,
     load_sql_sft_manifest,
@@ -54,10 +53,6 @@ def main(argv: list[str] | None = None) -> int:
     verify_targets.add_argument("--verified-output", required=True)
     verify_targets.add_argument("--verified-by", required=True)
     verify_targets.add_argument("--verified-at", required=True)
-
-    audit_mixture = sql_commands.add_parser("audit-mixture", help="Audit mixture balance and target provenance")
-    audit_mixture.add_argument("--dataset", action="append", required=True)
-    audit_mixture.add_argument("--output")
 
     review_packet = sql_commands.add_parser("build-review-packet", help="Build human review evidence")
     review_packet.add_argument("--iteration", required=True)
@@ -128,7 +123,7 @@ def _run_sql_command(args: argparse.Namespace) -> int:
             train_output=args.train_output,
             eval_output=args.eval_output,
         )
-        print(f"imported LiveSQLBench tasks={summary.discovered_task_count} train={summary.train_row_count} eval={summary.eval_case_count} fingerprint={summary.fingerprint}")
+        print(f"imported LiveSQLBench tasks={summary.discovered_task_count} train={summary.train_row_count} eval={summary.eval_case_count}")
         return 0
     if args.sql_command == "verify-targets":
         summary = verify_livesqlbench_targets(
@@ -140,10 +135,6 @@ def _run_sql_command(args: argparse.Namespace) -> int:
             verified_at=args.verified_at,
         )
         print(f"verified LiveSQLBench targets={summary.target_count} output={summary.verified_output}")
-        return 0
-    if args.sql_command == "audit-mixture":
-        summary = audit_sql_mixture(args.dataset, output_path=args.output)
-        print(f"audited mixture rows={summary.row_count} fingerprint={summary.fingerprint}")
         return 0
     if args.sql_command == "build-review-packet":
         summary = build_review_packet(

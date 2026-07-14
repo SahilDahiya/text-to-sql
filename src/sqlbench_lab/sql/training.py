@@ -9,7 +9,6 @@ from typing import Any
 
 from .loaders import load_sql_train_examples
 from .manifest import SQLSFTExperimentManifest, load_sql_sft_manifest
-from .mixture import audit_sql_mixture
 from .rendering import SUPPORTED_PROMPT_STYLES, build_train_messages
 from .review import require_approved_review
 from .training_types import SQLSFTTrainingSummary
@@ -38,12 +37,6 @@ def run_sql_sft(
     if review_path is not None:
         require_approved_review(review_path, manifest_path=manifest_path)
     _validate_supported_manifest(manifest)
-    audit = audit_sql_mixture(manifest.train_inputs.train_datasets)
-    if audit.fingerprint != manifest.mixture.fingerprint:
-        raise ValueError(
-            "manifest mixture fingerprint does not match train datasets: "
-            f"manifest={manifest.mixture.fingerprint} actual={audit.fingerprint}"
-        )
     train_rows = []
     for dataset_path in manifest.train_inputs.train_datasets:
         dataset_rows = load_sql_train_examples(dataset_path)

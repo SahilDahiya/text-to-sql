@@ -34,14 +34,6 @@ class SQLPromptConfig:
 
 
 @dataclass(frozen=True)
-class SQLMixtureConfig:
-    dataset_id: str
-    source_package: str
-    source_revision: str
-    fingerprint: str
-
-
-@dataclass(frozen=True)
 class SQLTrainInputsConfig:
     train_datasets: tuple[str, ...]
 
@@ -110,7 +102,6 @@ class SQLSFTExperimentManifest:
     student: SQLStudentConfig
     training_method: SQLTrainingMethodConfig
     prompt: SQLPromptConfig
-    mixture: SQLMixtureConfig
     train_inputs: SQLTrainInputsConfig
     trainer: SQLTrainerConfig
     quantization: SQLQuantizationConfig
@@ -138,7 +129,6 @@ def load_sql_sft_manifest(path: str | Path) -> SQLSFTExperimentManifest:
         student=SQLStudentConfig(**payload["student"]),
         training_method=SQLTrainingMethodConfig(**payload["training_method"]),
         prompt=SQLPromptConfig(**payload["prompt"]),
-        mixture=SQLMixtureConfig(**payload["mixture"]),
         train_inputs=SQLTrainInputsConfig(
             train_datasets=tuple(str(item) for item in payload["train_inputs"]["train_datasets"]),
         ),

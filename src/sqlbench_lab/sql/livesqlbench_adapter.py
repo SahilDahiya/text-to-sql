@@ -11,7 +11,6 @@ from typing import Any
 from .evaluator import evaluate_sql_case
 from .loaders import load_sql_eval_cases, load_sql_train_examples
 from .models import SQLEvalCase
-from .mixture import audit_sql_mixture
 
 ALLOWED_TARGET_SOURCES = {"manual_verified", "independent_verified"}
 ALLOWED_SPLITS = {"train", "dev", "eval", "challenge"}
@@ -37,7 +36,6 @@ class LiveSQLBenchImportSummary:
     eval_case_count: int
     train_output: str
     eval_output: str
-    fingerprint: str
 
 
 @dataclass(frozen=True)
@@ -110,7 +108,6 @@ def build_livesqlbench_artifacts(
 
     train_path = _write_jsonl_after_validation(train_output, train_rows, kind="train")
     eval_path = _write_jsonl_after_validation(eval_output, eval_rows, kind="eval")
-    fingerprint = audit_sql_mixture([train_path]).fingerprint
     return LiveSQLBenchImportSummary(
         package_root=str(Path(package_root).resolve()),
         source_revision=source_revision,
@@ -119,7 +116,6 @@ def build_livesqlbench_artifacts(
         eval_case_count=len(eval_rows),
         train_output=str(train_path),
         eval_output=str(eval_path),
-        fingerprint=fingerprint,
     )
 
 
