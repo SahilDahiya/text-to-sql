@@ -11,9 +11,9 @@ from jsonschema import Draft202012Validator
 from sqlbench_lab.paths import WORKSPACE_ROOT
 from sqlbench_lab.shared import read_jsonl_objects
 
-from .models import SQLCorrectionExample, SQLEvalCase, SQLTrainExample
+from .models import SQLEvalCase, SQLTrainExample
 
-T = TypeVar("T", SQLEvalCase, SQLCorrectionExample, SQLTrainExample)
+T = TypeVar("T", SQLEvalCase, SQLTrainExample)
 
 
 def load_sql_train_examples(path: str | Path) -> list[SQLTrainExample]:
@@ -33,16 +33,6 @@ def load_sql_eval_cases(path: str | Path) -> list[SQLEvalCase]:
         row_type=SQLEvalCase,
         id_field="case_id",
         artifact_name="SQL eval dataset",
-    )
-
-
-def load_sql_correction_examples(path: str | Path) -> list[SQLCorrectionExample]:
-    return _load_rows(
-        path=path,
-        schema_name="sql_correction_example_v1.schema.json",
-        row_type=SQLCorrectionExample,
-        id_field="row_id",
-        artifact_name="SQL correction dataset",
     )
 
 

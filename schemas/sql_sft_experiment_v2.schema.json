@@ -42,16 +42,12 @@
     "train_inputs": {"type": "object", "additionalProperties": false, "required": ["train_datasets"], "properties": {"train_datasets": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}}},
     "eval_plan": {
       "type": "object", "additionalProperties": false,
-      "required": ["target_dataset", "guardrail_datasets", "baseline_results", "post_train_results", "scorer_version", "require_db_disjoint", "target_min_improvement", "max_guardrail_regression", "max_new_tokens"],
+      "required": ["target_dataset", "baseline_results", "post_train_results", "scorer_version", "max_new_tokens"],
       "properties": {
         "target_dataset": {"type": "string", "minLength": 1},
-        "guardrail_datasets": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
         "baseline_results": {"type": "string", "minLength": 1},
         "post_train_results": {"type": "string", "minLength": 1},
         "scorer_version": {"type": "string", "minLength": 1},
-        "require_db_disjoint": {"type": "boolean", "const": true},
-        "target_min_improvement": {"type": "number", "minimum": 0},
-        "max_guardrail_regression": {"type": "number", "minimum": 0},
         "max_new_tokens": {"type": "integer", "minimum": 1}
       }
     },

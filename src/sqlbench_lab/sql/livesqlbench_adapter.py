@@ -13,21 +13,8 @@ from .loaders import load_sql_eval_cases, load_sql_train_examples
 from .models import SQLEvalCase
 from .mixture import audit_sql_mixture
 
-ALLOWED_TARGET_SOURCES = {"manual_verified", "independent_verified", "allowed_eval_gold"}
+ALLOWED_TARGET_SOURCES = {"manual_verified", "independent_verified"}
 ALLOWED_SPLITS = {"train", "dev", "eval", "challenge"}
-ALLOWED_TASK_FAMILIES = {
-    "schema_grounding",
-    "filtering",
-    "joins",
-    "date_value",
-    "aggregation",
-    "nesting",
-    "management",
-    "other",
-}
-ALLOWED_GROUNDING = {"requires_schema", "requires_database", "requires_schema_and_database"}
-
-
 @dataclass(frozen=True)
 class LiveSQLBenchTask:
     task_id: str
@@ -39,10 +26,6 @@ class LiveSQLBenchTask:
     knowledge_text: str | None
     db_path: str
     task_type: str
-    difficulty: str
-    category: str
-    tags: tuple[str, ...]
-    public_payload_has_targets: bool
 
 
 @dataclass(frozen=True)
@@ -213,9 +196,9 @@ def _read_task(task_path: Path, task_file: Path, payload_file: Path) -> LiveSQLB
     metadata = task_config.get("metadata")
     if not isinstance(metadata, dict):
         raise ValueError(f"task.toml metadata table is required: {task_file}")
-    raw_tags = metadata.get("tags")
-    if not isinstance(raw_tags, list) or not raw_tags:
-        raise ValueError(f"task.toml metadata.tags must be a non-empty list: {task_file}")
+    raw_tags = metadata.get("tags", [])
+    if not isinstance(raw_tags, list):
+        raise ValueError(f"task.toml metadata.tags must be a list: {task_file}")
     tags = tuple(str(tag).casefold() for tag in raw_tags)
     dialect = _dialect_from_tags(tags, task_path)
     schema_path = _single_file(task_path / "environment" / "db_assets", f"{db_id}_schema.txt")
@@ -224,8 +207,9 @@ def _read_task(task_path: Path, task_file: Path, payload_file: Path) -> LiveSQLB
         raise ValueError(f"PostgreSQL task is missing db_env.sh: {task_path}")
     db_path = str(env_path.resolve()) if dialect == "postgresql" else str(_sqlite_path(task_path).resolve())
     knowledge_text = _read_knowledge(task_path / "environment" / "db_assets", db_id)
-    difficulty = _normalize_difficulty(_required_text(metadata, "difficulty", task_file))
     category = _required_text(payload, "category", payload_file).casefold()
+    if category not in {"query", "management"}:
+        raise ValueError(f"unsupported LiveSQLBench category {category!r}: {payload_file}")
     return LiveSQLBenchTask(
         task_id=task_id,
         task_path=str(task_path.resolve()),
@@ -236,10 +220,6 @@ def _read_task(task_path: Path, task_file: Path, payload_file: Path) -> LiveSQLB
         knowledge_text=knowledge_text,
         db_path=db_path,
         task_type="management" if category == "management" else "select",
-        difficulty=difficulty,
-        category=category,
-        tags=tags,
-        public_payload_has_targets=False,
     )
 
 
@@ -285,48 +265,20 @@ def _validate_target_spec(spec: dict[str, Any], path: Path, *, allow_pending: bo
     if verification.get("status") == "execution_verified":
         for field in ("verified_by", "verification_id", "verified_at"):
             _required_text(verification, field, path)
-    family = _required_text(spec, "task_family", path)
-    if family not in ALLOWED_TASK_FAMILIES:
-        raise ValueError(f"unsupported task_family {family!r} in {path}")
-    _normalize_difficulty(_required_text(spec, "difficulty", path))
-    task_type = _required_text(spec, "task_type", path)
-    if task_type not in {"select", "management", "unknown"}:
-        raise ValueError(f"unsupported task_type {task_type!r} in {path}")
-    tier = spec.get("curriculum_tier")
-    if not isinstance(tier, int) or not 1 <= tier <= 6:
-        raise ValueError(f"curriculum_tier must be an integer from 1 to 6 in {path}")
-    grounding = _required_text(spec, "grounding_requirement", path)
-    shortcut = _required_text(spec, "shortcut_status", path)
-    if grounding not in ALLOWED_GROUNDING or shortcut not in ALLOWED_GROUNDING:
-        raise ValueError(f"unsupported grounding metadata in {path}")
-    if shortcut not in {"requires_database", "requires_schema_and_database"}:
-        raise ValueError(f"target must require database grounding in {path}")
     if not isinstance(spec.get("order_sensitive"), bool):
         raise ValueError(f"order_sensitive must be a boolean in {path}")
     numeric_tolerance = spec.get("numeric_tolerance")
     if isinstance(numeric_tolerance, bool) or not isinstance(numeric_tolerance, (int, float)) or numeric_tolerance < 0:
         raise ValueError(f"numeric_tolerance must be a non-negative number in {path}")
-    if not isinstance(spec.get("tags"), list) or not all(isinstance(tag, str) and tag for tag in spec["tags"]):
-        raise ValueError(f"tags must be a non-empty list of strings in {path}")
 
 
 def _materialize_row(task: LiveSQLBenchTask, spec: dict[str, Any], *, source_revision: str) -> dict[str, Any]:
-    metadata = {
-        "task_family": spec["task_family"],
-        "difficulty": _normalize_difficulty(spec["difficulty"]),
-        "curriculum_tier": spec["curriculum_tier"],
-        "sql_shape": spec["sql_shape"],
-        "grounding_requirement": spec["grounding_requirement"],
-        "shortcut_status": spec["shortcut_status"],
-        "tags": sorted(set([*task.tags, *spec["tags"]])),
-    }
     verification = dict(spec["verification"])
     provenance = {
         "source_package": "livesqlbench-open-development",
         "source_revision": source_revision,
         "source_task_path": task.task_path,
         "created_by": "sqlbench_lab.livesqlbench_adapter",
-        "teacher_model": spec.get("teacher_model"),
         "target_source": spec["target_source"],
     }
     return {
@@ -341,11 +293,8 @@ def _materialize_row(task: LiveSQLBenchTask, spec: dict[str, Any], *, source_rev
         "question": task.question,
         "schema_text": task.schema_text,
         "knowledge_text": task.knowledge_text,
-        "column_value_notes": [],
-        "schema_linking_notes": [],
         "target_sql": spec["target_sql"],
-        "task_type": spec["task_type"],
-        "metadata": metadata,
+        "task_type": task.task_type,
         "provenance": provenance,
         "verification": verification,
     }
@@ -358,18 +307,14 @@ def _as_eval_case(row: dict[str, Any], spec: dict[str, Any]) -> dict[str, Any]:
         "source_benchmark": row["source_benchmark"],
         "source_split": row["source_split"],
         "task_id": row["task_id"],
-        "fixture_id": row["task_id"],
         "db_id": row["db_id"],
         "db_path": row["db_path"],
         "dialect": row["dialect"],
         "question": row["question"],
         "schema_text": row["schema_text"],
         "knowledge_text": row["knowledge_text"],
-        "column_value_notes": row["column_value_notes"],
-        "schema_linking_notes": row["schema_linking_notes"],
         "gold_sql": row["target_sql"],
         "task_type": row["task_type"],
-        "metadata": row["metadata"],
         "verification": row["verification"],
         "order_sensitive": spec["order_sensitive"],
         "numeric_tolerance": float(spec["numeric_tolerance"]),
@@ -431,18 +376,3 @@ def _read_knowledge(db_assets: Path, db_id: str) -> str | None:
     if not paths:
         return None
     return "\n\n".join(path.read_text(encoding="utf-8") for path in paths)
-
-
-def _normalize_difficulty(value: Any) -> str:
-    if not isinstance(value, str) or not value.strip():
-        raise ValueError("difficulty must be a non-empty string")
-    normalized = value.strip().casefold()
-    if normalized in {"simple", "easy"}:
-        return "simple"
-    if normalized in {"medium", "moderate"}:
-        return "medium"
-    if normalized in {"hard", "difficult"}:
-        return "hard"
-    if normalized == "unknown":
-        return normalized
-    raise ValueError(f"unsupported difficulty: {value!r}")

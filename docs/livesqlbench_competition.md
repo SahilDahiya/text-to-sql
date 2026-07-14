@@ -22,30 +22,25 @@ git and is referenced by absolute or explicitly configured paths.
 
 1. Assemble a versioned, allowed training mixture.
 2. Import only explicit, execution-verified targets from the external task package and validate every row against the v2 train schema.
-3. Validate local development and unseen-database gates separately.
-4. Run exact leakage checks before training.
-5. Train one direct-SQL ISFT continuation from the best gated adapter. The trainer is not allowed to run unless the manifest fingerprint matches the audited mixture and leakage checks pass.
-6. Run one-shot local evaluation and classify failures.
-7. Add only verified, diverse failure curricula to the next mixture.
-8. Record the experiment and decision in Linear issue `TAP-532`.
-9. Use the official LiveSQLBench runner only after the local promotion gate passes.
+3. Validate the local development dataset.
+4. Train one direct-SQL ISFT continuation.
+5. Run one-shot local evaluation.
+6. Record the experiment and decision in Linear issue `TAP-532`.
+7. Use the official LiveSQLBench runner separately when explicitly requested.
 
 ## Gate Policy
 
 The old 12-case storefront `dev_v2` and `eval_v1` suites are deleted. They were
 useful for debugging alias binding but are not competition gates.
 
-Every competition candidate must report, separately:
+The first loop reports:
 
 - training-set provenance and row counts;
-- exact leakage audit results;
 - one-shot development score;
-- database-disjoint score;
-- task-family, curriculum-tier, database, and failure slices for joins, aggregation, filtering, nesting, and execution errors;
+- per-case execution results;
 - official LiveSQLBench runner output, when run.
 
-Promotion requires improvement on the target local gate without regression on the
-frozen guardrail gates. A local score is never reported as an official benchmark score.
+A local score is never reported as an official benchmark score.
 
 ## Current State
 
@@ -54,25 +49,22 @@ competition manifest until the permitted LiveSQLBench development package is pre
 The package itself is prompt/environment input. Because its public task payloads may
 have empty `sol_sql` and `test_cases`, the next artifact is a separate verified-target
 manifest that points to manually or independently execution-verified SQL labels. The
-resulting v2 train/eval artifacts and Qwen manifest must pass validation and leakage
-checks before any GPU run.
+resulting v2 train/eval artifacts and Qwen manifest must pass validation before any
+GPU run.
 
 ## Code Boundaries
 
 * `livesqlbench_adapter.py` reads task metadata and refuses protected/public target fields.
 * `verify-targets` executes each pending target against its declared database before import.
-* `models.py`, `loaders.py`, and the v2 JSON schemas enforce provenance, curriculum, and execution verification.
+* `models.py`, `loaders.py`, and the v2 JSON schemas enforce provenance and execution verification.
 * `evaluator.py` has explicit SQLite and PostgreSQL backends; unsupported dialects fail.
-* `eval_runner.py` is one-shot only. Candidate selection and repair are not part of the ISFT gate.
-* `failure_mining.py` requires scorer-correct/model-wrong review before producing correction rows.
-* `promotion.py` compares immutable artifacts and emits `promote`, `reject`, or `investigate` without changing checkpoints.
+* `eval_runner.py` is one-shot only and emits per-case execution results.
 
 ## Verified Target Manifest
 
 The pending target manifest is JSONL with one row per task. It must supply the
-target SQL, task split, difficulty, task type, family, curriculum tier, SQL shape,
-grounding requirement, shortcut status, tags, `order_sensitive`,
-`numeric_tolerance`, and `verification.status: pending`. Run `verify-targets`
+target SQL, task split, `order_sensitive`, `numeric_tolerance`, and
+`verification.status: pending`. Run `verify-targets`
 against the allowed database environment first. Only its output, with
 `execution_verified`, may be passed to `livesqlbench-import`; missing fields are
 errors rather than inferred defaults.

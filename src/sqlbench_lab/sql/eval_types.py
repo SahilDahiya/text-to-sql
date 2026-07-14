@@ -11,8 +11,6 @@ class SQLCaseEvalRecord:
     case_id: str
     task_id: str
     db_id: str
-    task_family: str
-    curriculum_tier: int
     model_variant: str
     predicted_sql: str
     passed: bool

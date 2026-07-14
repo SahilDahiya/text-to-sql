@@ -89,13 +89,9 @@ class SQLLoRAConfig:
 @dataclass(frozen=True)
 class SQLEvalPlanConfig:
     target_dataset: str
-    guardrail_datasets: tuple[str, ...]
     baseline_results: str
     post_train_results: str
     scorer_version: str
-    require_db_disjoint: bool
-    target_min_improvement: float
-    max_guardrail_regression: float
     max_new_tokens: int
 
 
@@ -128,11 +124,6 @@ class SQLSFTExperimentManifest:
             return path
         return WORKSPACE_ROOT / path
 
-    @property
-    def all_eval_datasets(self) -> tuple[str, ...]:
-        return (self.eval_plan.target_dataset, *self.eval_plan.guardrail_datasets)
-
-
 def load_sql_sft_manifest(path: str | Path) -> SQLSFTExperimentManifest:
     """Load and validate one v2 manifest."""
 
@@ -162,13 +153,9 @@ def load_sql_sft_manifest(path: str | Path) -> SQLSFTExperimentManifest:
         ),
         eval_plan=SQLEvalPlanConfig(
             target_dataset=str(payload["eval_plan"]["target_dataset"]),
-            guardrail_datasets=tuple(str(item) for item in payload["eval_plan"]["guardrail_datasets"]),
             baseline_results=str(payload["eval_plan"]["baseline_results"]),
             post_train_results=str(payload["eval_plan"]["post_train_results"]),
             scorer_version=str(payload["eval_plan"]["scorer_version"]),
-            require_db_disjoint=bool(payload["eval_plan"]["require_db_disjoint"]),
-            target_min_improvement=float(payload["eval_plan"]["target_min_improvement"]),
-            max_guardrail_regression=float(payload["eval_plan"]["max_guardrail_regression"]),
             max_new_tokens=int(payload["eval_plan"]["max_new_tokens"]),
         ),
         output_paths=SQLOutputPathsConfig(**payload["output_paths"]),

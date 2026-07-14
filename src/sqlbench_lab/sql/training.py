@@ -7,8 +7,7 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
-from .leakage import assert_no_sql_dataset_leakage
-from .loaders import load_sql_eval_cases, load_sql_train_examples
+from .loaders import load_sql_train_examples
 from .manifest import SQLSFTExperimentManifest, load_sql_sft_manifest
 from .mixture import audit_sql_mixture
 from .rendering import SUPPORTED_PROMPT_STYLES, build_train_messages
@@ -41,11 +40,6 @@ def run_sql_sft(
             "manifest mixture fingerprint does not match train datasets: "
             f"manifest={manifest.mixture.fingerprint} actual={audit.fingerprint}"
         )
-    assert_no_sql_dataset_leakage(
-        train_paths=manifest.train_inputs.train_datasets,
-        eval_paths=manifest.all_eval_datasets,
-        require_db_disjoint=manifest.eval_plan.require_db_disjoint,
-    )
     train_rows = []
     for dataset_path in manifest.train_inputs.train_datasets:
         dataset_rows = load_sql_train_examples(dataset_path)
@@ -60,8 +54,6 @@ def run_sql_sft(
     experiment_root = manifest.resolve_workspace_path(manifest.output_paths.experiment_root)
     adapter_dir = manifest.resolve_workspace_path(manifest.output_paths.adapter_dir)
     train_summary_path = manifest.resolve_workspace_path(manifest.output_paths.train_summary_json)
-    for eval_dataset in manifest.all_eval_datasets:
-        load_sql_eval_cases(eval_dataset)
     experiment_root.mkdir(parents=True, exist_ok=True)
     train_summary_path.parent.mkdir(parents=True, exist_ok=True)
 

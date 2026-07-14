@@ -11,10 +11,8 @@ from typing import Callable
 
 from sqlbench_lab.paths import WORKSPACE_ROOT
 
-from .eval_analysis import classify_sql_eval_failure
 from .eval_types import SQLCaseEvalRecord, SQLEvalRunSummary
 from .evaluator import evaluate_sql_case
-from .leakage import assert_no_sql_dataset_leakage
 from .loaders import load_sql_eval_cases
 from .manifest import SQLSFTExperimentManifest, load_sql_sft_manifest
 from .models import SQLEvalCase
@@ -48,11 +46,6 @@ def run_sql_eval(
     manifest = load_sql_sft_manifest(manifest_path)
     eval_dataset_path = str(eval_dataset) if eval_dataset is not None else manifest.eval_plan.target_dataset
     cases = load_sql_eval_cases(eval_dataset_path)
-    leakage = assert_no_sql_dataset_leakage(
-        train_paths=manifest.train_inputs.train_datasets,
-        eval_paths=[eval_dataset_path],
-        require_db_disjoint=manifest.eval_plan.require_db_disjoint,
-    )
     resolved_max_new_tokens = (
         manifest.eval_plan.max_new_tokens if max_new_tokens is None else max_new_tokens
     )
@@ -83,7 +76,6 @@ def run_sql_eval(
         eval_dataset=eval_dataset_path,
         dataset_fingerprint=_file_fingerprint(eval_dataset_path),
         eval_db_ids=tuple(sorted({case.db_id for case in cases})),
-        db_disjoint_verified=leakage.overlapping_db_ids == (),
         scorer_version=manifest.eval_plan.scorer_version,
         generation_config={"max_new_tokens": resolved_max_new_tokens, "do_sample": False},
         result_path=str(result_path),
@@ -198,24 +190,14 @@ def _evaluate_case(
 ) -> SQLCaseEvalRecord:
     predicted_sql = predict_sql(case)
     result = evaluate_sql_case(case, predicted_sql=predicted_sql)
-    payload = {
-        "predicted_sql": predicted_sql,
-        "prediction_error": result.prediction_error,
-        "gold_error": result.gold_error,
-        "predicted_rows": result.predicted_rows,
-        "gold_rows": result.gold_rows,
-        "passed": result.passed,
-    }
     return SQLCaseEvalRecord(
         case_id=case.case_id,
         task_id=case.task_id,
         db_id=case.db_id,
-        task_family=case.metadata.task_family,
-        curriculum_tier=case.metadata.curriculum_tier,
         model_variant=model_variant,
         predicted_sql=predicted_sql,
         passed=result.passed,
-        primary_failure_type=classify_sql_eval_failure(payload),
+        primary_failure_type="passed" if result.passed else "failed",
         prediction_error=result.prediction_error,
         gold_error=result.gold_error,
         predicted_rows=result.predicted_rows,

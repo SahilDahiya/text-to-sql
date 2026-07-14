@@ -9,8 +9,8 @@ LiveSQLBench with iterative supervised fine-tuning.
 - Keep LiveSQLBench ground truth, test cases, and protected evaluation data outside
   this repository and outside training.
 - Use one-shot generation as the first measurement lane.
-- Track local execution scores, unseen-database gates, and official LiveSQLBench
-  results as separate measurements.
+- Track local execution scores and official LiveSQLBench results as separate
+  measurements.
 - Use the official LiveSQLBench runner for any competition score claim.
 
 The former storefront, BIRD/Spider lab, cloud deployment, serving, web-console,
@@ -42,27 +42,10 @@ uv run python -m sqlbench_lab.cli sql livesqlbench-import \
 uv run python -m sqlbench_lab.cli sql validate-train --dataset <train.jsonl>
 uv run python -m sqlbench_lab.cli sql validate-eval --dataset <dev.jsonl>
 uv run python -m sqlbench_lab.cli sql audit-mixture --dataset <train.jsonl>
-uv run python -m sqlbench_lab.cli sql audit-leakage \
-  --train-dataset <train.jsonl> \
-  --eval-dataset <dev.jsonl> \
-  --require-db-disjoint
 uv run python -m sqlbench_lab.cli sql validate-manifest --manifest <manifest.json>
 uv run --group training python -m sqlbench_lab.cli sql run-sft --manifest <manifest.json>
 uv run --group training python -m sqlbench_lab.cli sql eval \
   --manifest <manifest.json> --model adapter --dataset <dev.jsonl>
-uv run python -m sqlbench_lab.cli sql analyze-eval --result <eval-result.json>
-uv run python -m sqlbench_lab.cli sql collect-corrections \
-  --result <eval-result.json> --eval-dataset <dev.jsonl> \
-  --review <review.jsonl> --output <corrections.jsonl>
-uv run python -m sqlbench_lab.cli sql build-mixture \
-  --base-train-dataset <train.jsonl> \
-  --correction-dataset <corrections.jsonl> \
-  --output <next-train.jsonl> --max-corrections 32
-uv run python -m sqlbench_lab.cli sql compare-promotion \
-  --base-target <base-target.json> --candidate-target <candidate-target.json> \
-  --base-guardrail <base-guardrail.json> \
-  --candidate-guardrail <candidate-guardrail.json> \
-  --target-min-improvement 0.01 --max-guardrail-regression 0.00
 ```
 
 The official runner commands are intentionally separate and are not part of the

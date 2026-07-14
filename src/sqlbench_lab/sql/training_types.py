@@ -15,4 +15,3 @@ class SQLSFTTrainingSummary:
     trainable_parameters: int | None = None
     total_parameters: int | None = None
     training_metrics: dict[str, float] | None = None
-
