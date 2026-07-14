@@ -1,4 +1,4 @@
-"""SQL SFT experiment manifest loading."""
+"""Strict v2 SQL SFT experiment manifest loading."""
 
 from __future__ import annotations
 
@@ -34,9 +34,16 @@ class SQLPromptConfig:
 
 
 @dataclass(frozen=True)
+class SQLMixtureConfig:
+    dataset_id: str
+    source_package: str
+    source_revision: str
+    fingerprint: str
+
+
+@dataclass(frozen=True)
 class SQLTrainInputsConfig:
     train_datasets: tuple[str, ...]
-    validation_datasets: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -81,9 +88,15 @@ class SQLLoRAConfig:
 
 @dataclass(frozen=True)
 class SQLEvalPlanConfig:
-    smoke_dataset: str
+    target_dataset: str
+    guardrail_datasets: tuple[str, ...]
     baseline_results: str
     post_train_results: str
+    scorer_version: str
+    require_db_disjoint: bool
+    target_min_improvement: float
+    max_guardrail_regression: float
+    max_new_tokens: int
 
 
 @dataclass(frozen=True)
@@ -101,6 +114,7 @@ class SQLSFTExperimentManifest:
     student: SQLStudentConfig
     training_method: SQLTrainingMethodConfig
     prompt: SQLPromptConfig
+    mixture: SQLMixtureConfig
     train_inputs: SQLTrainInputsConfig
     trainer: SQLTrainerConfig
     quantization: SQLQuantizationConfig
@@ -114,9 +128,13 @@ class SQLSFTExperimentManifest:
             return path
         return WORKSPACE_ROOT / path
 
+    @property
+    def all_eval_datasets(self) -> tuple[str, ...]:
+        return (self.eval_plan.target_dataset, *self.eval_plan.guardrail_datasets)
+
 
 def load_sql_sft_manifest(path: str | Path) -> SQLSFTExperimentManifest:
-    """Load and validate one SQL SFT experiment manifest."""
+    """Load and validate one v2 manifest."""
 
     resolved_path = _resolve_workspace_path(path)
     payload = json.loads(resolved_path.read_text(encoding="utf-8"))
@@ -128,140 +146,37 @@ def load_sql_sft_manifest(path: str | Path) -> SQLSFTExperimentManifest:
         experiment_id=str(payload["experiment_id"]),
         student=SQLStudentConfig(**payload["student"]),
         training_method=SQLTrainingMethodConfig(**payload["training_method"]),
-        prompt=SQLPromptConfig(**payload.get("prompt", _default_prompt_payload())),
+        prompt=SQLPromptConfig(**payload["prompt"]),
+        mixture=SQLMixtureConfig(**payload["mixture"]),
         train_inputs=SQLTrainInputsConfig(
             train_datasets=tuple(str(item) for item in payload["train_inputs"]["train_datasets"]),
-            validation_datasets=tuple(
-                str(item) for item in payload["train_inputs"]["validation_datasets"]
-            ),
         ),
-        trainer=_load_trainer_config(payload.get("trainer", {})),
-        quantization=_load_quantization_config(payload.get("quantization", _default_quantization_payload())),
-        lora=_load_lora_config(payload.get("lora", _default_lora_payload())),
-        eval_plan=SQLEvalPlanConfig(**payload["eval_plan"]),
+        trainer=SQLTrainerConfig(**payload["trainer"]),
+        quantization=SQLQuantizationConfig(**payload["quantization"]),
+        lora=SQLLoRAConfig(
+            r=int(payload["lora"]["r"]),
+            lora_alpha=int(payload["lora"]["lora_alpha"]),
+            lora_dropout=float(payload["lora"]["lora_dropout"]),
+            bias=str(payload["lora"]["bias"]),
+            target_modules=tuple(str(item) for item in payload["lora"]["target_modules"]),
+        ),
+        eval_plan=SQLEvalPlanConfig(
+            target_dataset=str(payload["eval_plan"]["target_dataset"]),
+            guardrail_datasets=tuple(str(item) for item in payload["eval_plan"]["guardrail_datasets"]),
+            baseline_results=str(payload["eval_plan"]["baseline_results"]),
+            post_train_results=str(payload["eval_plan"]["post_train_results"]),
+            scorer_version=str(payload["eval_plan"]["scorer_version"]),
+            require_db_disjoint=bool(payload["eval_plan"]["require_db_disjoint"]),
+            target_min_improvement=float(payload["eval_plan"]["target_min_improvement"]),
+            max_guardrail_regression=float(payload["eval_plan"]["max_guardrail_regression"]),
+            max_new_tokens=int(payload["eval_plan"]["max_new_tokens"]),
+        ),
         output_paths=SQLOutputPathsConfig(**payload["output_paths"]),
     )
 
 
-def _default_trainer_payload() -> dict[str, Any]:
-    return {
-        "backend": "transformers_trainer",
-        "num_train_epochs": 1.0,
-        "per_device_train_batch_size": 1,
-        "gradient_accumulation_steps": 1,
-        "learning_rate": 2e-4,
-        "logging_steps": 1,
-        "attn_implementation": None,
-        "packing": False,
-        "packing_strategy": "bfd",
-        "max_length": None,
-        "bf16": None,
-        "tf32": None,
-        "gradient_checkpointing": False,
-        "save_strategy": "no",
-        "save_steps": None,
-        "save_total_limit": None,
-        "auto_resume_from_checkpoint": False,
-    }
-
-
-def _default_prompt_payload() -> dict[str, Any]:
-    return {"style": "canonical_chat"}
-
-
-def _load_trainer_config(payload: dict[str, Any]) -> SQLTrainerConfig:
-    merged = {**_default_trainer_payload(), **payload}
-    return SQLTrainerConfig(
-        backend=str(merged["backend"]),
-        num_train_epochs=float(merged["num_train_epochs"]),
-        per_device_train_batch_size=int(merged["per_device_train_batch_size"]),
-        gradient_accumulation_steps=int(merged["gradient_accumulation_steps"]),
-        learning_rate=float(merged["learning_rate"]),
-        logging_steps=int(merged["logging_steps"]),
-        attn_implementation=_optional_str(merged["attn_implementation"]),
-        packing=bool(merged["packing"]),
-        packing_strategy=str(merged["packing_strategy"]),
-        max_length=_optional_int(merged["max_length"]),
-        bf16=_optional_bool(merged["bf16"]),
-        tf32=_optional_bool(merged["tf32"]),
-        gradient_checkpointing=bool(merged["gradient_checkpointing"]),
-        save_strategy=str(merged["save_strategy"]),
-        save_steps=_optional_int(merged["save_steps"]),
-        save_total_limit=_optional_int(merged["save_total_limit"]),
-        auto_resume_from_checkpoint=bool(merged["auto_resume_from_checkpoint"]),
-    )
-
-
-def _optional_int(value: Any) -> int | None:
-    if value is None:
-        return None
-    return int(value)
-
-
-def _optional_bool(value: Any) -> bool | None:
-    if value is None:
-        return None
-    return bool(value)
-
-
-def _optional_str(value: Any) -> str | None:
-    if value is None:
-        return None
-    return str(value)
-
-
-def _default_lora_payload() -> dict[str, Any]:
-    return {
-        "r": 8,
-        "lora_alpha": 16,
-        "lora_dropout": 0.05,
-        "bias": "none",
-        "target_modules": [
-            "q_proj",
-            "k_proj",
-            "v_proj",
-            "o_proj",
-            "gate_proj",
-            "up_proj",
-            "down_proj",
-        ],
-    }
-
-
-def _default_quantization_payload() -> dict[str, Any]:
-    return {
-        "mode": "none",
-        "bnb_4bit_quant_type": "nf4",
-        "bnb_4bit_use_double_quant": True,
-        "bnb_4bit_compute_dtype": "bfloat16",
-        "device_map": None,
-        "prepare_model_for_kbit_training": False,
-    }
-
-
-def _load_quantization_config(payload: dict[str, Any]) -> SQLQuantizationConfig:
-    return SQLQuantizationConfig(
-        mode=str(payload["mode"]),
-        bnb_4bit_quant_type=str(payload.get("bnb_4bit_quant_type", "nf4")),
-        bnb_4bit_use_double_quant=bool(payload.get("bnb_4bit_use_double_quant", True)),
-        bnb_4bit_compute_dtype=str(payload.get("bnb_4bit_compute_dtype", "bfloat16")),
-        device_map=_optional_str(payload.get("device_map")),
-        prepare_model_for_kbit_training=bool(payload.get("prepare_model_for_kbit_training", False)),
-    )
-
-
-def _load_lora_config(payload: dict[str, Any]) -> SQLLoRAConfig:
-    return SQLLoRAConfig(
-        r=int(payload["r"]),
-        lora_alpha=int(payload["lora_alpha"]),
-        lora_dropout=float(payload["lora_dropout"]),
-        bias=str(payload.get("bias", "none")),
-        target_modules=tuple(str(item) for item in payload["target_modules"]),
-    )
-
-
 def _validate_manifest(payload: dict[str, Any]) -> None:
-    schema_path = WORKSPACE_ROOT / "schemas" / "sql_sft_experiment_v1.schema.json"
+    schema_path = WORKSPACE_ROOT / "schemas" / "sql_sft_experiment_v2.schema.json"
     schema = json.loads(schema_path.read_text(encoding="utf-8"))
     validator = Draft202012Validator(schema)
     errors = sorted(validator.iter_errors(payload), key=lambda error: list(error.path))

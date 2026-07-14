@@ -1,4 +1,4 @@
-"""Command line surface for LiveSQLBench-oriented SQL ISFT."""
+"""Command line surface for the LiveSQLBench direct-SQL ISFT lane."""
 
 from __future__ import annotations
 
@@ -15,11 +15,17 @@ from .livesqlbench_submission import (
 from .sql import (
     analyze_sql_eval_result,
     assert_no_sql_dataset_leakage,
+    audit_sql_mixture,
+    build_livesqlbench_artifacts,
+    build_next_sql_train_mixture,
+    collect_verified_sql_corrections,
+    compare_sql_promotion,
     load_sql_eval_cases,
     load_sql_sft_manifest,
     load_sql_train_examples,
     run_sql_eval,
     run_sql_sft,
+    verify_livesqlbench_targets,
 )
 
 
@@ -27,18 +33,37 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="LiveSQLBench SQL ISFT workspace")
     parser.add_argument("--version", action="store_true", help="Print the package version")
     commands = parser.add_subparsers(dest="command")
-
     sql = commands.add_parser("sql", help="SQL training and local validation")
     sql_commands = sql.add_subparsers(dest="sql_command")
 
     validate_train = sql_commands.add_parser("validate-train", help="Validate an allowed training JSONL")
     validate_train.add_argument("--dataset", required=True)
-
     validate_eval = sql_commands.add_parser("validate-eval", help="Validate a local development eval JSONL")
     validate_eval.add_argument("--dataset", required=True)
-
-    validate_manifest = sql_commands.add_parser("validate-manifest", help="Validate an ISFT manifest")
+    validate_manifest = sql_commands.add_parser("validate-manifest", help="Validate a v2 ISFT manifest")
     validate_manifest.add_argument("--manifest", required=True)
+
+    import_tasks = sql_commands.add_parser("livesqlbench-import", help="Import allowed LiveSQLBench tasks")
+    import_tasks.add_argument("--package-root", required=True)
+    import_tasks.add_argument("--target-manifest", required=True)
+    import_tasks.add_argument("--source-revision", required=True)
+    import_tasks.add_argument("--train-output", required=True)
+    import_tasks.add_argument("--eval-output", required=True)
+
+    verify_targets = sql_commands.add_parser("verify-targets", help="Execute and attest target SQL against allowed databases")
+    verify_targets.add_argument("--package-root", required=True)
+    verify_targets.add_argument("--target-manifest", required=True)
+    verify_targets.add_argument("--source-revision", required=True)
+    verify_targets.add_argument("--verified-output", required=True)
+    verify_targets.add_argument("--verified-by", required=True)
+    verify_targets.add_argument("--verified-at", required=True)
+
+    audit_mixture = sql_commands.add_parser("audit-mixture", help="Audit mixture balance and target provenance")
+    audit_mixture.add_argument("--dataset", action="append", required=True)
+    audit_mixture.add_argument("--output")
+    audit_mixture.add_argument("--required-family", action="append", default=[])
+    audit_mixture.add_argument("--required-tier", action="append", type=int, default=[])
+    audit_mixture.add_argument("--minimum-databases", type=int, default=1)
 
     leakage = sql_commands.add_parser("audit-leakage", help="Fail on train/eval overlap")
     leakage.add_argument("--train-dataset", action="append", required=True)
@@ -53,12 +78,33 @@ def main(argv: list[str] | None = None) -> int:
     evaluate.add_argument("--manifest", required=True)
     evaluate.add_argument("--model", choices=["base", "adapter"], required=True)
     evaluate.add_argument("--dataset")
-    evaluate.add_argument("--max-new-tokens", type=int, default=128)
+    evaluate.add_argument("--max-new-tokens", type=int)
     evaluate.add_argument("--result-label")
 
     analyze = sql_commands.add_parser("analyze-eval", help="Analyze a local eval result")
     analyze.add_argument("--result", required=True)
     analyze.add_argument("--output")
+
+    corrections = sql_commands.add_parser("collect-corrections", help="Collect independently reviewed SQL corrections")
+    corrections.add_argument("--result", required=True)
+    corrections.add_argument("--eval-dataset", required=True)
+    corrections.add_argument("--review", required=True)
+    corrections.add_argument("--output", required=True)
+
+    mixture = sql_commands.add_parser("build-mixture", help="Build the next bounded train mixture")
+    mixture.add_argument("--base-train-dataset", action="append", required=True)
+    mixture.add_argument("--correction-dataset", required=True)
+    mixture.add_argument("--output", required=True)
+    mixture.add_argument("--max-corrections", type=int, required=True)
+
+    promotion = sql_commands.add_parser("compare-promotion", help="Compare immutable base and candidate eval artifacts")
+    promotion.add_argument("--base-target", required=True)
+    promotion.add_argument("--candidate-target", required=True)
+    promotion.add_argument("--base-guardrail", action="append", required=True)
+    promotion.add_argument("--candidate-guardrail", action="append", required=True)
+    promotion.add_argument("--target-min-improvement", type=float, required=True)
+    promotion.add_argument("--max-guardrail-regression", type=float, required=True)
+    promotion.add_argument("--output")
 
     for name, help_text in (
         ("livesqlbench-prepare", "Prepare official LiveSQLBench tasks from public inputs"),
@@ -83,7 +129,7 @@ def main(argv: list[str] | None = None) -> int:
 def _run_sql_command(args: argparse.Namespace) -> int:
     if args.sql_command == "validate-train":
         rows = load_sql_train_examples(args.dataset)
-        print(f"validated allowed training dataset rows={len(rows)} path={args.dataset}")
+        print(f"validated training dataset rows={len(rows)} path={args.dataset}")
         return 0
     if args.sql_command == "validate-eval":
         cases = load_sql_eval_cases(args.dataset)
@@ -93,24 +139,50 @@ def _run_sql_command(args: argparse.Namespace) -> int:
         manifest = load_sql_sft_manifest(args.manifest)
         print(f"validated ISFT manifest experiment={manifest.experiment_id} path={args.manifest}")
         return 0
+    if args.sql_command == "livesqlbench-import":
+        summary = build_livesqlbench_artifacts(
+            package_root=args.package_root,
+            target_manifest=args.target_manifest,
+            source_revision=args.source_revision,
+            train_output=args.train_output,
+            eval_output=args.eval_output,
+        )
+        print(f"imported LiveSQLBench tasks={summary.discovered_task_count} train={summary.train_row_count} eval={summary.eval_case_count} fingerprint={summary.fingerprint}")
+        return 0
+    if args.sql_command == "verify-targets":
+        summary = verify_livesqlbench_targets(
+            package_root=args.package_root,
+            target_manifest=args.target_manifest,
+            source_revision=args.source_revision,
+            verified_output=args.verified_output,
+            verified_by=args.verified_by,
+            verified_at=args.verified_at,
+        )
+        print(f"verified LiveSQLBench targets={summary.target_count} output={summary.verified_output}")
+        return 0
+    if args.sql_command == "audit-mixture":
+        summary = audit_sql_mixture(args.dataset, output_path=args.output)
+        from .sql import assert_mixture_coverage
+
+        assert_mixture_coverage(
+            summary,
+            required_families=set(args.required_family),
+            required_tiers=set(args.required_tier),
+            minimum_databases=args.minimum_databases,
+        )
+        print(f"audited mixture rows={summary.row_count} databases={len(summary.database_counts)} fingerprint={summary.fingerprint}")
+        return 0
     if args.sql_command == "audit-leakage":
         summary = assert_no_sql_dataset_leakage(
             train_paths=args.train_dataset,
             eval_paths=args.eval_dataset,
             require_db_disjoint=args.require_db_disjoint,
         )
-        print(
-            "leakage audit passed "
-            f"train_rows={summary.train_row_count} eval_cases={summary.eval_case_count} "
-            f"train_dbs={len(summary.train_db_ids)} eval_dbs={len(summary.eval_db_ids)}"
-        )
+        print(f"leakage audit passed train_rows={summary.train_row_count} eval_cases={summary.eval_case_count} train_dbs={len(summary.train_db_ids)} eval_dbs={len(summary.eval_db_ids)}")
         return 0
     if args.sql_command == "run-sft":
         summary = run_sql_sft(args.manifest, dry_run=args.dry_run)
-        print(
-            "completed SQL ISFT "
-            f"experiment={summary.experiment_id} rows={summary.train_row_count} dry_run={summary.dry_run}"
-        )
+        print(f"completed SQL ISFT experiment={summary.experiment_id} rows={summary.train_row_count} dry_run={summary.dry_run}")
         return 0
     if args.sql_command == "eval":
         summary = run_sql_eval(
@@ -120,14 +192,41 @@ def _run_sql_command(args: argparse.Namespace) -> int:
             max_new_tokens=args.max_new_tokens,
             result_label=args.result_label,
         )
-        print(
-            "completed local one-shot eval "
-            f"passed={summary.passed_count}/{summary.case_count} result={summary.result_path}"
-        )
+        print(f"completed local one-shot eval passed={summary.passed_count}/{summary.case_count} result={summary.result_path}")
         return 0
     if args.sql_command == "analyze-eval":
         summary = analyze_sql_eval_result(args.result, output_path=args.output)
-        print(f"analyzed local eval failures={summary.failure_count} output={summary.output_path}")
+        print(f"analyzed local eval failures={summary.failure_count} output={summary.analysis_path}")
+        return 0
+    if args.sql_command == "collect-corrections":
+        summary = collect_verified_sql_corrections(
+            result_path=args.result,
+            eval_dataset=args.eval_dataset,
+            review_path=args.review,
+            output_path=args.output,
+        )
+        print(f"collected verified corrections={summary.collected_count} output={summary.output_path}")
+        return 0
+    if args.sql_command == "build-mixture":
+        output = build_next_sql_train_mixture(
+            base_train_datasets=args.base_train_dataset,
+            correction_dataset=args.correction_dataset,
+            output_path=args.output,
+            max_corrections=args.max_corrections,
+        )
+        print(f"built next train mixture output={output}")
+        return 0
+    if args.sql_command == "compare-promotion":
+        decision = compare_sql_promotion(
+            base_target=args.base_target,
+            candidate_target=args.candidate_target,
+            base_guardrails=args.base_guardrail,
+            candidate_guardrails=args.candidate_guardrail,
+            target_min_improvement=args.target_min_improvement,
+            max_guardrail_regression=args.max_guardrail_regression,
+            output_path=args.output,
+        )
+        print(f"promotion decision={decision.decision} target_delta={decision.target_delta:.6f}")
         return 0
     if args.sql_command in {"livesqlbench-prepare", "livesqlbench-run"}:
         config = _livesqlbench_config(args)

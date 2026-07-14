@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from .models import SQLEvalCase, SQLRepairExample, SQLTrainExample
+from .models import SQLEvalCase, SQLTrainExample
 
 SQL_SYSTEM_PROMPT = (
     "You are a precise text-to-SQL model. Return only the final SQL statement. "
@@ -29,26 +29,6 @@ def build_train_messages(
     ]
 
 
-def build_repair_messages(
-    example: SQLRepairExample,
-    *,
-    prompt_style: str = CANONICAL_PROMPT_STYLE,
-    system_prompt: str = SQL_SYSTEM_PROMPT,
-) -> list[dict[str, str]]:
-    user_content = "\n\n".join(
-        [
-            _base_user_content(example, prompt_style=prompt_style),
-            f"Previous SQL:\n{example.previous_sql}",
-            f"Execution Error:\n{example.execution_error}",
-        ]
-    )
-    return [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": user_content},
-        {"role": "assistant", "content": example.target_sql},
-    ]
-
-
 def build_eval_messages(
     case: SQLEvalCase,
     *,
@@ -61,30 +41,8 @@ def build_eval_messages(
     ]
 
 
-def build_repair_eval_messages(
-    case: SQLEvalCase,
-    *,
-    previous_sql: str,
-    execution_observation: str,
-    prompt_style: str = CANONICAL_PROMPT_STYLE,
-    system_prompt: str = SQL_SYSTEM_PROMPT,
-) -> list[dict[str, str]]:
-    user_content = "\n\n".join(
-        [
-            _base_user_content(case, prompt_style=prompt_style),
-            f"Previous SQL:\n{previous_sql}",
-            f"Execution Observation:\n{execution_observation}",
-            "Return corrected SQL only.",
-        ]
-    )
-    return [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": user_content},
-    ]
-
-
 def _base_user_content(
-    example: SQLEvalCase | SQLTrainExample | SQLRepairExample,
+    example: SQLEvalCase | SQLTrainExample,
     *,
     prompt_style: str = CANONICAL_PROMPT_STYLE,
 ) -> str:
@@ -95,7 +53,7 @@ def _base_user_content(
     raise ValueError(f"unsupported SQL prompt_style: {prompt_style}")
 
 
-def _canonical_user_content(example: SQLEvalCase | SQLTrainExample | SQLRepairExample) -> str:
+def _canonical_user_content(example: SQLEvalCase | SQLTrainExample) -> str:
     sections = [
         f"Dialect:\n{example.dialect}",
         f"Database ID:\n{example.db_id}",
@@ -111,7 +69,7 @@ def _canonical_user_content(example: SQLEvalCase | SQLTrainExample | SQLRepairEx
     return "\n\n".join(sections)
 
 
-def _premsql_user_content(example: SQLEvalCase | SQLTrainExample | SQLRepairExample) -> str:
+def _premsql_user_content(example: SQLEvalCase | SQLTrainExample) -> str:
     additional_knowledge = (
         f"# Additional Knowledge:\n{example.knowledge_text}\n"
         if example.knowledge_text

@@ -21,10 +21,10 @@ git and is referenced by absolute or explicitly configured paths.
 ## Canonical Loop
 
 1. Assemble a versioned, allowed training mixture.
-2. Validate every row against the train schema.
+2. Import only explicit, execution-verified targets from the external task package and validate every row against the v2 train schema.
 3. Validate local development and unseen-database gates separately.
 4. Run exact leakage checks before training.
-5. Train one direct-SQL ISFT continuation from the best gated adapter.
+5. Train one direct-SQL ISFT continuation from the best gated adapter. The trainer is not allowed to run unless the manifest fingerprint matches the audited mixture and leakage checks pass.
 6. Run one-shot local evaluation and classify failures.
 7. Add only verified, diverse failure curricula to the next mixture.
 8. Record the experiment and decision in Linear issue `TAP-532`.
@@ -41,7 +41,7 @@ Every competition candidate must report, separately:
 - exact leakage audit results;
 - one-shot development score;
 - database-disjoint score;
-- task-family slices for joins, aggregation, filtering, nesting, and execution errors;
+- task-family, curriculum-tier, database, and failure slices for joins, aggregation, filtering, nesting, and execution errors;
 - official LiveSQLBench runner output, when run.
 
 Promotion requires improvement on the target local gate without regression on the
@@ -51,9 +51,29 @@ frozen guardrail gates. A local score is never reported as an official benchmark
 
 The repository deliberately contains no benchmark GT/test-case package and no
 competition manifest until the permitted LiveSQLBench development package is present.
-The next artifact is a manifest that points to that package's allowed training rows,
-local holdout rows, and the Qwen student model. It must pass validation and leakage
+The package itself is prompt/environment input. Because its public task payloads may
+have empty `sol_sql` and `test_cases`, the next artifact is a separate verified-target
+manifest that points to manually or independently execution-verified SQL labels. The
+resulting v2 train/eval artifacts and Qwen manifest must pass validation and leakage
 checks before any GPU run.
+
+## Code Boundaries
+
+* `livesqlbench_adapter.py` reads task metadata and refuses protected/public target fields.
+* `verify-targets` executes each pending target against its declared database before import.
+* `models.py`, `loaders.py`, and the v2 JSON schemas enforce provenance, curriculum, and execution verification.
+* `evaluator.py` has explicit SQLite and PostgreSQL backends; unsupported dialects fail.
+* `eval_runner.py` is one-shot only. Candidate selection and repair are not part of the ISFT gate.
+* `failure_mining.py` requires scorer-correct/model-wrong review before producing correction rows.
+* `promotion.py` compares immutable artifacts and emits `promote`, `reject`, or `investigate` without changing checkpoints.
+
+## Verified Target Manifest
+
+The pending target manifest is JSONL with one row per task. It must supply the
+target SQL, task split, family, curriculum tier, SQL shape, grounding requirement,
+shortcut status, tags, and `verification.status: pending`. Run `verify-targets`
+against the allowed database environment first. Only its output, with
+`execution_verified`, may be passed to `livesqlbench-import`.
 
 ## Official Runner Boundary
 

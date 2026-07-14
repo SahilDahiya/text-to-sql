@@ -19,9 +19,29 @@ Research notes remain in `blog/`; operating instructions live in `docs/`.
 
 ## Commands
 
+Importing a LiveSQLBench package requires a separate JSONL target manifest. The
+package's public task payloads are prompts and database environments; empty
+`sol_sql` or `test_cases` fields are never treated as training labels.
+
+```bash
+uv run python -m sqlbench_lab.cli sql verify-targets \
+  --package-root /path/to/base-lite-269 \
+  --target-manifest /path/to/pending-targets.jsonl \
+  --source-revision base-lite-269 \
+  --verified-output /path/to/verified-targets.jsonl \
+  --verified-by local-postgres-run --verified-at 2026-07-14T00:00:00Z
+uv run python -m sqlbench_lab.cli sql livesqlbench-import \
+  --package-root /path/to/base-lite-269 \
+  --target-manifest /path/to/verified-targets.jsonl \
+  --source-revision base-lite-269 \
+  --train-output artifacts/private/livesqlbench/train.v2.jsonl \
+  --eval-output artifacts/private/livesqlbench/dev.v2.jsonl
+```
+
 ```bash
 uv run python -m sqlbench_lab.cli sql validate-train --dataset <train.jsonl>
 uv run python -m sqlbench_lab.cli sql validate-eval --dataset <dev.jsonl>
+uv run python -m sqlbench_lab.cli sql audit-mixture --dataset <train.jsonl>
 uv run python -m sqlbench_lab.cli sql audit-leakage \
   --train-dataset <train.jsonl> \
   --eval-dataset <dev.jsonl> \
@@ -30,6 +50,19 @@ uv run python -m sqlbench_lab.cli sql validate-manifest --manifest <manifest.jso
 uv run --group training python -m sqlbench_lab.cli sql run-sft --manifest <manifest.json>
 uv run --group training python -m sqlbench_lab.cli sql eval \
   --manifest <manifest.json> --model adapter --dataset <dev.jsonl>
+uv run python -m sqlbench_lab.cli sql analyze-eval --result <eval-result.json>
+uv run python -m sqlbench_lab.cli sql collect-corrections \
+  --result <eval-result.json> --eval-dataset <dev.jsonl> \
+  --review <review.jsonl> --output <corrections.jsonl>
+uv run python -m sqlbench_lab.cli sql build-mixture \
+  --base-train-dataset <train.jsonl> \
+  --correction-dataset <corrections.jsonl> \
+  --output <next-train.jsonl> --max-corrections 32
+uv run python -m sqlbench_lab.cli sql compare-promotion \
+  --base-target <base-target.json> --candidate-target <candidate-target.json> \
+  --base-guardrail <base-guardrail.json> \
+  --candidate-guardrail <candidate-guardrail.json> \
+  --target-min-improvement 0.01 --max-guardrail-regression 0.00
 ```
 
 The official runner commands are intentionally separate and are not part of the

@@ -1,15 +1,15 @@
-"""SQLite result-equivalence evaluation."""
+"""Explicit SQLite/PostgreSQL execution and result-equivalence evaluation."""
 
 from __future__ import annotations
 
 import math
+import re
 import sqlite3
-import tempfile
+import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
-from .fixtures import build_sqlite_fixture
 from .models import SQLEvalCase
 
 
@@ -20,46 +20,30 @@ class SQLEvaluationResult:
     gold_error: str | None
     predicted_rows: list[tuple[Any, ...]]
     gold_rows: list[tuple[Any, ...]]
+    predicted_columns: tuple[str, ...]
+    gold_columns: tuple[str, ...]
+    execution_ms: float
 
 
-def evaluate_sqlite_case(
+def evaluate_sql_case(
     case: SQLEvalCase,
     *,
     predicted_sql: str,
-    db_path: str | Path | None = None,
+    postgres_connect: Callable[..., Any] | None = None,
 ) -> SQLEvaluationResult:
-    """Evaluate predicted SQL against a SQLite case by result equivalence."""
+    """Evaluate SQL against the case's declared backend with isolated executions."""
 
-    if case.dialect != "sqlite":
-        raise ValueError("evaluate_sqlite_case only supports sqlite cases")
+    if case.dialect == "sqlite":
+        executor = _sqlite_executor(case.db_path)
+    elif case.dialect == "postgresql":
+        executor = _postgres_executor(case.db_path, postgres_connect=postgres_connect)
+    else:
+        raise ValueError(f"unsupported SQL dialect: {case.dialect}")
 
-    resolved_db_path = Path(db_path) if db_path is not None else _case_db_path(case)
-    if resolved_db_path is not None:
-        return _evaluate_against_db(case, predicted_sql=predicted_sql, db_path=resolved_db_path)
-
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        generated_db_path = Path(tmp_dir) / f"{case.fixture_id}.sqlite"
-        build_sqlite_fixture(case.fixture_id, generated_db_path)
-        return _evaluate_against_db(case, predicted_sql=predicted_sql, db_path=generated_db_path)
-
-
-def _case_db_path(case: SQLEvalCase) -> Path | None:
-    if case.db_path is None:
-        return None
-    path = Path(case.db_path)
-    if path.is_absolute():
-        return path
-    return Path.cwd() / path
-
-
-def _evaluate_against_db(
-    case: SQLEvalCase,
-    *,
-    predicted_sql: str,
-    db_path: Path,
-) -> SQLEvaluationResult:
-    predicted_rows, prediction_error = _execute_sql(db_path, predicted_sql)
-    gold_rows, gold_error = _execute_sql(db_path, case.gold_sql)
+    started = time.perf_counter()
+    predicted_rows, predicted_columns, prediction_error = executor(predicted_sql)
+    gold_rows, gold_columns, gold_error = executor(case.gold_sql)
+    elapsed_ms = (time.perf_counter() - started) * 1000
     passed = (
         prediction_error is None
         and gold_error is None
@@ -76,7 +60,37 @@ def _evaluate_against_db(
         gold_error=gold_error,
         predicted_rows=predicted_rows,
         gold_rows=gold_rows,
+        predicted_columns=predicted_columns,
+        gold_columns=gold_columns,
+        execution_ms=elapsed_ms,
     )
+
+
+def evaluate_sqlite_case(
+    case: SQLEvalCase,
+    *,
+    predicted_sql: str,
+    db_path: str | Path | None = None,
+) -> SQLEvaluationResult:
+    """Evaluate an explicitly SQLite case; retained as a named backend helper."""
+
+    if case.dialect != "sqlite":
+        raise ValueError("evaluate_sqlite_case requires a sqlite case")
+    resolved_case = case if db_path is None else _case_with_db_path(case, str(Path(db_path).resolve()))
+    return evaluate_sql_case(resolved_case, predicted_sql=predicted_sql)
+
+
+def evaluate_postgresql_case(
+    case: SQLEvalCase,
+    *,
+    predicted_sql: str,
+    postgres_connect: Callable[..., Any] | None = None,
+) -> SQLEvaluationResult:
+    """Evaluate an explicitly PostgreSQL case using its external env file."""
+
+    if case.dialect != "postgresql":
+        raise ValueError("evaluate_postgresql_case requires a postgresql case")
+    return evaluate_sql_case(case, predicted_sql=predicted_sql, postgres_connect=postgres_connect)
 
 
 def rows_equivalent(
@@ -105,13 +119,99 @@ def rows_equivalent(
     return not unmatched_gold
 
 
-def _execute_sql(db_path: Path, sql: str) -> tuple[list[tuple[Any, ...]], str | None]:
-    try:
-        with sqlite3.connect(db_path) as conn:
-            cursor = conn.execute(sql)
-            return [tuple(row) for row in cursor.fetchall()], None
-    except sqlite3.Error as exc:
-        return [], str(exc)
+def _sqlite_executor(db_path: str) -> Callable[[str], tuple[list[tuple[Any, ...]], tuple[str, ...], str | None]]:
+    resolved = Path(db_path).expanduser().resolve()
+    if not resolved.is_file():
+        raise FileNotFoundError(f"SQLite database does not exist: {resolved}")
+
+    def execute(sql: str) -> tuple[list[tuple[Any, ...]], tuple[str, ...], str | None]:
+        if not sql.strip():
+            return [], (), "empty SQL prediction"
+        try:
+            with sqlite3.connect(resolved) as conn:
+                cursor = conn.execute(sql)
+                columns = tuple(description[0] for description in cursor.description or ())
+                rows = [tuple(row) for row in cursor.fetchall()] if cursor.description else []
+                conn.rollback()
+                return rows, columns, None
+        except sqlite3.Error as exc:
+            return [], (), str(exc)
+
+    return execute
+
+
+def _postgres_executor(
+    env_path: str,
+    *,
+    postgres_connect: Callable[..., Any] | None,
+) -> Callable[[str], tuple[list[tuple[Any, ...]], tuple[str, ...], str | None]]:
+    resolved = Path(env_path).expanduser().resolve()
+    if not resolved.is_file():
+        raise FileNotFoundError(f"PostgreSQL environment file does not exist: {resolved}")
+    connection_values = _read_env_file(resolved)
+    required = {"PGHOST", "PGPORT", "PGUSER", "PGDATABASE"}
+    missing = sorted(required - connection_values.keys())
+    if missing:
+        raise ValueError(f"PostgreSQL environment file is missing: {', '.join(missing)}")
+    if postgres_connect is None:
+        try:
+            import psycopg
+        except ImportError as exc:
+            raise RuntimeError("PostgreSQL evaluation requires the psycopg dependency") from exc
+        connector = psycopg.connect
+    else:
+        connector = postgres_connect
+
+    def execute(sql: str) -> tuple[list[tuple[Any, ...]], tuple[str, ...], str | None]:
+        if not sql.strip():
+            return [], (), "empty SQL prediction"
+        connection = None
+        try:
+            connection = connector(
+                host=connection_values["PGHOST"],
+                port=int(connection_values["PGPORT"]),
+                user=connection_values["PGUSER"],
+                dbname=connection_values["PGDATABASE"],
+                password=connection_values.get("PGPASSWORD"),
+            )
+            with connection.cursor() as cursor:
+                cursor.execute(sql)
+                columns = tuple(description[0] for description in cursor.description or ())
+                rows = [tuple(row) for row in cursor.fetchall()] if cursor.description else []
+            connection.rollback()
+            return rows, columns, None
+        except Exception as exc:  # psycopg exposes several operational exception classes
+            if connection is not None:
+                connection.rollback()
+            return [], (), str(exc)
+        finally:
+            if connection is not None:
+                connection.close()
+
+    return execute
+
+
+def _read_env_file(path: Path) -> dict[str, str]:
+    values: dict[str, str] = {}
+    pattern = re.compile(r"^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)\s*$")
+    for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        match = pattern.match(line)
+        if match is None:
+            raise ValueError(f"unsupported PostgreSQL env syntax at {path}:{line_number}")
+        value = match.group(2).strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+            value = value[1:-1]
+        values[match.group(1)] = value
+    return values
+
+
+def _case_with_db_path(case: SQLEvalCase, db_path: str) -> SQLEvalCase:
+    payload = case.__dict__.copy()
+    payload["db_path"] = db_path
+    return SQLEvalCase(**payload)
 
 
 def _find_matching_row(

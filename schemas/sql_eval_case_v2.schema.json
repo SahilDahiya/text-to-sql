@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "sql_eval_case_v2.schema.json",
+  "title": "SQL Eval Case v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "case_id", "source_benchmark", "source_split", "task_id", "fixture_id", "db_id", "db_path", "dialect", "question", "schema_text", "gold_sql", "task_type", "metadata", "verification", "order_sensitive", "numeric_tolerance"],
+  "properties": {
+    "schema_version": {"const": "sql_eval_case:v2"},
+    "case_id": {"type": "string", "minLength": 1},
+    "source_benchmark": {"enum": ["livesqlbench", "synthetic"]},
+    "source_split": {"enum": ["dev", "eval", "challenge", "synthetic"]},
+    "task_id": {"type": "string", "minLength": 1},
+    "fixture_id": {"type": "string", "minLength": 1},
+    "db_id": {"type": "string", "minLength": 1},
+    "db_path": {"type": "string", "minLength": 1},
+    "dialect": {"enum": ["postgresql", "sqlite"]},
+    "question": {"type": "string", "minLength": 1},
+    "schema_text": {"type": "string", "minLength": 1},
+    "knowledge_text": {"type": ["string", "null"]},
+    "column_value_notes": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "schema_linking_notes": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "gold_sql": {"type": "string", "minLength": 1},
+    "task_type": {"enum": ["select", "management", "unknown"]},
+    "metadata": {"$ref": "#/$defs/metadata"},
+    "verification": {"$ref": "#/$defs/verification"},
+    "order_sensitive": {"type": "boolean"},
+    "numeric_tolerance": {"type": "number", "minimum": 0}
+  },
+  "$defs": {
+    "metadata": {
+      "type": "object", "additionalProperties": false,
+      "required": ["task_family", "difficulty", "curriculum_tier", "sql_shape", "grounding_requirement", "shortcut_status", "tags"],
+      "properties": {
+        "task_family": {"enum": ["schema_grounding", "filtering", "joins", "date_value", "aggregation", "nesting", "management", "other"]},
+        "difficulty": {"enum": ["simple", "medium", "hard", "unknown"]},
+        "curriculum_tier": {"type": "integer", "minimum": 1, "maximum": 6},
+        "sql_shape": {"type": "string", "minLength": 1},
+        "grounding_requirement": {"enum": ["requires_schema", "requires_database", "requires_schema_and_database"]},
+        "shortcut_status": {"enum": ["requires_schema", "requires_database", "requires_schema_and_database"]},
+        "tags": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
+      }
+    },
+    "verification": {
+      "type": "object", "additionalProperties": false,
+      "required": ["status", "verified_by", "verification_id", "verified_at"],
+      "properties": {
+        "status": {"const": "execution_verified"},
+        "verified_by": {"type": "string", "minLength": 1},
+        "verification_id": {"type": "string", "minLength": 1},
+        "verified_at": {"type": "string", "minLength": 1}
+      }
+    }
+  }
+}

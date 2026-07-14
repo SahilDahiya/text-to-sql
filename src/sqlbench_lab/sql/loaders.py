@@ -1,4 +1,4 @@
-"""Strict loaders for SQL pipeline artifacts."""
+"""Strict loaders for forward-only SQL pipeline artifacts."""
 
 from __future__ import annotations
 
@@ -11,38 +11,38 @@ from jsonschema import Draft202012Validator
 from sqlbench_lab.paths import WORKSPACE_ROOT
 from sqlbench_lab.shared import read_jsonl_objects
 
-from .models import SQLEvalCase, SQLRepairExample, SQLTrainExample
+from .models import SQLCorrectionExample, SQLEvalCase, SQLTrainExample
 
-T = TypeVar("T", SQLEvalCase, SQLRepairExample, SQLTrainExample)
+T = TypeVar("T", SQLEvalCase, SQLCorrectionExample, SQLTrainExample)
 
 
 def load_sql_train_examples(path: str | Path) -> list[SQLTrainExample]:
     return _load_rows(
         path=path,
-        schema_name="sql_train_example_v1.schema.json",
+        schema_name="sql_train_example_v2.schema.json",
         row_type=SQLTrainExample,
         id_field="row_id",
         artifact_name="SQL train dataset",
     )
 
 
-def load_sql_repair_examples(path: str | Path) -> list[SQLRepairExample]:
-    return _load_rows(
-        path=path,
-        schema_name="sql_repair_example_v1.schema.json",
-        row_type=SQLRepairExample,
-        id_field="row_id",
-        artifact_name="SQL repair dataset",
-    )
-
-
 def load_sql_eval_cases(path: str | Path) -> list[SQLEvalCase]:
     return _load_rows(
         path=path,
-        schema_name="sql_eval_case_v1.schema.json",
+        schema_name="sql_eval_case_v2.schema.json",
         row_type=SQLEvalCase,
         id_field="case_id",
         artifact_name="SQL eval dataset",
+    )
+
+
+def load_sql_correction_examples(path: str | Path) -> list[SQLCorrectionExample]:
+    return _load_rows(
+        path=path,
+        schema_name="sql_correction_example_v1.schema.json",
+        row_type=SQLCorrectionExample,
+        id_field="row_id",
+        artifact_name="SQL correction dataset",
     )
 
 

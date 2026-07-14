@@ -7,8 +7,10 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
+from .leakage import assert_no_sql_dataset_leakage
 from .loaders import load_sql_eval_cases, load_sql_train_examples
 from .manifest import SQLSFTExperimentManifest, load_sql_sft_manifest
+from .mixture import audit_sql_mixture
 from .rendering import SUPPORTED_PROMPT_STYLES, build_train_messages
 from .training_types import SQLSFTTrainingSummary
 
@@ -33,6 +35,17 @@ def run_sql_sft(
 
     manifest = load_sql_sft_manifest(manifest_path)
     _validate_supported_manifest(manifest)
+    audit = audit_sql_mixture(manifest.train_inputs.train_datasets)
+    if audit.fingerprint != manifest.mixture.fingerprint:
+        raise ValueError(
+            "manifest mixture fingerprint does not match train datasets: "
+            f"manifest={manifest.mixture.fingerprint} actual={audit.fingerprint}"
+        )
+    assert_no_sql_dataset_leakage(
+        train_paths=manifest.train_inputs.train_datasets,
+        eval_paths=manifest.all_eval_datasets,
+        require_db_disjoint=manifest.eval_plan.require_db_disjoint,
+    )
     train_rows = []
     for dataset_path in manifest.train_inputs.train_datasets:
         dataset_rows = load_sql_train_examples(dataset_path)
@@ -47,7 +60,8 @@ def run_sql_sft(
     experiment_root = manifest.resolve_workspace_path(manifest.output_paths.experiment_root)
     adapter_dir = manifest.resolve_workspace_path(manifest.output_paths.adapter_dir)
     train_summary_path = manifest.resolve_workspace_path(manifest.output_paths.train_summary_json)
-    load_sql_eval_cases(manifest.eval_plan.smoke_dataset)
+    for eval_dataset in manifest.all_eval_datasets:
+        load_sql_eval_cases(eval_dataset)
     experiment_root.mkdir(parents=True, exist_ok=True)
     train_summary_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -301,8 +315,6 @@ def _validate_supported_manifest(manifest: SQLSFTExperimentManifest) -> None:
         raise ValueError(f"SQL SFT runner only supports loss_target={SUPPORTED_LOSS_TARGET!r}")
     if manifest.training_method.stage != SUPPORTED_STAGE:
         raise ValueError(f"SQL SFT runner only supports stage={SUPPORTED_STAGE!r}")
-    if manifest.train_inputs.validation_datasets:
-        raise ValueError("SQL SFT runner does not support validation_datasets yet")
     if manifest.trainer.backend not in {TRANSFORMERS_TRAINER_BACKEND, TRL_SFT_TRAINER_BACKEND}:
         raise ValueError(f"unsupported SQL SFT trainer backend: {manifest.trainer.backend}")
     if manifest.prompt.style not in SUPPORTED_PROMPT_STYLES:
