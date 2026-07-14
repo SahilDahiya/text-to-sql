@@ -20,8 +20,6 @@ from .rendering import SQL_SYSTEM_PROMPT, build_eval_messages
 from .training import (
     _ensure_pad_token,
     _import_training_stack,
-    _inner_tokenizer,
-    _load_tokenizer_like,
     _load_trainable_model,
     render_sql_sft_prompt,
 )
@@ -70,7 +68,7 @@ def run_sql_eval(
     summary = SQLEvalRunSummary(
         schema_version="sql_eval_run:v2",
         experiment_id=manifest.experiment_id,
-        base_model=manifest.student.base_model,
+        base_model=manifest.base_model,
         model_variant=model_variant,
         adapter_dir=str(adapter_dir) if model_variant == "adapter" else None,
         eval_dataset=eval_dataset_path,
@@ -120,7 +118,6 @@ def _build_hf_predictor(
         return predict_messages(
             build_eval_messages(
                 case,
-                prompt_style=manifest.prompt.style,
                 system_prompt=system_prompt,
             )
         )
@@ -136,12 +133,12 @@ def _build_hf_message_predictor(
     max_new_tokens: int,
 ) -> Callable[[list[dict[str, str]]], str]:
     torch, transformers, peft = _import_training_stack()
-    tokenizer_like = _load_tokenizer_like(transformers, manifest.student.base_model)
+    tokenizer_like = transformers.AutoTokenizer.from_pretrained(manifest.base_model)
     _ensure_pad_token(tokenizer_like)
-    tokenizer = _inner_tokenizer(tokenizer_like)
+    tokenizer = tokenizer_like
     model = _load_trainable_model(
         transformers,
-        manifest.student.base_model,
+        manifest.base_model,
         torch_module=torch,
         attn_implementation=manifest.trainer.attn_implementation,
     )

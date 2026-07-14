@@ -13,45 +13,13 @@ from sqlbench_lab.paths import WORKSPACE_ROOT
 
 
 @dataclass(frozen=True)
-class SQLStudentConfig:
-    model_family: str
-    base_model: str
-    adapter_name: str
-    initial_adapter_dir: str | None = None
-
-
-@dataclass(frozen=True)
-class SQLTrainingMethodConfig:
-    method: str
-    loss_target: str
-    stage: str
-
-
-@dataclass(frozen=True)
-class SQLPromptConfig:
-    style: str
-
-
-@dataclass(frozen=True)
-class SQLTrainInputsConfig:
-    train_datasets: tuple[str, ...]
-
-
-@dataclass(frozen=True)
 class SQLTrainerConfig:
-    backend: str
     num_train_epochs: float
     per_device_train_batch_size: int
     gradient_accumulation_steps: int
     learning_rate: float
     logging_steps: int
     attn_implementation: str | None
-    packing: bool
-    packing_strategy: str
-    max_length: int | None
-    bf16: bool | None
-    tf32: bool | None
-    gradient_checkpointing: bool
     save_strategy: str
     save_steps: int | None
     save_total_limit: int | None
@@ -97,10 +65,10 @@ class SQLOutputPathsConfig:
 class SQLSFTExperimentManifest:
     schema_version: str
     experiment_id: str
-    student: SQLStudentConfig
-    training_method: SQLTrainingMethodConfig
-    prompt: SQLPromptConfig
-    train_inputs: SQLTrainInputsConfig
+    base_model: str
+    initial_adapter_dir: str | None
+    method: str
+    train_datasets: tuple[str, ...]
     trainer: SQLTrainerConfig
     quantization: SQLQuantizationConfig
     lora: SQLLoRAConfig
@@ -124,12 +92,14 @@ def load_sql_sft_manifest(path: str | Path) -> SQLSFTExperimentManifest:
     return SQLSFTExperimentManifest(
         schema_version=str(payload["schema_version"]),
         experiment_id=str(payload["experiment_id"]),
-        student=SQLStudentConfig(**payload["student"]),
-        training_method=SQLTrainingMethodConfig(**payload["training_method"]),
-        prompt=SQLPromptConfig(**payload["prompt"]),
-        train_inputs=SQLTrainInputsConfig(
-            train_datasets=tuple(str(item) for item in payload["train_inputs"]["train_datasets"]),
+        base_model=str(payload["base_model"]),
+        initial_adapter_dir=(
+            str(payload["initial_adapter_dir"])
+            if payload.get("initial_adapter_dir") is not None
+            else None
         ),
+        method=str(payload["method"]),
+        train_datasets=tuple(str(item) for item in payload["train_datasets"]),
         trainer=SQLTrainerConfig(**payload["trainer"]),
         quantization=SQLQuantizationConfig(**payload["quantization"]),
         lora=SQLLoRAConfig(

@@ -292,19 +292,19 @@ def test_v2_manifest_and_dry_run_require_human_approval(tmp_path: Path) -> None:
     manifest_payload = {
         "schema_version": "sql_sft_experiment:v2",
         "experiment_id": "exp-test-v2",
-        "student": {"model_family": "qwen", "base_model": "Qwen/Qwen2.5-1.5B", "adapter_name": "adapter"},
-        "training_method": {"method": "lora_sft", "loss_target": "assistant_sql_only", "stage": "direct_sql_sft"},
-        "prompt": {"style": "canonical_chat"},
-        "train_inputs": {"train_datasets": [str(train_path)]},
+        "base_model": "Qwen/Qwen2.5-1.5B",
+        "initial_adapter_dir": None,
+        "method": "lora_sft",
+        "train_datasets": [str(train_path)],
         "eval_plan": {"target_dataset": str(eval_path), "baseline_results": str(tmp_path / "base.json"), "post_train_results": str(tmp_path / "post.json"), "scorer_version": "sql-eval-v2", "max_new_tokens": 128},
-        "trainer": {"backend": "transformers_trainer", "num_train_epochs": 1.0, "per_device_train_batch_size": 1, "gradient_accumulation_steps": 1, "learning_rate": 0.0002, "logging_steps": 1, "attn_implementation": None, "packing": False, "packing_strategy": "bfd", "max_length": None, "bf16": None, "tf32": None, "gradient_checkpointing": False, "save_strategy": "no", "save_steps": None, "save_total_limit": None},
+        "trainer": {"num_train_epochs": 1.0, "per_device_train_batch_size": 1, "gradient_accumulation_steps": 1, "learning_rate": 0.0002, "logging_steps": 1, "attn_implementation": None, "save_strategy": "no", "save_steps": None, "save_total_limit": None},
         "lora": {"r": 8, "lora_alpha": 16, "lora_dropout": 0.05, "bias": "none", "target_modules": ["q_proj"]},
         "quantization": {"mode": "none", "bnb_4bit_quant_type": "nf4", "bnb_4bit_use_double_quant": True, "bnb_4bit_compute_dtype": "bfloat16", "device_map": None, "prepare_model_for_kbit_training": False},
         "output_paths": {"experiment_root": str(tmp_path / "experiment"), "adapter_dir": str(tmp_path / "adapter"), "train_summary_json": str(tmp_path / "train-summary.json"), "eval_summary_json": str(tmp_path / "eval-summary.json")},
     }
     manifest_path = tmp_path / "manifest.json"
     manifest_path.write_text(json.dumps(manifest_payload), encoding="utf-8")
-    assert load_sql_sft_manifest(manifest_path).train_inputs.train_datasets == (str(train_path),)
+    assert load_sql_sft_manifest(manifest_path).train_datasets == (str(train_path),)
     packet = build_review_packet(
         iteration_id="iter-001",
         phase="artifacts",

@@ -197,7 +197,9 @@ def _read_task(task_path: Path, task_file: Path, payload_file: Path) -> LiveSQLB
         raise ValueError(f"task.toml metadata.tags must be a list: {task_file}")
     tags = tuple(str(tag).casefold() for tag in raw_tags)
     dialect = _dialect_from_tags(tags, task_path)
-    schema_path = _single_file(task_path / "environment" / "db_assets", f"{db_id}_schema.txt")
+    schema_path = task_path / "environment" / "db_assets" / f"{db_id}_schema.txt"
+    if not schema_path.is_file():
+        raise FileNotFoundError(f"task schema file does not exist: {schema_path}")
     env_path = task_path / "environment" / "documents" / "db_env.sh"
     if dialect == "postgresql" and not env_path.exists():
         raise ValueError(f"PostgreSQL task is missing db_env.sh: {task_path}")
@@ -348,16 +350,6 @@ def _dialect_from_tags(tags: tuple[str, ...], task_path: Path) -> str:
     if len(dialects) != 1:
         raise ValueError(f"task must declare exactly one supported dialect in task.toml: {task_path}")
     return next(iter(dialects))
-
-
-def _single_file(directory: Path, name: str) -> Path:
-    exact = directory / name
-    if exact.exists():
-        return exact
-    matches = sorted(directory.glob("*_schema.txt"))
-    if len(matches) != 1:
-        raise ValueError(f"could not identify one schema file under {directory}")
-    return matches[0]
 
 
 def _sqlite_path(task_path: Path) -> Path:

@@ -40,7 +40,7 @@ def build_review_packet(
         raise ValueError(f"phase must be one of {sorted(REVIEW_PHASES)}")
     manifest_file = Path(manifest_path).resolve()
     manifest = load_sql_sft_manifest(manifest_file)
-    train_files = tuple(manifest.resolve_workspace_path(path) for path in manifest.train_inputs.train_datasets)
+    train_files = tuple(manifest.resolve_workspace_path(path) for path in manifest.train_datasets)
     eval_file = manifest.resolve_workspace_path(manifest.eval_plan.target_dataset)
     eval_cases = load_sql_eval_cases(eval_file)
     train_rows = [row for path in train_files for row in load_sql_train_examples(path)]
@@ -62,8 +62,8 @@ def build_review_packet(
         "train_row_count": len(train_rows),
         "eval_case_count": len(eval_cases),
         "initial_adapter_dir": (
-            str(manifest.resolve_workspace_path(manifest.student.initial_adapter_dir))
-            if manifest.student.initial_adapter_dir is not None
+            str(manifest.resolve_workspace_path(manifest.initial_adapter_dir))
+            if manifest.initial_adapter_dir is not None
             else None
         ),
         "adapter_dir": str(manifest.resolve_workspace_path(manifest.output_paths.adapter_dir)),

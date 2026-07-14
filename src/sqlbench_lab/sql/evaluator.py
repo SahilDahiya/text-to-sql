@@ -70,14 +70,12 @@ def evaluate_sqlite_case(
     case: SQLEvalCase,
     *,
     predicted_sql: str,
-    db_path: str | Path | None = None,
 ) -> SQLEvaluationResult:
-    """Evaluate an explicitly SQLite case; retained as a named backend helper."""
+    """Evaluate an explicitly SQLite case."""
 
     if case.dialect != "sqlite":
         raise ValueError("evaluate_sqlite_case requires a sqlite case")
-    resolved_case = case if db_path is None else _case_with_db_path(case, str(Path(db_path).resolve()))
-    return evaluate_sql_case(resolved_case, predicted_sql=predicted_sql)
+    return evaluate_sql_case(case, predicted_sql=predicted_sql)
 
 
 def evaluate_postgresql_case(
@@ -205,12 +203,6 @@ def _read_env_file(path: Path) -> dict[str, str]:
             value = value[1:-1]
         values[match.group(1)] = value
     return values
-
-
-def _case_with_db_path(case: SQLEvalCase, db_path: str) -> SQLEvalCase:
-    payload = case.__dict__.copy()
-    payload["db_path"] = db_path
-    return SQLEvalCase(**payload)
 
 
 def _find_matching_row(
